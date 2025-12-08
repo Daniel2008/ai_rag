@@ -22,8 +22,10 @@
   },
   "dependencies": {
     "@ant-design/x": "^2.1.0",
-    "@electron-toolkit/preload": "^3.0.2",
-    "@electron-toolkit/utils": "^4.0.0",
+    "antd": "^6.0.1",
+    "@ant-design/icons": "^6.1.0",
+    "@ant-design/cssinjs": "^2.0.1",
+    "@ant-design/x-markdown": "^2.1.0",
     "@lancedb/lancedb": "^0.19.1",
     "@langchain/community": "^1.0.7",
     "@langchain/core": "^1.1.4",

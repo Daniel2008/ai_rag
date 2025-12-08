@@ -1,4 +1,3 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
 import type { KnowledgeBaseSnapshot } from '../types/files'
 
 export interface ChatSource {
@@ -18,6 +17,21 @@ export interface ProcessFileResult {
   count?: number
   preview?: string
   error?: string
+}
+
+// 自定义 ElectronAPI 类型
+export interface ElectronAPI {
+  ipcRenderer: {
+    send: (channel: string, ...args: unknown[]) => void
+    on: (channel: string, listener: (event: unknown, ...args: unknown[]) => void) => () => void
+    once: (channel: string, listener: (event: unknown, ...args: unknown[]) => void) => void
+    invoke: (channel: string, ...args: unknown[]) => Promise<unknown>
+    removeAllListeners: (channel: string) => void
+  }
+  process: {
+    platform: string
+    versions: NodeJS.ProcessVersions
+  }
 }
 
 declare global {

@@ -17,10 +17,12 @@ interface KnowledgeBaseStoreShape {
 const StoreConstructor = ((ElectronStore as unknown as { default?: typeof ElectronStore })
   .default ?? ElectronStore) as typeof ElectronStore
 
-const store = new StoreConstructor<KnowledgeBaseStoreShape>({
+const storeConfig: Record<string, unknown> = {
   name: 'knowledge-base',
+  projectName: 'ai-rag-app',
   defaults: { files: [], collections: [] }
-})
+}
+const store = new (StoreConstructor as new (config: Record<string, unknown>) => ElectronStore<KnowledgeBaseStoreShape>)(storeConfig)
 
 export function getIndexedFileRecords(): IndexedFileRecord[] {
   return store.get('files')

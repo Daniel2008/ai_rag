@@ -16,9 +16,12 @@ const StoreConstructor = (
   (ElectronStore as unknown as { default?: typeof ElectronStore }).default ?? ElectronStore
 ) as typeof ElectronStore
 
-const store = new StoreConstructor<AppSettings>({
+const storeConfig: Record<string, unknown> = {
+  name: 'ai-rag-settings',
+  projectName: 'ai-rag-app',
   defaults
-})
+}
+const store = new (StoreConstructor as new (config: Record<string, unknown>) => ElectronStore<AppSettings>)(storeConfig)
 
 export function getSettings(): AppSettings {
   return {

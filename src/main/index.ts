@@ -1,7 +1,9 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, basename } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+
+// 使用环境变量检测开发模式，因为 app.isPackaged 在模块加载时不可用
+const isDev = process.env.NODE_ENV === 'development' || !!process.env['ELECTRON_RENDERER_URL']
 import { loadAndSplitFile } from './rag/loader'
 import { addDocumentsToStore, initVectorStore } from './rag/store'
 import { chatWithRag } from './rag/chat'
@@ -42,7 +44,7 @@ function createWindow(): void {
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
@@ -71,7 +73,7 @@ function isSchemaMismatchError(error: unknown): boolean {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  app.setAppUserModelId('com.electron')
 
   // Initialize LanceDB vector store
   try {
@@ -82,10 +84,15 @@ app.whenReady().then(async () => {
   }
 
   // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+    if (isDev) {
+      window.webContents.on('before-input-event', (event, input) => {
+        if (input.key === 'F12') {
+          window.webContents.toggleDevTools()
+          event.preventDefault()
+        }
+      })
+    }
   })
 
   // IPC test

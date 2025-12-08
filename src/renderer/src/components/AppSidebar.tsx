@@ -1,21 +1,42 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactElement } from 'react'
 import {
-  Actions,
-  Conversations,
-  type ConversationItemType,
-  Welcome
-} from '@ant-design/x'
-import {
+  DownOutlined,
+  UpOutlined,
   DeleteOutlined,
   EditOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
-  UploadOutlined
+  UploadOutlined,
+  MoreOutlined,
+  DatabaseOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  ExclamationCircleOutlined,
+  SearchOutlined,
+  FilePdfOutlined,
+  FileWordOutlined,
+  FileExcelOutlined,
+  FileUnknownOutlined,
+  FileMarkdownOutlined,
+  InboxOutlined,
+  BookOutlined
 } from '@ant-design/icons'
-import { Button, Card, Popconfirm, Space, Tag } from 'antd'
+import {
+  Button,
+  Popconfirm,
+  Tag,
+  theme as antdTheme,
+  Input,
+  Segmented,
+  Tooltip,
+  Collapse,
+  Dropdown,
+  Typography,
+  Flex
+} from 'antd'
 import type { DocumentCollection, IndexedFile } from '../types/files'
 
 interface AppSidebarProps {
@@ -33,16 +54,74 @@ interface AppSidebarProps {
   onRemoveDocument: (filePath: string) => void
 }
 
-const statusText: Record<IndexedFile['status'], string> = {
-  processing: '索引中',
-  ready: '已就绪',
-  error: '失败'
+const statusConfig: Record<
+  IndexedFile['status'],
+  { text: string; color: string; icon: ReactElement; bgColor: string }
+> = {
+  processing: {
+    text: '索引中',
+    color: 'processing',
+    icon: <ClockCircleOutlined spin />,
+    bgColor: 'rgba(24, 144, 255, 0.1)'
+  },
+  ready: {
+    text: '就绪',
+    color: 'success',
+    icon: <CheckCircleOutlined />,
+    bgColor: 'rgba(82, 196, 26, 0.1)'
+  },
+  error: {
+    text: '失败',
+    color: 'error',
+    icon: <ExclamationCircleOutlined />,
+    bgColor: 'rgba(255, 77, 79, 0.1)'
+  }
 }
 
-const statusColor: Record<IndexedFile['status'], string> = {
-  processing: 'processing',
-  ready: 'success',
-  error: 'error'
+// 根据文件名获取图标和颜色
+function getFileIconInfo(fileName: string): { icon: ReactElement; color: string; bgColor: string } {
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'pdf':
+      return {
+        icon: <FilePdfOutlined />,
+        color: '#ff4d4f',
+        bgColor: 'rgba(255, 77, 79, 0.1)'
+      }
+    case 'doc':
+    case 'docx':
+      return {
+        icon: <FileWordOutlined />,
+        color: '#1890ff',
+        bgColor: 'rgba(24, 144, 255, 0.1)'
+      }
+    case 'xls':
+    case 'xlsx':
+      return {
+        icon: <FileExcelOutlined />,
+        color: '#52c41a',
+        bgColor: 'rgba(82, 196, 26, 0.1)'
+      }
+    case 'txt':
+      return {
+        icon: <FileTextOutlined />,
+        color: '#722ed1',
+        bgColor: 'rgba(114, 46, 209, 0.1)'
+      }
+    case 'md':
+    case 'markdown':
+      return {
+        icon: <FileMarkdownOutlined />,
+        color: '#13c2c2',
+        bgColor: 'rgba(19, 194, 194, 0.1)'
+      }
+    default:
+      return {
+        icon: <FileUnknownOutlined />,
+        color: '#8c8c8c',
+        bgColor: 'rgba(140, 140, 140, 0.1)'
+      }
+  }
 }
 
 export function AppSidebar({
@@ -59,22 +138,15 @@ export function AppSidebar({
   onReindexDocument,
   onRemoveDocument
 }: AppSidebarProps): ReactElement {
-  const resolvedCollectionId = useMemo(() => {
-    if (!collections.length) {
-      return undefined
-    }
-    if (
-      activeCollectionId &&
-      collections.some((collection) => collection.id === activeCollectionId)
-    ) {
-      return activeCollectionId
-    }
-    return collections[0]?.id
-  }, [activeCollectionId, collections])
+  const { token } = antdTheme.useToken()
+  const panelActiveKey =
+    activeCollectionId && collections.some((c) => c.id === activeCollectionId)
+      ? activeCollectionId
+      : undefined
 
   const activeCollection = useMemo(
-    () => collections.find((collection) => collection.id === resolvedCollectionId),
-    [collections, resolvedCollectionId]
+    () => collections.find((collection) => collection.id === panelActiveKey),
+    [collections, panelActiveKey]
   )
 
   const collectionFiles = useMemo(
@@ -83,188 +155,461 @@ export function AppSidebar({
     [activeCollection, files]
   )
 
-  const collectionItems: ConversationItemType[] = useMemo(
+  const [collectionQuery, setCollectionQuery] = useState('')
+  const [isExpanded, setIsExpanded] = useState(false)
+  const DEFAULT_VISIBLE_COUNT = 5
+
+  const [query, setQuery] = useState('')
+  const [sortKey, setSortKey] = useState<'updatedAt' | 'name' | 'chunkCount'>('updatedAt')
+
+  const filteredCollections = useMemo(() => {
+    if (!collectionQuery.trim()) return collections
+    return collections.filter((c) =>
+      c.name.toLowerCase().includes(collectionQuery.trim().toLowerCase())
+    )
+  }, [collections, collectionQuery])
+
+  const visibleCollections = useMemo(() => {
+    if (collectionQuery.trim()) return filteredCollections
+    if (isExpanded) return filteredCollections
+    return filteredCollections.slice(0, DEFAULT_VISIBLE_COUNT)
+  }, [filteredCollections, isExpanded, collectionQuery])
+
+  const displayedFiles = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    const filtered = keyword
+      ? collectionFiles.filter((f) => f.name.toLowerCase().includes(keyword))
+      : collectionFiles
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortKey === 'name') return a.name.localeCompare(b.name)
+      if (sortKey === 'chunkCount') return (b.chunkCount ?? 0) - (a.chunkCount ?? 0)
+      return (b.updatedAt ?? 0) - (a.updatedAt ?? 0)
+    })
+    return sorted
+  }, [collectionFiles, query, sortKey])
+
+  // 统计信息
+  const totalFiles = files.length
+
+  const collapseItems = useMemo(
     () =>
-      collections.map((collection) => ({
-        key: collection.id,
-        label: (
-          <div className="conversation-label">
-            <div className="conversation-title" title={collection.name}>
-              <FolderOpenOutlined style={{ marginRight: 8 }} />
-              <span className="conversation-name">{collection.name}</span>
+      visibleCollections.map((collection) => {
+        const isActive = collection.id === panelActiveKey
+        return {
+          key: collection.id,
+          label: (
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center overflow-hidden gap-3" title={collection.name}>
+                <div
+                  className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200"
+                  style={{
+                    background: isActive
+                      ? `linear-gradient(135deg, ${token.colorPrimary} 0%, #7c3aed 100%)`
+                      : token.colorFillSecondary,
+                    boxShadow: isActive ? '0 4px 12px rgba(79, 70, 229, 0.3)' : 'none'
+                  }}
+                >
+                  <FolderOpenOutlined
+                    style={{
+                      fontSize: 18,
+                      color: isActive ? '#fff' : token.colorTextSecondary
+                    }}
+                  />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <Typography.Text
+                    className="truncate font-semibold text-sm"
+                    style={{ color: isActive ? token.colorPrimary : token.colorText }}
+                  >
+                    {collection.name}
+                  </Typography.Text>
+                  <Typography.Text type="secondary" className="text-xs">
+                    {collection.files.length} 个文档
+                  </Typography.Text>
+                </div>
+              </div>
             </div>
-            <div className="conversation-meta">
-              <Tag color="purple">{collection.files.length} 文档</Tag>
+          ),
+          extra: (
+            <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
+              <Tooltip title="导入文件">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<UploadOutlined />}
+                  onClick={() => onUpload(collection.id)}
+                  className="hover:bg-primary/10"
+                  style={{ color: token.colorPrimary }}
+                />
+              </Tooltip>
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'edit',
+                      label: '编辑文档集',
+                      icon: <EditOutlined />
+                    },
+                    { type: 'divider' },
+                    {
+                      key: 'delete',
+                      label: '删除文档集',
+                      icon: <DeleteOutlined />,
+                      danger: true
+                    }
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === 'edit') onEditCollection(collection)
+                    if (key === 'delete') onDeleteCollection(collection.id)
+                  }
+                }}
+                trigger={['click']}
+              >
+                <Button type="text" size="small" icon={<MoreOutlined />} />
+              </Dropdown>
             </div>
-          </div>
-        )
-      })),
-    [collections]
+          ),
+          children: (
+            <div className="flex flex-col gap-3 pt-2">
+              {/* 搜索和排序 */}
+              <div className="flex flex-col gap-2">
+                <Input
+                  allowClear
+                  size="small"
+                  placeholder="搜索文档..."
+                  prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  style={{
+                    borderRadius: 8,
+                    background: token.colorFillQuaternary
+                  }}
+                  variant="filled"
+                />
+                <Segmented
+                  block
+                  size="small"
+                  value={sortKey}
+                  onChange={(val) => setSortKey(val as typeof sortKey)}
+                  options={[
+                    { label: '最近', value: 'updatedAt' },
+                    { label: '名称', value: 'name' },
+                    { label: '分块', value: 'chunkCount' }
+                  ]}
+                  style={{ borderRadius: 8 }}
+                />
+              </div>
+
+              {/* 文档列表 */}
+              {displayedFiles.length ? (
+                <div className="flex flex-col gap-2">
+                  {displayedFiles.map((file) => {
+                    const statusInfo = statusConfig[file.status]
+                    const fileInfo = getFileIconInfo(file.name)
+                    const isSelected = activeDocument === file.path
+
+                    return (
+                      <div
+                        key={file.path}
+                        className="group relative rounded-xl p-3 cursor-pointer transition-all duration-200 hover:shadow-md"
+                        onClick={() => onUpdateActiveDocument(file.path)}
+                        style={{
+                          background: isSelected
+                            ? `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, rgba(124, 58, 237, 0.05) 100%)`
+                            : token.colorFillQuaternary,
+                          border: isSelected
+                            ? `2px solid ${token.colorPrimary}`
+                            : '2px solid transparent'
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          {/* 文件图标 */}
+                          <div
+                            className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center"
+                            style={{
+                              background: fileInfo.bgColor,
+                              color: fileInfo.color
+                            }}
+                          >
+                            {fileInfo.icon}
+                          </div>
+
+                          {/* 文件信息 */}
+                          <div className="flex-1 min-w-0">
+                            <Typography.Text
+                              className="block truncate font-medium text-sm mb-1"
+                              title={file.name}
+                              style={{
+                                color: isSelected ? token.colorPrimary : token.colorText
+                              }}
+                            >
+                              {file.name}
+                            </Typography.Text>
+                            <div className="flex items-center gap-2">
+                              <Tag
+                                icon={statusInfo.icon}
+                                color={statusInfo.color}
+                                bordered={false}
+                                style={{
+                                  margin: 0,
+                                  fontSize: 10,
+                                  padding: '0 6px',
+                                  borderRadius: 4,
+                                  lineHeight: '18px'
+                                }}
+                              >
+                                {statusInfo.text}
+                              </Tag>
+                              {file.status === 'ready' && (
+                                <Typography.Text type="secondary" className="text-xs">
+                                  {file.chunkCount ?? 0} 分块
+                                </Typography.Text>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* 操作按钮 */}
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Tooltip title="重新索引" placement="top">
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<ReloadOutlined style={{ fontSize: 12 }} />}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onReindexDocument(file.path)
+                                }}
+                                style={{ width: 26, height: 26, minWidth: 26 }}
+                              />
+                            </Tooltip>
+                            <Popconfirm
+                              title="确认移除文档？"
+                              description="移除后需要重新导入"
+                              okText="移除"
+                              cancelText="取消"
+                              okButtonProps={{ danger: true }}
+                              onConfirm={(e) => {
+                                e?.stopPropagation()
+                                onRemoveDocument(file.path)
+                              }}
+                              onCancel={(e) => e?.stopPropagation()}
+                            >
+                              <Tooltip title="移除" placement="top">
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  danger
+                                  icon={<DeleteOutlined style={{ fontSize: 12 }} />}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{ width: 26, height: 26, minWidth: 26 }}
+                                />
+                              </Tooltip>
+                            </Popconfirm>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div
+                  className="flex flex-col items-center justify-center py-8 rounded-xl border-2 border-dashed cursor-pointer transition-all hover:border-primary/50 hover:bg-primary/5"
+                  style={{ borderColor: token.colorBorder }}
+                  onClick={() => onUpload(collection.id)}
+                >
+                  <InboxOutlined
+                    style={{ fontSize: 32, color: token.colorTextQuaternary, marginBottom: 8 }}
+                  />
+                  <Typography.Text type="secondary" className="text-sm">
+                    {query ? '未找到匹配文档' : '点击或拖拽文件到此处'}
+                  </Typography.Text>
+                  {!query && (
+                    <Typography.Text type="secondary" className="text-xs mt-1">
+                      支持 PDF、Word、TXT、Markdown
+                    </Typography.Text>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        }
+      }),
+    [
+      visibleCollections,
+      panelActiveKey,
+      displayedFiles,
+      query,
+      sortKey,
+      token,
+      activeDocument,
+      onUpload,
+      onEditCollection,
+      onDeleteCollection,
+      onUpdateActiveDocument,
+      onReindexDocument,
+      onRemoveDocument
+    ]
   )
 
   return (
-    <aside className="flex w-72 flex-col border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
-      <div className="p-4 pb-2">
-        <div>
-          <h2 className="m-0 text-lg font-semibold text-gray-800 dark:text-gray-100">文档集</h2>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {collections.length ? `已创建 ${collections.length} 个文档集` : '尚未创建文档集'}
-          </p>
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto px-3 pb-6">
-        {collections.length > 0 ? (
-          <>
-            <Conversations
-              items={collectionItems}
-              activeKey={resolvedCollectionId}
-              onActiveChange={(key) => onCollectionChange(String(key))}
-              creation={{
-                label: '新建文档集',
-                icon: <PlusOutlined />,
-                onClick: onCreateCollection
+    <aside
+      className="flex w-80 flex-col"
+      style={{
+        background: token.colorBgContainer,
+        borderLeft: `1px solid ${token.colorBorderSecondary}`
+      }}
+    >
+      {/* 头部 */}
+      <div
+        className="px-4 pt-5 pb-4"
+        style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}
+      >
+        <Flex align="center" justify="space-between" className="mb-4">
+          <Flex align="center" gap={12}>
+            <div
+              className="w-11 h-11 rounded-xl flex items-center justify-center"
+              style={{
+                background: `linear-gradient(135deg, ${token.colorSuccess} 0%, #059669 100%)`,
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+              }}
+            >
+              <DatabaseOutlined style={{ fontSize: 20, color: '#fff' }} />
+            </div>
+            <div>
+              <Typography.Title level={5} style={{ margin: 0, lineHeight: 1.2 }}>
+                知识库
+              </Typography.Title>
+              <Typography.Text type="secondary" className="text-xs">
+                {collections.length} 个文档集 · {totalFiles} 个文档
+              </Typography.Text>
+            </div>
+          </Flex>
+          <Tooltip title="新建文档集">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={onCreateCollection}
+              style={{
+                background: `linear-gradient(135deg, ${token.colorPrimary} 0%, #7c3aed 100%)`,
+                border: 'none',
+                borderRadius: 10,
+                boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
               }}
             />
-            {activeCollection ? (
-              <Card
+          </Tooltip>
+        </Flex>
+
+        {/* 搜索框 */}
+        <Input
+          placeholder="搜索文档集..."
+          allowClear
+          prefix={<SearchOutlined style={{ color: token.colorTextQuaternary }} />}
+          value={collectionQuery}
+          onChange={(e) => setCollectionQuery(e.target.value)}
+          className="mt-5"
+          style={{ borderRadius: 10 }}
+          variant="filled"
+        />
+      </div>
+
+      {/* 文档集列表 */}
+      <div className="flex-1 overflow-y-auto px-3 py-3">
+        {collections.length > 0 ? (
+          <>
+            <Collapse
+              accordion
+              ghost
+              activeKey={panelActiveKey ? [panelActiveKey] : []}
+              onChange={(key) => {
+                const newKey = Array.isArray(key) ? key[0] : key
+                onCollectionChange(newKey ? String(newKey) : '')
+              }}
+              items={collapseItems}
+              expandIconPosition="end"
+              className="knowledge-collapse"
+            />
+            {!collectionQuery.trim() && collections.length > DEFAULT_VISIBLE_COUNT && (
+              <Button
+                type="text"
                 size="small"
-                className="mt-4 bg-gray-50 dark:bg-gray-800"
-                title={activeCollection.name}
-                bordered={false}
-                extra={
-                  <Space size="small" wrap>
-                    <Button
-                      type="primary"
-                      size="small"
-                      icon={<UploadOutlined />}
-                      onClick={() => onUpload(activeCollection.id)}
-                    >
-                      导入
-                    </Button>
-                    <Button
-                      type="link"
-                      size="small"
-                      icon={<EditOutlined />}
-                      onClick={() => onEditCollection(activeCollection)}
-                    />
-                    <Popconfirm
-                      title="删除文档集"
-                      description="该文档集将被移除，确认继续？"
-                      okText="删除"
-                      cancelText="取消"
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => onDeleteCollection(activeCollection.id)}
-                    >
-                      <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                  </Space>
-                }
+                icon={isExpanded ? <UpOutlined /> : <DownOutlined />}
+                className="mt-2 w-full"
+                style={{ color: token.colorTextSecondary }}
+                onClick={() => setIsExpanded(!isExpanded)}
               >
-                <Space size="small" wrap className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-                  <Tag color="blue">{activeCollection.files.length} 个文档</Tag>
-                  {activeCollection.description ? (
-                    <span className="text-gray-500 dark:text-gray-400">
-                      {activeCollection.description}
-                    </span>
-                  ) : null}
-                </Space>
-                {collectionFiles.length ? (
-                  <div className="flex flex-col gap-3">
-                    {collectionFiles.map((file) => (
-                      <div
-                        key={file.path}
-                        className={`cursor-pointer rounded-lg border p-3 transition-all hover:border-blue-300 hover:shadow-sm dark:border-gray-600 dark:hover:border-blue-500 ${
-                          activeDocument === file.path
-                            ? 'border-blue-500 shadow-md dark:border-blue-400'
-                            : 'border-gray-200 dark:border-gray-700'
-                        }`}
-                        onClick={() => onUpdateActiveDocument(file.path)}
-                      >
-                        <div className="mb-1.5 flex items-center justify-between">
-                          <div
-                            className="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-gray-200"
-                            title={file.path}
-                          >
-                            <FileTextOutlined />
-                            <span className="truncate">{file.name}</span>
-                          </div>
-                          <Tag color={statusColor[file.status]}>{statusText[file.status]}</Tag>
-                        </div>
-                        <div className="mb-1.5 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                          <Space size="small" wrap>
-                            {file.chunkCount ? <span>{file.chunkCount} chunks</span> : null}
-                            <Space size="small">
-                              <Button
-                                type="link"
-                                size="small"
-                                icon={<ReloadOutlined />}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  onReindexDocument(file.path)
-                                }}
-                              />
-                              <Popconfirm
-                                title="移除文档"
-                                description="该文档将从知识库与所有文档集中删除，确认继续？"
-                                okText="删除"
-                                cancelText="取消"
-                                okButtonProps={{ danger: true }}
-                                onConfirm={() => {
-                                  onRemoveDocument(file.path)
-                                }}
-                              >
-                                <Button
-                                  type="link"
-                                  size="small"
-                                  danger
-                                  icon={<DeleteOutlined />}
-                                  onClick={(event) => event.stopPropagation()}
-                                />
-                              </Popconfirm>
-                            </Space>
-                          </Space>
-                        </div>
-                        <p
-                          className={`m-0 text-xs leading-relaxed ${
-                            file.preview ? 'text-gray-600 dark:text-gray-300' : 'italic text-gray-400'
-                          }`}
-                        >
-                          {file.preview ?? '暂无预览'}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-lg border border-dashed border-gray-300 p-4 text-center text-gray-500 dark:border-gray-600 dark:text-gray-400">
-                    <p>该文档集尚未包含文档</p>
-                    <Button
-                      type="dashed"
-                      icon={<UploadOutlined />}
-                      onClick={() => onUpload(activeCollection.id)}
-                    >
-                      导入文档
-                    </Button>
-                  </div>
-                )}
-              </Card>
-            ) : null}
+                {isExpanded ? '收起' : `展开更多 (${collections.length - DEFAULT_VISIBLE_COUNT})`}
+              </Button>
+            )}
           </>
         ) : (
-          <Welcome
-            title="创建文档集开始构建知识库"
-            description="先新建文档集，再导入需要索引的 PDF/TXT/Markdown，即可按主题管理知识。"
-            extra={
-              <Actions
-                items={[{ key: 'newCollection', label: '立即创建', icon: <PlusOutlined /> }]}
-                onClick={({ key }) => {
-                  if (key === 'newCollection') {
-                    onCreateCollection()
-                  }
-                }}
-              />
-            }
-          />
+          <div className="flex flex-col items-center justify-center h-full">
+            <div
+              className="w-20 h-20 rounded-2xl flex items-center justify-center mb-4"
+              style={{
+                background: token.colorFillSecondary
+              }}
+            >
+              <BookOutlined style={{ fontSize: 36, color: token.colorTextQuaternary }} />
+            </div>
+            <Typography.Title level={5} type="secondary" style={{ marginBottom: 4 }}>
+              知识库为空
+            </Typography.Title>
+            <Typography.Text type="secondary" className="text-center mb-6 px-4 text-sm">
+              创建文档集，导入文件构建您的智能知识库
+            </Typography.Text>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
+              onClick={onCreateCollection}
+              style={{
+                background: `linear-gradient(135deg, ${token.colorPrimary} 0%, #7c3aed 100%)`,
+                border: 'none',
+                borderRadius: 12,
+                height: 44,
+                paddingInline: 28,
+                boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
+              }}
+            >
+              创建文档集
+            </Button>
+          </div>
         )}
+      </div>
+
+      {/* 底部提示 */}
+      <div
+        className="px-4 py-3"
+        style={{
+          borderTop: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorFillQuaternary
+        }}
+      >
+        <div className="flex items-center justify-center gap-2">
+          <div className="flex -space-x-1">
+            <div
+              className="w-5 h-5 rounded flex items-center justify-center"
+              style={{ background: 'rgba(255, 77, 79, 0.1)' }}
+            >
+              <FilePdfOutlined style={{ fontSize: 10, color: '#ff4d4f' }} />
+            </div>
+            <div
+              className="w-5 h-5 rounded flex items-center justify-center"
+              style={{ background: 'rgba(24, 144, 255, 0.1)' }}
+            >
+              <FileWordOutlined style={{ fontSize: 10, color: '#1890ff' }} />
+            </div>
+            <div
+              className="w-5 h-5 rounded flex items-center justify-center"
+              style={{ background: 'rgba(19, 194, 194, 0.1)' }}
+            >
+              <FileMarkdownOutlined style={{ fontSize: 10, color: '#13c2c2' }} />
+            </div>
+          </div>
+          <Typography.Text type="secondary" className="text-xs">
+            支持多种文档格式
+          </Typography.Text>
+        </div>
       </div>
     </aside>
   )

@@ -1,6 +1,25 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 import type { KnowledgeBaseSnapshot } from '../types/files'
+
+// 自定义 electronAPI 替代 @electron-toolkit/preload
+const electronAPI = {
+  ipcRenderer: {
+    send: (channel: string, ...args: unknown[]) => ipcRenderer.send(channel, ...args),
+    on: (channel: string, listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void) => {
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+    once: (channel: string, listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void) => {
+      ipcRenderer.once(channel, listener)
+    },
+    invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+    removeAllListeners: (channel: string) => ipcRenderer.removeAllListeners(channel)
+  },
+  process: {
+    platform: process.platform,
+    versions: process.versions
+  }
+}
 
 export interface ChatSource {
   content: string
