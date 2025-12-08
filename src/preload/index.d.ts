@@ -1,4 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type { KnowledgeBaseSnapshot } from '../types/files'
 
 export interface ChatSource {
   content: string
@@ -25,7 +26,22 @@ declare global {
     api: {
       selectFile: () => Promise<string | null>
       processFile: (path: string) => Promise<ProcessFileResult>
-      chat: (question: string) => void
+      chat: (payload: { question: string; sources?: string[] }) => void
+      getKnowledgeBase: () => Promise<KnowledgeBaseSnapshot>
+      removeIndexedFile: (filePath: string) => Promise<KnowledgeBaseSnapshot>
+      reindexIndexedFile: (filePath: string) => Promise<KnowledgeBaseSnapshot>
+      createCollection: (payload: {
+        name: string
+        description?: string
+        files?: string[]
+      }) => Promise<KnowledgeBaseSnapshot>
+      updateCollection: (payload: {
+        id: string
+        name?: string
+        description?: string
+        files?: string[]
+      }) => Promise<KnowledgeBaseSnapshot>
+      deleteCollection: (collectionId: string) => Promise<KnowledgeBaseSnapshot>
       onChatToken: (callback: (token: string) => void) => void
       onChatSources: (callback: (sources: ChatSource[]) => void) => void
       onChatDone: (callback: () => void) => void

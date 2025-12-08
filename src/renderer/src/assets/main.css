@@ -1,93 +1,60 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-@layer base {
-  body {
-    @apply bg-background text-foreground;
-  }
+@theme {
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
 }
 
-/* Light theme (default) */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 262.1 83.3% 57.8%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 262.1 83.3% 57.8%;
-  --radius: 0.5rem;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
 }
 
-/* Dark theme */
-.dark {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 240 10% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --popover: 240 10% 3.9%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 263.4 70% 50.4%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 240 3.7% 15.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --accent: 240 3.7% 15.9%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --ring: 263.4 70% 50.4%;
+body {
+  @apply bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100;
 }
 
-/* Prose styles for Markdown */
-.prose {
-  @apply text-foreground;
+/* Custom scrollbar for WebKit browsers */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.prose code {
-  @apply bg-muted px-1 py-0.5 rounded text-sm font-mono;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.prose pre {
-  @apply bg-muted p-3 rounded-md overflow-x-auto;
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
 }
 
-.prose pre code {
-  @apply bg-transparent p-0;
-}
-
-.prose a {
-  @apply text-primary underline;
-}
-
-.prose ul, .prose ol {
-  @apply pl-4;
-}
-
-.prose li {
-  @apply my-1 list-disc;
-}
-
-.prose h1, .prose h2, .prose h3 {
-  @apply font-bold;
-}
-
-.prose blockquote {
-  @apply border-l-4 border-primary pl-4 italic;
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-500;
 }

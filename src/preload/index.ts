@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { KnowledgeBaseSnapshot } from '../types/files'
 
 export interface ChatSource {
   content: string
@@ -23,8 +24,28 @@ export interface ProcessFileResult {
 // Custom APIs for renderer
 const api = {
   selectFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFile'),
-  processFile: (path: string): Promise<ProcessFileResult> => ipcRenderer.invoke('rag:processFile', path),
-  chat: (question: string): void => ipcRenderer.send('rag:chat', question),
+  processFile: (path: string): Promise<ProcessFileResult> =>
+    ipcRenderer.invoke('rag:processFile', path),
+  chat: (payload: { question: string; sources?: string[] }): void =>
+    ipcRenderer.send('rag:chat', payload),
+  getKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:list'),
+  removeIndexedFile: (filePath: string): Promise<KnowledgeBaseSnapshot> =>
+    ipcRenderer.invoke('files:remove', filePath),
+  reindexIndexedFile: (filePath: string): Promise<KnowledgeBaseSnapshot> =>
+    ipcRenderer.invoke('files:reindex', filePath),
+  createCollection: (payload: {
+    name: string
+    description?: string
+    files?: string[]
+  }): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('collections:create', payload),
+  updateCollection: (payload: {
+    id: string
+    name?: string
+    description?: string
+    files?: string[]
+  }): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('collections:update', payload),
+  deleteCollection: (collectionId: string): Promise<KnowledgeBaseSnapshot> =>
+    ipcRenderer.invoke('collections:delete', collectionId),
   onChatToken: (callback: (token: string) => void): void => {
     ipcRenderer.on('rag:chat-token', (_, token) => callback(token))
   },

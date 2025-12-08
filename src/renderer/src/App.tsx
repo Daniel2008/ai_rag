@@ -1,13 +1,48 @@
-import { useState, useEffect, useRef } from 'react'
-import type { JSX } from 'react'
-import { Sidebar } from './components/Sidebar'
-import { SettingsDialog } from './components/SettingsDialog'
-import type { AppSettings } from './components/SettingsDialog'
-import type { IndexedFile } from './types/files'
-import { Send, Loader2, User, Bot, FileText, ChevronDown, ChevronUp, Sun, Moon, Settings } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactElement } from 'react'
+import {
+  Actions,
+  Bubble,
+  type BubbleItemType,
+  Prompts,
+  Sender,
+  Sources,
+  Welcome,
+  XProvider
+} from '@ant-design/x'
+import type { BubbleListRef } from '@ant-design/x/es/bubble'
+import type { RoleType } from '@ant-design/x/es/bubble/interface'
+import type { PromptsItemType } from '@ant-design/x/es/prompts'
+import {
+  Alert,
+  Divider,
+  Form,
+  Input,
+  Modal,
+  Segmented,
+  Select,
+  Space,
+  Tag,
+  theme as antdTheme,
+  message as antdMessage
+} from 'antd'
+import {
+  SettingOutlined,
+  DeleteOutlined,
+  MoonFilled,
+  SunFilled,
+  PlusOutlined
+} from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { useTheme } from './components/ThemeProvider'
+import { AppSidebar } from './components/AppSidebar'
+import { SettingsDialog, type AppSettings } from './components/SettingsDialog'
+import type {
+  DocumentCollection,
+  IndexedFile,
+  IndexedFileRecord,
+  KnowledgeBaseSnapshot
+} from './types/files'
 
 interface ChatSource {
   content: string
@@ -15,85 +50,176 @@ interface ChatSource {
   pageNumber?: number
 }
 
-interface Message {
-  role: 'user' | 'ai'
+type QuestionScope = 'all' | 'active' | 'collection'
+
+interface ChatMessage {
+  key: string
+  role: 'user' | 'ai' | 'system'
   content: string
   sources?: ChatSource[]
+  typing?: boolean
 }
 
-function SourceCard({ source, index }: { source: ChatSource; index: number }): JSX.Element {
-  const [expanded, setExpanded] = useState(false)
+const INITIAL_MESSAGE: ChatMessage = {
+  key: 'system_welcome',
+  role: 'system',
+  content: '欢迎使用本地 RAG 助手，先在左侧导入文档，然后开始对话。'
+}
+
+function App(): ReactElement {
+  const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>(prefersDark ? 'dark' : 'light')
+
+  const providerTheme = useMemo(
+    () => ({
+      algorithm: themeMode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm
+    }),
+    [themeMode]
+  )
 
   return (
-    <div className="rounded-md border border-border bg-card p-2 text-xs">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center justify-between gap-2 text-left"
-      >
-        <div className="flex items-center gap-2">
-          <FileText className="h-3 w-3 text-primary" />
-          <span className="font-medium">[{index + 1}] {source.fileName}</span>
-          {source.pageNumber && <span className="text-muted-foreground">p.{source.pageNumber}</span>}
-        </div>
-        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-      </button>
-      {expanded && (
-        <div className="mt-2 border-t border-border pt-2 text-muted-foreground">{source.content}</div>
-      )}
-    </div>
+    <XProvider theme={providerTheme}>
+      <AppContent themeMode={themeMode} onThemeChange={setThemeMode} />
+    </XProvider>
   )
 }
 
-function App(): JSX.Element {
-  const { theme, toggleTheme } = useTheme()
-  const [input, setInput] = useState('')
+interface AppContentProps {
+  themeMode: 'light' | 'dark'
+  onThemeChange: (mode: 'light' | 'dark') => void
+}
+
+function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement {
+  const [messageApi, contextHolder] = antdMessage.useMessage()
+  const [inputValue, setInputValue] = useState('')
+  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE])
   const [files, setFiles] = useState<IndexedFile[]>([])
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'ai', content: "Hello! I'm your local RAG assistant. Load some documents to get started." }
-  ])
+  const [collections, setCollections] = useState<DocumentCollection[]>([])
+  const [activeDocument, setActiveDocument] = useState<string | undefined>(undefined)
+  const [activeCollectionId, setActiveCollectionId] = useState<string | undefined>(undefined)
   const [isTyping, setIsTyping] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [currentSettings, setCurrentSettings] = useState<AppSettings | null>(null)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const pendingSourcesRef = useRef<ChatSource[]>([])
-
-  const scrollToBottom = (): void => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  useEffect(() => {
-    const fetchSettings = async (): Promise<void> => {
-      try {
-        const loaded = await window.api.getSettings()
-        setCurrentSettings(loaded)
-      } catch (error) {
-        console.error('Failed to load settings:', error)
+  const [questionScope, setQuestionScope] = useState<QuestionScope>('all')
+  const [collectionModalOpen, setCollectionModalOpen] = useState(false)
+  const [editingCollection, setEditingCollection] = useState<DocumentCollection | null>(null)
+  const [collectionForm] = Form.useForm()
+  const updateActiveDocument = useCallback(
+    (path?: string) => {
+      setActiveDocument(path)
+      if (!path && questionScope === 'active') {
+        setQuestionScope('all')
       }
-    }
+    },
+    [questionScope]
+  )
 
-    void fetchSettings()
+  const bubbleListRef = useRef<BubbleListRef | null>(null)
+  const streamMessageKeyRef = useRef<string | null>(null)
+  const pendingSourcesRef = useRef<ChatSource[]>([])
+  const idCounterRef = useRef(0)
+
+  const syncKnowledgeBase = useCallback(
+    (snapshot: KnowledgeBaseSnapshot) => {
+      setFiles((prev) => mergeRecordsWithTransient(snapshot.files, prev))
+      setCollections(snapshot.collections)
+
+      if (snapshot.collections.length === 0) {
+        setActiveCollectionId(undefined)
+        updateActiveDocument(undefined)
+      } else if (!snapshot.collections.some((collection) => collection.id === activeCollectionId)) {
+        const fallbackCollection = snapshot.collections[0]
+        setActiveCollectionId(fallbackCollection?.id)
+        updateActiveDocument(fallbackCollection?.files[0])
+      } else {
+        const currentCollection = snapshot.collections.find(
+          (collection) => collection.id === activeCollectionId
+        )
+        if (currentCollection) {
+          if (currentCollection.files.length === 0) {
+            updateActiveDocument(undefined)
+          } else if (!currentCollection.files.includes(activeDocument ?? '')) {
+            updateActiveDocument(currentCollection.files[0])
+          }
+        }
+      }
+
+      if (snapshot.collections.length === 0 && questionScope === 'collection') {
+        setQuestionScope('all')
+      }
+    },
+    [activeCollectionId, activeDocument, questionScope, updateActiveDocument]
+  )
+
+  const readyDocuments = useMemo(
+    () => files.filter((file) => file.status === 'ready').length,
+    [files]
+  )
+  const processingFiles = useMemo(
+    () => files.filter((file) => file.status === 'processing'),
+    [files]
+  )
+  const errorDocuments = useMemo(
+    () => files.filter((file) => file.status === 'error').length,
+    [files]
+  )
+  const activeFile = useMemo(
+    () => files.find((file) => file.path === activeDocument),
+    [files, activeDocument]
+  )
+
+  const senderScopeOptions = useMemo(
+    () => [
+      { label: '全库', value: 'all' },
+      {
+        label: '当前文档',
+        value: 'active',
+        disabled: !activeDocument
+      },
+      {
+        label: '文档集',
+        value: 'collection',
+        disabled: collections.length === 0
+      }
+    ],
+    [activeDocument, collections.length]
+  )
+
+  const createMessageKey = useCallback((prefix: string): string => {
+    idCounterRef.current += 1
+    return `${prefix}-${idCounterRef.current}`
   }, [])
 
   useEffect(() => {
-    const handleToken = (token: string): void => {
-      setMessages((prev) => {
-        if (prev.length === 0) return prev
-        const lastIndex = prev.length - 1
-        const lastMessage = prev[lastIndex]
-        if (lastMessage.role !== 'ai') {
-          return prev
+    void (async () => {
+      try {
+        const [loadedSettings, snapshot] = await Promise.all([
+          window.api.getSettings(),
+          window.api.getKnowledgeBase()
+        ])
+        setCurrentSettings(loadedSettings)
+        syncKnowledgeBase(snapshot)
+        if (snapshot.files.length > 0) {
+          updateActiveDocument(snapshot.files[0]?.path)
         }
-        const updated = [...prev]
-        updated[lastIndex] = {
-          ...lastMessage,
-          content: lastMessage.content + token
+        if (snapshot.collections.length > 0) {
+          setActiveCollectionId((prev) => prev ?? snapshot.collections[0]?.id)
         }
-        return updated
-      })
+      } catch (error) {
+        console.error('Failed to initialize app:', error)
+      }
+    })()
+  }, [syncKnowledgeBase, updateActiveDocument])
+
+  useEffect(() => {
+    const handleToken = (tokenChunk: string): void => {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.key === streamMessageKeyRef.current
+            ? { ...message, content: message.content + tokenChunk }
+            : message
+        )
+      )
     }
 
     const handleSources = (sources: ChatSource[]): void => {
@@ -101,26 +227,33 @@ function App(): JSX.Element {
     }
 
     const handleDone = (): void => {
-      setMessages((prev) => {
-        if (prev.length === 0) return prev
-        const updated = [...prev]
-        const lastIndex = updated.length - 1
-        if (updated[lastIndex].role === 'ai') {
-          updated[lastIndex] = {
-            ...updated[lastIndex],
-            sources: pendingSourcesRef.current
-          }
-        }
-        return updated
-      })
+      if (streamMessageKeyRef.current) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.key === streamMessageKeyRef.current
+              ? { ...message, typing: false, sources: pendingSourcesRef.current }
+              : message
+          )
+        )
+      }
       pendingSourcesRef.current = []
+      streamMessageKeyRef.current = null
       setIsTyping(false)
     }
 
     const handleError = (error: string): void => {
-      setMessages((prev) => [...prev, { role: 'ai', content: `Error: ${error}` }])
+      setMessages((prev) => [
+        ...prev,
+        {
+          key: createMessageKey('error'),
+          role: 'system',
+          content: `发生错误：${error}`
+        }
+      ])
       pendingSourcesRef.current = []
+      streamMessageKeyRef.current = null
       setIsTyping(false)
+      messageApi.error('对话失败，请检查模型服务或日志信息')
     }
 
     window.api.onChatToken(handleToken)
@@ -131,234 +264,617 @@ function App(): JSX.Element {
     return () => {
       window.api.removeAllChatListeners()
     }
-  }, [])
+  }, [createMessageKey, messageApi])
 
-  const extractFileName = (filePath: string): string => filePath.split(/[\\/]/).pop() ?? filePath
+  const resolvedCollectionId = useMemo(() => {
+    if (!collections.length) {
+      return undefined
+    }
+    if (
+      activeCollectionId &&
+      collections.some((collection) => collection.id === activeCollectionId)
+    ) {
+      return activeCollectionId
+    }
+    return collections[0]?.id
+  }, [activeCollectionId, collections])
 
-  const trackFileProcessing = (filePath: string): void => {
-    setFiles((prev) => {
-      const existing = prev.find((file) => file.path === filePath)
-      if (existing) {
-        return prev.map((file) =>
+  const handleCollectionChange = useCallback(
+    (key: string) => {
+      setActiveCollectionId(key)
+      const nextCollection = collections.find((collection) => collection.id === key)
+      if (nextCollection?.files.length) {
+        updateActiveDocument(nextCollection.files[0])
+      } else {
+        updateActiveDocument(undefined)
+      }
+    },
+    [collections, updateActiveDocument]
+  )
+
+  useEffect(() => {
+    bubbleListRef.current?.scrollTo({ top: 'bottom', behavior: 'smooth' })
+  }, [messages])
+
+  const handleUpload = async (targetCollectionId?: string): Promise<void> => {
+    try {
+      const filePath = await window.api.selectFile()
+      if (!filePath) return
+
+      if (files.some((file) => file.path === filePath)) {
+        messageApi.info('该文件已经导入')
+        return
+      }
+
+      const nextFile: IndexedFile = {
+        path: filePath,
+        name: extractFileName(filePath),
+        status: 'processing',
+        updatedAt: Date.now()
+      }
+
+      setFiles((prev) => [...prev, nextFile])
+      updateActiveDocument(filePath)
+
+      const result = await window.api.processFile(filePath)
+      if (result.success) {
+        setFiles((prev) =>
+          prev.map((file) =>
+            file.path === filePath
+              ? {
+                  ...file,
+                  status: 'ready',
+                  chunkCount: result.count,
+                  preview: result.preview,
+                  error: undefined,
+                  updatedAt: Date.now()
+                }
+              : file
+          )
+        )
+
+        if (targetCollectionId) {
+          const targetCollection = collections.find(
+            (collection) => collection.id === targetCollectionId
+          )
+          if (targetCollection && !targetCollection.files.includes(filePath)) {
+            const snapshot = await window.api.updateCollection({
+              id: targetCollectionId,
+              files: [...targetCollection.files, filePath]
+            })
+            syncKnowledgeBase(snapshot)
+          }
+        }
+
+        messageApi.success('文档索引完成')
+      } else {
+        setFiles((prev) =>
+          prev.map((file) =>
+            file.path === filePath
+              ? {
+                  ...file,
+                  status: 'error',
+                  error: result.error ?? '未知错误',
+                  updatedAt: Date.now()
+                }
+              : file
+          )
+        )
+        messageApi.error(result.error ?? '文档处理失败')
+      }
+    } catch (error) {
+      console.error(error)
+      messageApi.error('文档处理失败，请查看控制台日志')
+    }
+  }
+
+  const handleReindexDocument = useCallback(
+    async (filePath: string) => {
+      setFiles((prev) =>
+        prev.map((file) =>
           file.path === filePath
             ? { ...file, status: 'processing', error: undefined, updatedAt: Date.now() }
             : file
         )
-      }
-
-      return [
-        ...prev,
-        {
-          path: filePath,
-          name: extractFileName(filePath),
-          status: 'processing',
-          updatedAt: Date.now()
-        }
-      ]
-    })
-  }
-
-  const patchFile = (filePath: string, patch: Partial<IndexedFile>): void => {
-    setFiles((prev) =>
-      prev.map((file) =>
-        file.path === filePath ? { ...file, ...patch, updatedAt: Date.now() } : file
       )
-    )
-  }
 
-  const handleUpload = async (): Promise<void> => {
-    const filePath = await window.api.selectFile()
-    if (!filePath) return
-
-    trackFileProcessing(filePath)
-    try {
-      const result = await window.api.processFile(filePath)
-      if (result.success) {
-        patchFile(filePath, {
-          status: 'ready',
-          chunkCount: result.count,
-          preview: typeof result.preview === 'string' ? result.preview : undefined,
-          error: undefined
-        })
-        console.log('File processed:', result)
-      } else {
-        patchFile(filePath, {
-          status: 'error',
-          error: typeof result.error === 'string' ? result.error : 'Unknown error'
-        })
-        console.error('File processing failed:', result.error)
+      try {
+        const snapshot = await window.api.reindexIndexedFile(filePath)
+        syncKnowledgeBase(snapshot)
+        messageApi.success('重新索引完成')
+      } catch (error) {
+        console.error('Failed to reindex document:', error)
+        setFiles((prev) =>
+          prev.map((file) =>
+            file.path === filePath
+              ? {
+                  ...file,
+                  status: 'error',
+                  error: '重新索引失败，请检查日志',
+                  updatedAt: Date.now()
+                }
+              : file
+          )
+        )
+        messageApi.error('重新索引失败，请检查日志')
       }
-    } catch (error) {
-      patchFile(filePath, {
-        status: 'error',
-        error: error instanceof Error ? error.message : String(error)
-      })
-      console.error(error)
+    },
+    [messageApi, syncKnowledgeBase]
+  )
+
+  const handleRemoveDocument = useCallback(
+    async (filePath: string) => {
+      try {
+        const snapshot = await window.api.removeIndexedFile(filePath)
+        syncKnowledgeBase(snapshot)
+        if (activeDocument === filePath) {
+          const fallbackPath = snapshot.files[0]?.path
+          updateActiveDocument(fallbackPath)
+        }
+        if (snapshot.collections.length === 0) {
+          setActiveCollectionId(undefined)
+        }
+        messageApi.success('文档已从知识库移除')
+      } catch (error) {
+        console.error('Failed to remove document:', error)
+        messageApi.error('移除文档失败，请检查日志')
+      }
+    },
+    [activeDocument, messageApi, syncKnowledgeBase, updateActiveDocument]
+  )
+
+  const handleSend = (text: string): void => {
+    const trimmed = text.trim()
+    if (!trimmed || isTyping) return
+
+    let selectedSources: string[] | undefined
+
+    if (questionScope === 'active') {
+      if (!activeDocument) {
+        messageApi.warning('请先选择一个文档')
+        return
+      }
+      selectedSources = [activeDocument]
+    } else if (questionScope === 'collection') {
+      if (!resolvedCollectionId) {
+        messageApi.warning('请先创建并选择一个文档集')
+        return
+      }
+      const targetCollection = collections.find(
+        (collection) => collection.id === resolvedCollectionId
+      )
+      if (!targetCollection) {
+        messageApi.warning('请选择有效的文档集')
+        return
+      }
+      if (targetCollection.files.length === 0) {
+        messageApi.warning('当前文档集为空，请添加文档后重试')
+        return
+      }
+      selectedSources = targetCollection.files
     }
-  }
 
-  const handleSend = (): void => {
-    if (!input.trim() || isTyping) return
+    const userMessage: ChatMessage = {
+      key: createMessageKey('user'),
+      role: 'user',
+      content: trimmed
+    }
+    const aiMessageKey = createMessageKey('ai')
+    const aiMessage: ChatMessage = {
+      key: aiMessageKey,
+      role: 'ai',
+      content: '',
+      typing: true
+    }
 
-    const question = input
-    setInput('')
-    setMessages((prev) => [...prev, { role: 'user', content: question }])
+    setMessages((prev) => [...prev, userMessage, aiMessage])
+    setInputValue('')
     setIsTyping(true)
+    streamMessageKeyRef.current = aiMessageKey
+    pendingSourcesRef.current = []
 
-    setMessages((prev) => [...prev, { role: 'ai', content: '' }])
-
-    window.api.chat(question)
+    window.api.chat({ question: trimmed, sources: selectedSources })
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
+  const handleActionClick = (actionKey: string): void => {
+    switch (actionKey) {
+      case 'newCollection':
+        openCreateCollection()
+        break
+      case 'settings':
+        setSettingsOpen(true)
+        break
+      case 'clear':
+        setMessages([INITIAL_MESSAGE])
+        setInputValue('')
+        streamMessageKeyRef.current = null
+        break
+      case 'theme':
+        onThemeChange(themeMode === 'dark' ? 'light' : 'dark')
+        break
+      default:
+        break
     }
   }
 
-  const processingFiles = files.filter((file) => file.status === 'processing')
-  const processingPreview = processingFiles
-    .slice(0, 2)
-    .map((file) => file.name)
-    .join(', ')
+  const handlePromptClick = (content: string): void => {
+    if (!content.trim()) return
+    if (!isTyping) {
+      handleSend(content)
+    } else {
+      setInputValue(content)
+    }
+  }
+
+  const collectionFileOptions = useMemo(
+    () =>
+      files
+        .filter((file) => file.status === 'ready')
+        .map((file) => ({
+          label: file.name,
+          value: file.path
+        })),
+    [files]
+  )
+
+  const handleCollectionModalClose = useCallback(() => {
+    collectionForm.resetFields()
+    setCollectionModalOpen(false)
+  }, [collectionForm])
+
+  const openCreateCollection = useCallback(() => {
+    setEditingCollection(null)
+    collectionForm.setFieldsValue({
+      name: '',
+      description: '',
+      files: []
+    })
+    setCollectionModalOpen(true)
+  }, [collectionForm])
+
+  const openEditCollection = useCallback(
+    (collection: DocumentCollection) => {
+      setEditingCollection(collection)
+      collectionForm.setFieldsValue({
+        name: collection.name,
+        description: collection.description ?? '',
+        files: collection.files
+      })
+      setCollectionModalOpen(true)
+    },
+    [collectionForm]
+  )
+
+  const handleCollectionSubmit = useCallback(async () => {
+    try {
+      const values = await collectionForm.validateFields()
+      const payload = {
+        name: values.name as string,
+        description: (values.description as string | undefined) ?? undefined,
+        files: (values.files as string[]) ?? []
+      }
+
+      const snapshot = editingCollection
+        ? await window.api.updateCollection({ id: editingCollection.id, ...payload })
+        : await window.api.createCollection(payload)
+
+      syncKnowledgeBase(snapshot)
+
+      if (!editingCollection) {
+        const createdId = snapshot.collections[snapshot.collections.length - 1]?.id
+        if (createdId) {
+          setActiveCollectionId(createdId)
+          setQuestionScope('collection')
+        }
+      }
+
+      messageApi.success(editingCollection ? '文档集已更新' : '文档集已创建')
+      handleCollectionModalClose()
+    } catch (error) {
+      if (Array.isArray((error as { errorFields?: unknown[] }).errorFields)) {
+        return
+      }
+      console.error('Failed to save collection:', error)
+      messageApi.error('保存文档集失败，请查看日志')
+    }
+  }, [collectionForm, editingCollection, handleCollectionModalClose, messageApi, syncKnowledgeBase])
+
+  const handleDeleteCollection = useCallback(
+    async (collectionId: string) => {
+      try {
+        const snapshot = await window.api.deleteCollection(collectionId)
+        syncKnowledgeBase(snapshot)
+        messageApi.success('文档集已删除')
+      } catch (error) {
+        console.error('Failed to delete collection:', error)
+        messageApi.error('删除文档集失败，请查看日志')
+      }
+    },
+    [messageApi, syncKnowledgeBase]
+  )
+
+  const bubbleItems = useMemo<BubbleItemType[]>(
+    () =>
+      messages.map((message) => ({
+        key: message.key,
+        role: message.role,
+        content:
+          message.content.trim().length > 0 ? (
+            <div className="prose prose-sm max-w-none dark:prose-invert">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+            </div>
+          ) : (
+            <span className="italic text-gray-400">……</span>
+          ),
+        typing: message.typing,
+        streaming: message.typing,
+        extraInfo: { sources: message.sources }
+      })),
+    [messages]
+  )
+
+  const promptItems = useMemo<PromptsItemType[]>(
+    () => [
+      {
+        key: 'summary',
+        label: '总结当前文档',
+        description: activeFile
+          ? `请帮我总结《${activeFile.name}》的核心观点并列出要点`
+          : '请总结当前知识库的核心观点'
+      },
+      {
+        key: 'facts',
+        label: '提取关键信息',
+        description: activeFile
+          ? `列出《${activeFile.name}》中最重要的事实与数据`
+          : '列出最新索引文档中的重要事实'
+      },
+      {
+        key: 'compare',
+        label: '内容对比',
+        description: '比较两个不同来源的观点是否一致'
+      },
+      {
+        key: 'plan',
+        label: '生成计划',
+        description: '根据文档内容生成下一步行动计划'
+      }
+    ],
+    [activeFile]
+  )
+
+  const roles = useMemo<RoleType>(
+    () => ({
+      user: {
+        placement: 'end',
+        variant: 'shadow',
+        style: {
+          backgroundColor: themeMode === 'dark' ? '#177ddc' : '#1677ff',
+          color: '#fff'
+        }
+      },
+      ai: {
+        placement: 'start',
+        variant: 'filled',
+        style: {
+          backgroundColor: themeMode === 'dark' ? '#1f1f1f' : '#fff',
+          border: themeMode === 'dark' ? '1px solid #303030' : '1px solid #f0f0f0'
+        },
+        footer: (_, info) => {
+          const sources = info.extraInfo?.sources as ChatSource[] | undefined
+          if (!sources?.length) return null
+          return (
+            <Sources
+              inline
+              items={sources.map((source, index) => ({
+                key: `${source.fileName}-${index}`,
+                title: source.fileName,
+                description: source.pageNumber ? `p.${source.pageNumber}` : undefined
+              }))}
+              title="引用来源"
+            />
+          )
+        }
+      },
+      system: {
+        placement: 'start',
+        variant: 'borderless'
+      }
+    }),
+    [themeMode]
+  )
+
+  const actionItems = useMemo(() => {
+    const themeLabel = themeMode === 'dark' ? '切换为浅色' : '切换为深色'
+    const themeIcon = themeMode === 'dark' ? <SunFilled /> : <MoonFilled />
+    return [
+      { key: 'newCollection', label: '新建文档集', icon: <PlusOutlined /> },
+      { key: 'settings', label: '模型设置', icon: <SettingOutlined /> },
+      { key: 'clear', label: '清空对话', icon: <DeleteOutlined /> },
+      { key: 'theme', label: themeLabel, icon: themeIcon }
+    ]
+  }, [themeMode])
+
+  const showWelcome = messages.length === 1 && messages[0].role === 'system'
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <Sidebar files={files} onUpload={handleUpload} />
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
+      {contextHolder}
+      <AppSidebar
+        collections={collections}
+        activeCollectionId={activeCollectionId}
+        activeDocument={activeDocument}
+        files={files}
+        onCollectionChange={handleCollectionChange}
+        onCreateCollection={openCreateCollection}
+        onEditCollection={openEditCollection}
+        onDeleteCollection={(id) => void handleDeleteCollection(id)}
+        onUpload={(id) => void handleUpload(id)}
+        onUpdateActiveDocument={updateActiveDocument}
+        onReindexDocument={(path) => void handleReindexDocument(path)}
+        onRemoveDocument={(path) => void handleRemoveDocument(path)}
+      />
 
-      <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-border bg-card p-4">
+      <section className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
           <div>
-            <h1 className="text-xl font-bold">RAG Desktop</h1>
-            <p className="hidden text-xs text-muted-foreground sm:block">Local knowledge-base assistant</p>
+            <h1>RAG Desktop</h1>
+            <p>
+              当前模型：{currentSettings?.chatModel ?? '加载中…'} ｜ 向量：
+              {currentSettings?.embeddingModel ?? '加载中…'}
+            </p>
+            <Space size="small" wrap className="app-stats">
+              <Tag color="blue">文档 {files.length}</Tag>
+              <Tag color="green">已就绪 {readyDocuments}</Tag>
+              <Tag color="orange">索引中 {processingFiles.length}</Tag>
+              <Tag color="red">失败 {errorDocuments}</Tag>
+              <Tag color="purple">文档集 {collections.length}</Tag>
+            </Space>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden flex-col text-right text-xs text-muted-foreground sm:flex">
-              <span>Chat: {currentSettings?.chatModel ?? '加载中…'}</span>
-              <span>Embed: {currentSettings?.embeddingModel ?? '加载中…'}</span>
-            </div>
-            <button
-              onClick={toggleTheme}
-              className="rounded-md p-2 hover:bg-accent"
-              title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-            >
-              {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
-            </button>
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="hidden items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent sm:flex"
-            >
-              <Settings className="h-4 w-4" />
-              Settings
-            </button>
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="sm:hidden"
-              aria-label="Open settings"
-            >
-              <Settings className="h-5 w-5" />
-            </button>
-          </div>
+          <Actions items={actionItems} onClick={({ key }) => handleActionClick(key)} />
         </header>
 
-        <main className="flex-1 overflow-auto bg-background p-4">
-          <div className="mx-auto max-w-3xl space-y-6">
-            {messages.map((msg, index) => (
-              <div
-                key={index}
-                className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {msg.role === 'ai' && (
-                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    <Bot className="h-5 w-5 text-primary" />
-                  </div>
-                )}
+        {processingFiles.length > 0 && (
+          <Alert
+            className="processing-alert"
+            type="info"
+            showIcon
+            message={`有 ${processingFiles.length} 个文档正在索引`}
+            description={processingFiles
+              .slice(0, 3)
+              .map((file) => file.name)
+              .join('，')}
+          />
+        )}
 
-                <div className="flex max-w-[80%] flex-col gap-2">
-                  <div
-                    className={`rounded-lg p-4 ${msg.role === 'user'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground'
-                      }`}
-                  >
-                    {msg.role === 'ai' ? (
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {msg.content || (isTyping && index === messages.length - 1 ? '...' : '')}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                    )}
-                  </div>
-
-                  {msg.sources && msg.sources.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-xs font-medium text-muted-foreground">📚 Sources ({msg.sources.length})</p>
-                      <div className="space-y-1">
-                        {msg.sources.map((source, i) => (
-                          <SourceCard key={`${source.fileName}-${i}`} source={source} index={i} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {msg.role === 'user' && (
-                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent">
-                    <User className="h-5 w-5" />
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {processingFiles.length > 0 && (
-              <div className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-center text-sm text-muted-foreground">
-                <div className="flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>正在索引 {processingFiles.length} 个文档…</span>
-                </div>
-                <p className="mt-1 truncate text-xs" title={processingFiles.map((file) => file.name).join(', ')}>
-                  {processingPreview}
-                  {processingFiles.length > 2 ? ' 等' : ''}
-                </p>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
+        <main className="flex flex-1 flex-col gap-4 overflow-y-auto bg-gray-50 px-6 py-6 dark:bg-gray-900">
+          {showWelcome && (
+            <Welcome
+              variant="borderless"
+              title="上传任意文档"
+              description="支持拖拽导入与多文档合并检索，引用结果自动附带来源。"
+            />
+          )}
+          <Bubble.List
+            ref={(instance) => {
+              bubbleListRef.current = instance
+            }}
+            items={bubbleItems}
+            role={roles}
+            autoScroll
+          />
+          <Divider dashed className="text-gray-400">
+            快捷提问
+          </Divider>
+          <Prompts
+            wrap
+            items={promptItems}
+            onItemClick={({ data }) =>
+              handlePromptClick(String(data.description ?? data.label ?? ''))
+            }
+          />
         </main>
 
-        <footer className="border-t border-border bg-card p-4">
-          <div className="mx-auto flex max-w-3xl gap-2">
-            <input
-              type="text"
-              className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Type your question..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isTyping}
+        <footer className="border-t border-gray-200 bg-white px-6 py-4 pb-6 dark:border-gray-700 dark:bg-gray-900">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <Segmented
+              options={senderScopeOptions}
+              size="small"
+              value={questionScope}
+              onChange={(value) => setQuestionScope(value as QuestionScope)}
             />
-            <button
-              onClick={handleSend}
-              disabled={isTyping || !input.trim()}
-              className="rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              <Send className="h-4 w-4" />
-            </button>
+            {questionScope === 'collection' && (
+              <Select
+                size="small"
+                className="min-w-[200px]"
+                placeholder="选择文档集"
+                value={resolvedCollectionId}
+                options={collections.map((collection) => ({
+                  label: `${collection.name} (${collection.files.length})`,
+                  value: collection.id
+                }))}
+                onChange={(value) => setActiveCollectionId(value)}
+              />
+            )}
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {questionScope === 'active'
+                ? '仅针对当前文档回答'
+                : questionScope === 'collection'
+                  ? '限定在所选文档集中检索'
+                  : '在整个知识库中检索'}
+            </span>
           </div>
+          <Sender
+            value={inputValue}
+            onChange={(value) => setInputValue(value)}
+            onSubmit={(value) => handleSend(value)}
+            placeholder="向本地知识库提问…"
+            loading={isTyping}
+            submitType="enter"
+          />
         </footer>
-      </div>
+      </section>
+
+      <Modal
+        title={editingCollection ? '编辑文档集' : '新建文档集'}
+        open={collectionModalOpen}
+        onCancel={handleCollectionModalClose}
+        onOk={() => void handleCollectionSubmit()}
+        okText={editingCollection ? '保存' : '创建'}
+        cancelText="取消"
+        destroyOnClose
+        centered
+      >
+        <Form form={collectionForm} layout="vertical">
+          <Form.Item
+            label="名称"
+            name="name"
+            rules={[{ required: true, message: '请输入文档集名称' }]}
+          >
+            <Input placeholder="例如：研报摘要" />
+          </Form.Item>
+          <Form.Item label="描述" name="description">
+            <Input.TextArea placeholder="补充说明该文档集的用途" rows={2} />
+          </Form.Item>
+          <Form.Item label="包含文档" name="files">
+            <Select
+              mode="multiple"
+              placeholder="选择要加入的文档（可留空，后续再导入）"
+              options={collectionFileOptions}
+              optionFilterProp="label"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <SettingsDialog
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        onSaved={(updated) => setCurrentSettings(updated)}
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={(saved) => {
+          setCurrentSettings(saved)
+          setSettingsOpen(false)
+        }}
       />
     </div>
   )
+}
+
+function extractFileName(filePath: string): string {
+  return filePath.split(/[\\/]/).pop() ?? filePath
+}
+
+function mergeRecordsWithTransient(
+  records: IndexedFileRecord[],
+  prevFiles: IndexedFile[]
+): IndexedFile[] {
+  const recordMap = new Map(records.map((record) => [record.path, record]))
+  const normalized: IndexedFile[] = records.map((record) => ({
+    ...record,
+    status: 'ready' as const,
+    error: undefined
+  }))
+  const transient = prevFiles.filter((file) => !recordMap.has(file.path) && file.status !== 'ready')
+  return [...normalized, ...transient].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export default App

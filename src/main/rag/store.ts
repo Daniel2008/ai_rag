@@ -5,6 +5,7 @@ import { Document } from '@langchain/core/documents'
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import fsPromises from 'fs/promises'
 import { getSettings } from '../settings'
 
 // Singleton instances
@@ -75,10 +76,7 @@ export async function addDocumentsToStore(docs: Document[]): Promise<void> {
   console.log(`Added ${docs.length} documents to LanceDB`)
 }
 
-export async function searchSimilarDocuments(
-  query: string,
-  k = 4
-): Promise<Document[]> {
+export async function searchSimilarDocuments(query: string, k = 4): Promise<Document[]> {
   const store = await getVectorStore()
   return store.similaritySearch(query, k)
 }
@@ -88,4 +86,12 @@ export async function closeVectorStore(): Promise<void> {
   vectorStore = null
   table = null
   db = null
+}
+
+export async function resetVectorStore(): Promise<void> {
+  const dbPath = getDbPath()
+  await closeVectorStore()
+  if (fs.existsSync(dbPath)) {
+    await fsPromises.rm(dbPath, { recursive: true, force: true })
+  }
 }

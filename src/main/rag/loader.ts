@@ -1,4 +1,3 @@
-
 import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
 import { Document } from '@langchain/core/documents'
@@ -19,12 +18,28 @@ export async function loadAndSplitFile(filePath: string): Promise<Document[]> {
   } else {
     throw new Error(`Unsupported file type: ${ext}`)
   }
-  
+
   const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 1000,
-    chunkOverlap: 200,
+    chunkSize: 1_000,
+    chunkOverlap: 200
   })
 
   const splitDocs = await splitter.splitDocuments(docs)
-  return splitDocs
+  const sanitizedDocs = splitDocs.map((doc) => {
+    const locPageNumber = doc.metadata?.loc?.pageNumber
+    const resolvedPageNumber =
+      typeof locPageNumber === 'number' && Number.isFinite(locPageNumber) ? locPageNumber : 0
+
+    const metadata: Record<string, unknown> = {
+      source: typeof doc.metadata?.source === 'string' ? doc.metadata.source : filePath,
+      pageNumber: resolvedPageNumber
+    }
+
+    return new Document({
+      pageContent: doc.pageContent,
+      metadata
+    })
+  })
+
+  return sanitizedDocs
 }

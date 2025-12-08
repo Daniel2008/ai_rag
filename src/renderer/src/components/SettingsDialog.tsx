@@ -1,133 +1,119 @@
-import type { JSX } from 'react'
-import { useState, useEffect } from 'react'
-import { X, Settings, Save } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import type { ReactElement } from 'react'
+import { Drawer, Form, Input, Button, Space, Typography, message } from 'antd'
 
 export interface AppSettings {
-    ollamaUrl: string
-    chatModel: string
-    embeddingModel: string
+  ollamaUrl: string
+  chatModel: string
+  embeddingModel: string
 }
 
 interface SettingsDialogProps {
-    isOpen: boolean
-    onClose: () => void
-    onSaved?: (settings: AppSettings) => void
+  isOpen: boolean
+  onClose: () => void
+  onSaved?: (settings: AppSettings) => void
 }
 
-export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps): JSX.Element | null {
-    const [settings, setSettings] = useState<AppSettings>({
-        ollamaUrl: 'http://localhost:11434',
-        chatModel: 'qwen2.5:7b',
-        embeddingModel: 'nomic-embed-text'
-    })
-    const [saving, setSaving] = useState(false)
-    const [saved, setSaved] = useState(false)
+export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps): ReactElement {
+  const [form] = Form.useForm<AppSettings>()
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-    useEffect(() => {
-        if (isOpen) {
-            void loadSettings()
-        }
-    }, [isOpen])
-
-    const loadSettings = async (): Promise<void> => {
-        try {
-            const loaded = await window.api.getSettings()
-            setSettings(loaded)
-        } catch (error) {
-            console.error('Failed to load settings:', error)
-        }
+  useEffect(() => {
+    if (isOpen) {
+      void loadSettings()
     }
+  }, [isOpen])
 
-    const handleSave = async (): Promise<void> => {
-        setSaving(true)
-        try {
-            await window.api.saveSettings(settings)
-            setSaved(true)
-            setTimeout(() => setSaved(false), 2000)
-            onSaved?.(settings)
-        } catch (error) {
-            console.error('Failed to save settings:', error)
-        } finally {
-            setSaving(false)
-        }
+  const loadSettings = async (): Promise<void> => {
+    setLoading(true)
+    try {
+      const current = await window.api.getSettings()
+      form.setFieldsValue(current)
+    } catch (error) {
+      console.error('Failed to load settings:', error)
+      message.error('加载设置失败，请查看控制台日志')
+    } finally {
+      setLoading(false)
     }
+  }
 
-    if (!isOpen) return null
+  const handleSave = async (): Promise<void> => {
+    try {
+      const values = await form.validateFields()
+      setSaving(true)
+      await window.api.saveSettings(values)
+      message.success('设置已保存')
+      onSaved?.(values)
+    } catch (error) {
+      if ((error as { errorFields?: unknown })?.errorFields) {
+        return
+      }
+      console.error('Failed to save settings:', error)
+      message.error('保存失败，请稍后重试')
+    } finally {
+      setSaving(false)
+    }
+  }
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-md rounded-lg bg-card p-6 shadow-xl">
-                <div className="mb-4 flex items-center justify-between">
-                    <h2 className="flex items-center gap-2 text-lg font-semibold">
-                        <Settings className="h-5 w-5" />
-                        Settings
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        className="rounded-md p-1 hover:bg-accent"
-                    >
-                        <X className="h-5 w-5" />
-                    </button>
-                </div>
+  return (
+    <Drawer
+      title="模型设置"
+      open={isOpen}
+      width={420}
+      onClose={onClose}
+      destroyOnClose
+      maskClosable={!saving}
+      styles={{
+        body: { paddingBottom: 80 }
+      }}
+    >
+      <Typography.Paragraph type="secondary" className="mb-6">
+        配置 Ollama 服务与模型名称，以便与本地向量库一同使用。
+      </Typography.Paragraph>
 
-                <div className="space-y-4">
-                    <div>
-                        <label className="mb-1 block text-sm font-medium">Ollama URL</label>
-                        <input
-                            type="text"
-                            value={settings.ollamaUrl}
-                            onChange={(e) => setSettings({ ...settings, ollamaUrl: e.target.value })}
-                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            placeholder="http://localhost:11434"
-                        />
-                    </div>
+      <Form form={form} layout="vertical" requiredMark={false} disabled={loading || saving}>
+        <Form.Item
+          label="Ollama 服务地址"
+          name="ollamaUrl"
+          rules={[{ required: true, message: '请输入 Ollama 服务地址' }]}
+        >
+          <Input placeholder="http://localhost:11434" allowClear />
+        </Form.Item>
 
-                    <div>
-                        <label className="mb-1 block text-sm font-medium">Chat Model</label>
-                        <input
-                            type="text"
-                            value={settings.chatModel}
-                            onChange={(e) => setSettings({ ...settings, chatModel: e.target.value })}
-                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            placeholder="qwen2.5:7b"
-                        />
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            The model used for chat responses
-                        </p>
-                    </div>
+        <Form.Item
+          label="对话模型"
+          name="chatModel"
+          rules={[{ required: true, message: '请输入对话模型名称' }]}
+          extra={<span className="text-xs text-gray-400">例如 qwen2.5:7b 或其他已下载模型</span>}
+        >
+          <Input allowClear />
+        </Form.Item>
 
-                    <div>
-                        <label className="mb-1 block text-sm font-medium">Embedding Model</label>
-                        <input
-                            type="text"
-                            value={settings.embeddingModel}
-                            onChange={(e) => setSettings({ ...settings, embeddingModel: e.target.value })}
-                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            placeholder="nomic-embed-text"
-                        />
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            The model used for document embeddings
-                        </p>
-                    </div>
-                </div>
+        <Form.Item
+          label="向量模型"
+          name="embeddingModel"
+          rules={[{ required: true, message: '请输入向量模型名称' }]}
+          extra={
+            <span className="text-xs text-gray-400">用于生成文档向量，建议与对话模型同源</span>
+          }
+        >
+          <Input allowClear />
+        </Form.Item>
+      </Form>
 
-                <div className="mt-6 flex justify-end gap-2">
-                    <button
-                        onClick={onClose}
-                        className="rounded-md px-4 py-2 text-sm hover:bg-accent"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                    >
-                        <Save className="h-4 w-4" />
-                        {saving ? 'Saving...' : saved ? 'Saved!' : 'Save'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    )
+      <div className="absolute bottom-0 left-0 w-full border-t border-gray-200 bg-white px-6 py-4 text-right dark:border-gray-700 dark:bg-gray-900">
+        <Space>
+          <Button onClick={onClose} disabled={saving}>
+            取消
+          </Button>
+          <Button type="primary" loading={saving} onClick={() => void handleSave()}>
+            保存
+          </Button>
+        </Space>
+      </div>
+    </Drawer>
+  )
 }
+
+export default SettingsDialog

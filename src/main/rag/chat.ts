@@ -17,23 +17,51 @@ export interface ChatResult {
   sources: ChatSource[]
 }
 
-export async function chatWithRag(question: string): Promise<ChatResult> {
+interface ChatOptions {
+  sources?: string[]
+}
+
+export async function chatWithRag(
+  question: string,
+  options: ChatOptions = {}
+): Promise<ChatResult> {
   const settings = getSettings()
-  
+
   // 1. Retrieve relevant documents
-  const contextDocs = await searchSimilarDocuments(question)
+  let contextDocs = await searchSimilarDocuments(question)
+
+  if (options.sources && options.sources.length > 0) {
+    const sourceSet = new Set(options.sources.map((source) => source.toLowerCase()))
+    const filteredDocs = contextDocs.filter((doc) => {
+      const docSource =
+        typeof doc.metadata?.source === 'string' ? doc.metadata.source.toLowerCase() : ''
+      return sourceSet.has(docSource)
+    })
+    if (filteredDocs.length > 0) {
+      contextDocs = filteredDocs
+    }
+  }
   const context = contextDocs.map((doc) => doc.pageContent).join('\n\n')
 
   console.log(`Retrieved ${contextDocs.length} docs for context`)
 
   // 2. Extract sources for citations
-  const sources: ChatSource[] = contextDocs.map((doc: Document) => ({
-    content: doc.pageContent.slice(0, 200) + (doc.pageContent.length > 200 ? '...' : ''),
-    fileName: doc.metadata?.source
-      ? String(doc.metadata.source).split(/[\\/]/).pop() || 'Unknown'
-      : 'Unknown',
-    pageNumber: doc.metadata?.loc?.pageNumber
-  }))
+  const sources: ChatSource[] = contextDocs.map((doc: Document) => {
+    const rawPageNumber =
+      typeof doc.metadata?.pageNumber === 'number'
+        ? doc.metadata.pageNumber
+        : typeof doc.metadata?.loc?.pageNumber === 'number'
+          ? doc.metadata.loc.pageNumber
+          : undefined
+
+    return {
+      content: doc.pageContent.slice(0, 200) + (doc.pageContent.length > 200 ? '...' : ''),
+      fileName: doc.metadata?.source
+        ? String(doc.metadata.source).split(/[\\/]/).pop() || 'Unknown'
+        : 'Unknown',
+      pageNumber: rawPageNumber && rawPageNumber > 0 ? rawPageNumber : undefined
+    }
+  })
 
   // 3. Construct Prompt
   const template = `You are a helpful assistant. Answer the question based on the following context. 
