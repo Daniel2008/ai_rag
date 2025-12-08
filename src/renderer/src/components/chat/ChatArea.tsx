@@ -1,6 +1,6 @@
-import { memo, useMemo, useCallback, useRef } from 'react'
+import { memo, useMemo, useCallback, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { Bubble, type BubbleItemType, Sources, ThoughtChain } from '@ant-design/x'
+import { Bubble, Sources, ThoughtChain } from '@ant-design/x'
 import XMarkdown from '@ant-design/x-markdown'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
 import type { RoleType } from '@ant-design/x/es/bubble/interface'
@@ -25,6 +25,8 @@ interface ChatAreaProps {
   copiedMessageKey: string | null
   onCopyMessage: (content: string, key: string) => void
   onRetryMessage: (content: string) => void
+  onLoadMore?: () => Promise<void>
+  hasMore?: boolean
 }
 
 function parseContent(content: string): { think: string | null; realContent: string } {
@@ -56,6 +58,30 @@ interface MessageContentProps {
   isTyping: boolean
 }
 
+// 格式化时间戳
+function formatTimestamp(timestamp?: number): string {
+  if (!timestamp) return ''
+  const date = new Date(timestamp)
+  const now = new Date()
+  const isToday = date.toDateString() === now.toDateString()
+
+  const timeStr = date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  if (isToday) {
+    return timeStr
+  }
+
+  // 如果不是今天，显示日期
+  const dateStr = date.toLocaleDateString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit'
+  })
+  return `${dateStr} ${timeStr}`
+}
+
 const MessageContent = memo(
   ({ message, copiedMessageKey, onCopyMessage, onRetryMessage, isTyping }: MessageContentProps) => {
     const { token } = antdTheme.useToken()
@@ -66,8 +92,16 @@ const MessageContent = memo(
     const renderMessageActions = useCallback(() => {
       if (message.role === 'system') return null
 
+      const timeStr = formatTimestamp(message.timestamp)
+
       return (
-        <div className="message-actions flex items-center gap-1 mt-2">
+        <div className="message-actions flex items-center gap-2 mt-2">
+          {/* 时间戳 */}
+          {timeStr && (
+            <span className="text-xs opacity-60" style={{ color: token.colorTextSecondary }}>
+              {timeStr}
+            </span>
+          )}
           <Tooltip title={copiedMessageKey === message.key ? '已复制' : '复制'}>
             <Button
               type="text"
@@ -95,7 +129,15 @@ const MessageContent = memo(
           )}
         </div>
       )
-    }, [message, copiedMessageKey, token.colorSuccess, onCopyMessage, onRetryMessage, isTyping])
+    }, [
+      message,
+      copiedMessageKey,
+      token.colorSuccess,
+      token.colorTextSecondary,
+      onCopyMessage,
+      onRetryMessage,
+      isTyping
+    ])
 
     return (
       <div className="flex flex-col gap-3">
@@ -129,11 +171,12 @@ const MessageContent = memo(
     )
   },
   (prev, next) => {
-    // 自定义比较逻辑：只有当内容、typing状态、key、复制状态、是否正在打字变化时才重渲染
+    // 自定义比较逻辑：只有当内容、typing状态、key、复制状态、时间戳、是否正在打字变化时才重渲染
     return (
       prev.message.content === next.message.content &&
       prev.message.typing === next.message.typing &&
       prev.message.key === next.message.key &&
+      prev.message.timestamp === next.message.timestamp &&
       prev.copiedMessageKey === next.copiedMessageKey &&
       prev.isTyping === next.isTyping
     )
@@ -149,9 +192,35 @@ export function ChatArea({
   isTyping,
   copiedMessageKey,
   onCopyMessage,
-  onRetryMessage
+  onRetryMessage,
+  onLoadMore,
+  hasMore
 }: ChatAreaProps): ReactElement {
   const { token } = antdTheme.useToken()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  // 处理滚动加载
+  const handleScroll = useCallback(async () => {
+    const container = containerRef.current
+    if (!container || !onLoadMore || !hasMore || loadingMore) return
+
+    if (container.scrollTop === 0) {
+      setLoadingMore(true)
+      const oldScrollHeight = container.scrollHeight
+
+      await onLoadMore()
+
+      // 恢复滚动位置
+      requestAnimationFrame(() => {
+        if (container) {
+          const newScrollHeight = container.scrollHeight
+          container.scrollTop = newScrollHeight - oldScrollHeight
+        }
+      })
+      setLoadingMore(false)
+    }
+  }, [onLoadMore, hasMore, loadingMore])
 
   // 头像配置
   const userAvatar = useMemo(
@@ -197,67 +266,6 @@ export function ChatArea({
     ),
     [token.colorWarningBg, token.colorWarning]
   )
-
-  // 使用 ref 缓存生成的 BubbleItem，避免每次 render 都重新生成新的 JSX 对象
-  const bubbleItemsCache = useRef<
-    Map<string, { message: ChatMessage; item: BubbleItemType; isTyping: boolean }>
-  >(new Map())
-
-  const bubbleItems = useMemo<BubbleItemType[]>(() => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const cache = bubbleItemsCache.current
-
-    return currentMessages
-      .filter((m) => m.role !== 'system' || m.content.trim().length > 0)
-      .map((message) => {
-        const cached = cache.get(message.key)
-
-        if (cached && cached.message === message && cached.isTyping === isTyping) {
-          return cached.item
-        }
-
-        const { think, realContent } = parseContent(message.content)
-        const hasContent = realContent.trim().length > 0
-
-        const newItem: BubbleItemType = {
-          key: message.key,
-          role: message.role,
-          placement: message.role === 'user' ? ('end' as const) : ('start' as const),
-          avatar:
-            message.role === 'user'
-              ? userAvatar
-              : message.role === 'ai'
-                ? aiAvatar
-                : systemAvatar,
-          content: (
-            <MessageContent
-              message={message}
-              copiedMessageKey={copiedMessageKey}
-              onCopyMessage={onCopyMessage}
-              onRetryMessage={onRetryMessage}
-              isTyping={isTyping}
-            />
-          ),
-          // 只有在确实是打字状态且有内容时才启用 typing 效果
-          typing: message.typing && hasContent,
-          loading: message.typing && !hasContent && !think,
-          extraInfo: { sources: message.sources, timestamp: message.timestamp }
-        }
-
-        cache.set(message.key, { message, item: newItem, isTyping })
-
-        return newItem
-      })
-  }, [
-    currentMessages,
-    userAvatar,
-    aiAvatar,
-    systemAvatar,
-    copiedMessageKey,
-    onCopyMessage,
-    onRetryMessage,
-    isTyping
-  ])
 
   const roles = useMemo<RoleType>(
     () => ({
@@ -329,19 +337,56 @@ export function ChatArea({
     [token, themeMode, userAvatar, aiAvatar, systemAvatar]
   )
 
+  // 构建 Bubble.List 需要的 items 数组
+  const bubbleItems = useMemo(() => {
+    return currentMessages
+      .filter((m) => m.role !== 'system' || m.content.trim().length > 0)
+      .map((message) => {
+        const { think, realContent } = parseContent(message.content)
+        const hasContent = realContent.trim().length > 0
+        const typing = message.typing && hasContent
+        const loading = message.typing && !hasContent && !think
+
+        return {
+          key: message.key,
+          role: message.role,
+          content: (
+            <MessageContent
+              message={message}
+              copiedMessageKey={copiedMessageKey}
+              onCopyMessage={onCopyMessage}
+              onRetryMessage={onRetryMessage}
+              isTyping={isTyping}
+            />
+          ),
+          typing,
+          loading,
+          extraInfo: { sources: message.sources, timestamp: message.timestamp }
+        }
+      })
+  }, [currentMessages, isTyping, copiedMessageKey, onCopyMessage, onRetryMessage])
+
   return (
     <div
+      ref={containerRef}
+      onScroll={handleScroll}
       className="chat-bubble-list flex-1 overflow-y-auto p-6"
       style={{ background: token.colorBgLayout }}
     >
       <div className="max-w-4xl mx-auto">
+        {loadingMore && (
+          <div className="text-center py-2 text-gray-400 text-sm">加载更多消息...</div>
+        )}
         <Bubble.List
           ref={bubbleListRef}
-          items={bubbleItems}
           role={roles}
-          autoScroll
+          autoScroll={!loadingMore}
+          items={bubbleItems}
         />
       </div>
     </div>
   )
 }
+
+// 移除 RenderBubble，因为我们回到了 items 模式，直接在 useMemo 里构建 item 对象
+// MessageContent 保持不变，作为 memo 组件继续发挥作用

@@ -7,16 +7,9 @@ import { Form, FloatButton, message as antdMessage, theme as antdTheme } from 'a
 import { getTheme } from './theme'
 import { SettingsDialog, type AppSettings } from './components/SettingsDialog'
 import { AppSidebar } from './components/AppSidebar'
-import {
-  ChatSidebar,
-  WelcomeScreen,
-  ChatArea,
-  ChatInput,
-  CollectionModal
-} from './components/chat'
-import { useConversations, useChatStream, useKnowledgeBase } from './hooks'
+import { ChatSidebar, WelcomeScreen, ChatArea, ChatInput, CollectionModal } from './components/chat'
+import { useConversations, useChatWithXChat, useKnowledgeBase } from './hooks'
 import type { DocumentCollection } from './types/files'
-import type { ChatMessage } from './types/chat'
 
 function App(): ReactElement {
   const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
@@ -67,25 +60,19 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
 
   // Refs
   const bubbleListRef = useRef<BubbleListRef | null>(null)
-  const idCounterRef = useRef(0)
-
-  // 消息 ID 生成器
-  const createMessageKey = useCallback((prefix: string): string => {
-    idCounterRef.current += 1
-    return `${prefix}-${idCounterRef.current}`
-  }, [])
 
   // 对话管理 Hook
   const {
     activeConversationKey,
     currentMessages,
     conversationItems,
-    showWelcome,
     handleActiveConversationChange,
     createNewConversation,
-    updateCurrentMessages,
     handleDeleteConversation,
-    loadConversations
+    loadConversations,
+    loadMoreMessages,
+    hasMore,
+    loading: messagesLoading
   } = useConversations()
 
   // 知识库管理 Hook
@@ -107,13 +94,42 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     handleRemoveDocument
   } = useKnowledgeBase({ messageApi })
 
-  // 聊天流式响应 Hook
-  const { isTyping, setIsTyping, streamMessageKeyRef, pendingSourcesRef, handleStopGeneration } =
-    useChatStream({
-      messageApi,
-      updateCurrentMessages,
-      createMessageKey
-    })
+  // 聊天流式响应 Hook - 使用 @ant-design/x-sdk
+  const {
+    isTyping,
+    messages: chatMessages,
+    sendMessage,
+    stopGeneration
+  } = useChatWithXChat({
+    messageApi,
+    conversationKey: activeConversationKey,
+    historyMessages: currentMessages,
+    onSaveMessage: async (message) => {
+      if (activeConversationKey) {
+        await window.api.saveMessage(activeConversationKey, message)
+      }
+    },
+    onUpdateMessage: async (key, updates) => {
+      await window.api.updateMessage(key, updates)
+    }
+  })
+
+  // 合并消息：如果 chatMessages 有内容则使用，否则使用历史消息
+  const displayMessages = chatMessages.length > 0 ? chatMessages : currentMessages
+
+  // 重新计算 showWelcome - 基于 displayMessages 而不是 currentMessages
+  const shouldShowWelcome = useMemo(() => {
+    if (!activeConversationKey) return true
+    if (displayMessages.length === 0) return true
+    // 如果只有一条空的 system 消息，显示欢迎页面
+    if (
+      displayMessages.length === 1 &&
+      displayMessages[0].role === 'system' &&
+      !displayMessages[0].content
+    )
+      return true
+    return false
+  }, [activeConversationKey, displayMessages])
 
   // 初始化
   useEffect(() => {
@@ -134,80 +150,69 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         }
 
         // 加载对话
-        const { conversations: loadedConvs } = loadConversations()
-        if (loadedConvs.length === 0) {
-          createNewConversation()
-        }
+        await loadConversations()
       } catch (error) {
         console.error('Failed to initialize app:', error)
       }
     })()
-  }, [syncKnowledgeBase, setActiveDocument, setActiveCollectionId, loadConversations, createNewConversation])
+  }, [syncKnowledgeBase, setActiveDocument, setActiveCollectionId, loadConversations])
 
-  // 滚动到底部
+  // 滚动到底部 (仅当不是加载更多时)
   useEffect(() => {
-    bubbleListRef.current?.scrollTo({ top: 'bottom', behavior: 'smooth' })
-  }, [currentMessages])
+    if (!messagesLoading) {
+      // 这里很难区分是新消息还是加载更多...
+      // 简单的做法：只有当 activeConversationKey 变化或者 typing 时才滚动
+      // 或者让 ChatArea 自己处理
+    }
+    // bubbleListRef.current?.scrollTo({ top: 'bottom', behavior: 'smooth' })
+  }, [currentMessages, messagesLoading])
 
-  // 发送消息
+  // 发送消息 - 使用 useChatWithXChat 的 sendMessage
   const handleSend = useCallback(
     (text: string): void => {
       const trimmed = text.trim()
       if (!trimmed || isTyping) return
 
       // 如果没有活动对话，创建一个新的
-      if (!activeConversationKey) {
-        createNewConversation()
+      const ensureConversation = async (): Promise<string> => {
+        if (!activeConversationKey) {
+          return await createNewConversation()
+        }
+        return activeConversationKey
       }
 
-      let selectedSources: string[] | undefined
+      void (async () => {
+        await ensureConversation()
 
-      if (questionScope === 'active') {
-        if (!activeDocument) {
-          messageApi.warning('请先选择一个文档')
-          return
-        }
-        selectedSources = [activeDocument]
-      } else if (questionScope === 'collection') {
-        if (!resolvedCollectionId) {
-          messageApi.warning('请先创建并选择一个文档集')
-          return
-        }
-        const targetCollection = collections.find((c) => c.id === resolvedCollectionId)
-        if (!targetCollection) {
-          messageApi.warning('请选择有效的文档集')
-          return
-        }
-        if (targetCollection.files.length === 0) {
-          messageApi.warning('当前文档集为空，请添加文档后重试')
-          return
-        }
-        selectedSources = targetCollection.files
-      }
+        let selectedSources: string[] | undefined
 
-      const userMessage: ChatMessage = {
-        key: createMessageKey('user'),
-        role: 'user',
-        content: trimmed,
-        timestamp: Date.now()
-      }
-      const aiMessageKey = createMessageKey('ai')
-      const aiMessage: ChatMessage = {
-        key: aiMessageKey,
-        role: 'ai',
-        content: '',
-        typing: true,
-        timestamp: Date.now(),
-        status: 'pending'
-      }
+        if (questionScope === 'active') {
+          if (!activeDocument) {
+            messageApi.warning('请先选择一个文档')
+            return
+          }
+          selectedSources = [activeDocument]
+        } else if (questionScope === 'collection') {
+          if (!resolvedCollectionId) {
+            messageApi.warning('请先创建并选择一个文档集')
+            return
+          }
+          const targetCollection = collections.find((c) => c.id === resolvedCollectionId)
+          if (!targetCollection) {
+            messageApi.warning('请选择有效的文档集')
+            return
+          }
+          if (targetCollection.files.length === 0) {
+            messageApi.warning('当前文档集为空，请添加文档后重试')
+            return
+          }
+          selectedSources = targetCollection.files
+        }
 
-      updateCurrentMessages((prev) => [...prev, userMessage, aiMessage])
-      setInputValue('')
-      setIsTyping(true)
-      streamMessageKeyRef.current = aiMessageKey
-      pendingSourcesRef.current = []
-
-      window.api.chat({ question: trimmed, sources: selectedSources })
+        setInputValue('')
+        // 使用 useChatWithXChat 的 sendMessage 发送消息
+        sendMessage(trimmed, selectedSources)
+      })()
     },
     [
       isTyping,
@@ -216,13 +221,9 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
       activeDocument,
       resolvedCollectionId,
       collections,
-      createMessageKey,
-      updateCurrentMessages,
-      setIsTyping,
-      streamMessageKeyRef,
-      pendingSourcesRef,
       messageApi,
-      createNewConversation
+      createNewConversation,
+      sendMessage
     ]
   )
 
@@ -378,7 +379,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
       {/* 中间：聊天区域 */}
       <section className="flex min-w-0 flex-1 flex-col">
         <main className="flex flex-1 flex-col overflow-hidden">
-          {showWelcome ? (
+          {shouldShowWelcome ? (
             <WelcomeScreen
               themeMode={themeMode}
               readyDocuments={readyDocuments}
@@ -387,12 +388,14 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
           ) : (
             <ChatArea
               themeMode={themeMode}
-              currentMessages={currentMessages}
+              currentMessages={displayMessages}
               bubbleListRef={bubbleListRef}
               isTyping={isTyping}
               copiedMessageKey={copiedMessageKey}
               onCopyMessage={handleCopyMessage}
               onRetryMessage={handleRetryMessage}
+              onLoadMore={loadMoreMessages}
+              hasMore={hasMore}
             />
           )}
         </main>
@@ -408,12 +411,12 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
           activeFile={activeFile}
           collections={collections}
           resolvedCollectionId={resolvedCollectionId}
-          showQuickQuestions={currentMessages.length <= 1}
+          showQuickQuestions={displayMessages.length <= 1}
           onInputChange={setInputValue}
           onSubmit={handleSend}
           onQuestionScopeChange={setQuestionScope}
           onCollectionChange={setActiveCollectionId}
-          onStopGeneration={handleStopGeneration}
+          onStopGeneration={stopGeneration}
           onPromptClick={handlePromptClick}
         />
       </section>

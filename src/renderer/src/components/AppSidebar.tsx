@@ -144,6 +144,12 @@ export function AppSidebar({
       ? activeCollectionId
       : undefined
 
+  // 稳定 activeKey 数组引用，避免 Collapse 无限循环
+  const collapseActiveKey = useMemo(
+    () => (panelActiveKey ? [panelActiveKey] : []),
+    [panelActiveKey]
+  )
+
   const activeCollection = useMemo(
     () => collections.find((collection) => collection.id === panelActiveKey),
     [collections, panelActiveKey]
@@ -519,7 +525,7 @@ export function AppSidebar({
             <Collapse
               accordion
               ghost
-              activeKey={panelActiveKey ? [panelActiveKey] : []}
+              activeKey={collapseActiveKey}
               onChange={(key) => {
                 const newKey = Array.isArray(key) ? key[0] : key
                 onCollectionChange(newKey ? String(newKey) : '')

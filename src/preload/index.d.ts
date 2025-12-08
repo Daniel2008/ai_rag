@@ -6,10 +6,26 @@ export interface ChatSource {
   pageNumber?: number
 }
 
-export interface AppSettings {
-  ollamaUrl: string
+export type ModelProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek' | 'zhipu' | 'moonshot'
+
+export interface ProviderConfig {
+  apiKey?: string
+  baseUrl?: string
   chatModel: string
+  embeddingModel?: string
+}
+
+export interface AppSettings {
+  provider: ModelProvider
+  ollama: ProviderConfig
+  openai: ProviderConfig
+  anthropic: ProviderConfig
+  deepseek: ProviderConfig
+  zhipu: ProviderConfig
+  moonshot: ProviderConfig
+  embeddingProvider: 'ollama'
   embeddingModel: string
+  ollamaUrl: string
 }
 
 export interface ProcessFileResult {
@@ -17,6 +33,16 @@ export interface ProcessFileResult {
   count?: number
   preview?: string
   error?: string
+}
+
+export interface ChatMessage {
+  key: string
+  role: 'user' | 'ai' | 'system'
+  content: string
+  sources?: ChatSource[]
+  timestamp?: number
+  status?: string
+  typing?: boolean
 }
 
 // 自定义 ElectronAPI 类型
@@ -63,6 +89,19 @@ declare global {
       removeAllChatListeners: () => void
       getSettings: () => Promise<AppSettings>
       saveSettings: (settings: Partial<AppSettings>) => Promise<{ success: boolean }>
+
+      // Database APIs
+      getConversations: () => Promise<{ key: string; label: string; timestamp: number }[]>
+      createConversation: (key: string, label: string) => Promise<void>
+      deleteConversation: (key: string) => Promise<void>
+      getMessages: (
+        conversationKey: string,
+        limit?: number,
+        offset?: number
+      ) => Promise<ChatMessage[]>
+      saveMessage: (conversationKey: string, message: ChatMessage) => Promise<void>
+      updateMessage: (messageKey: string, updates: Partial<ChatMessage>) => Promise<void>
+      generateTitle: (conversationKey: string, question: string, answer: string) => Promise<string>
     }
   }
 }

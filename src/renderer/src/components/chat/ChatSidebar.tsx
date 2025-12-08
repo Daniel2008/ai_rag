@@ -9,7 +9,6 @@ import {
   SunFilled,
   PlusOutlined,
   RobotOutlined,
-  MessageOutlined,
   DatabaseOutlined,
   StarOutlined,
   EditOutlined

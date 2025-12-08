@@ -24,6 +24,7 @@ export function useChatStream({
   const [isTyping, setIsTyping] = useState(false)
   const streamMessageKeyRef = useRef<string | null>(null)
   const pendingSourcesRef = useRef<ChatSource[]>([])
+  const contentBufferRef = useRef<string>('')
 
   // 使用 ref 存储回调函数的最新引用，避免 useEffect 重新执行
   const updateCurrentMessagesRef = useRef(updateCurrentMessages)
@@ -45,7 +46,16 @@ export function useChatStream({
             : message
         )
       )
+      
+      // 保存当前生成的内容到数据库
+      window.api.updateMessage(streamMessageKeyRef.current, {
+        content: contentBufferRef.current,
+        status: 'success',
+        typing: false
+      })
+
       streamMessageKeyRef.current = null
+      contentBufferRef.current = ''
       setIsTyping(false)
       messageApiRef.current.info('已停止生成')
     }
@@ -54,6 +64,7 @@ export function useChatStream({
   // 只在组件挂载时注册事件监听器，卸载时移除
   useEffect(() => {
     const handleToken = (tokenChunk: string): void => {
+      contentBufferRef.current += tokenChunk
       updateCurrentMessagesRef.current((prev) =>
         prev.map((message) =>
           message.key === streamMessageKeyRef.current
@@ -76,8 +87,17 @@ export function useChatStream({
               : message
           )
         )
+        
+        // 保存最终消息到数据库
+        window.api.updateMessage(streamMessageKeyRef.current, {
+          content: contentBufferRef.current,
+          sources: pendingSourcesRef.current,
+          status: 'success',
+          typing: false
+        })
       }
       pendingSourcesRef.current = []
+      contentBufferRef.current = ''
       streamMessageKeyRef.current = null
       setIsTyping(false)
     }
@@ -105,7 +125,18 @@ export function useChatStream({
           }
         ]
       })
+      
+      // 更新出错的消息
+      if (streamMessageKeyRef.current) {
+        window.api.updateMessage(streamMessageKeyRef.current, {
+          content: contentBufferRef.current || '请求失败',
+          status: 'error',
+          typing: false
+        })
+      }
+      
       pendingSourcesRef.current = []
+      contentBufferRef.current = ''
       streamMessageKeyRef.current = null
       setIsTyping(false)
       messageApiRef.current.error('对话失败，请检查模型服务或日志信息')

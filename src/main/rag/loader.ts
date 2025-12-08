@@ -1,4 +1,5 @@
 import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf'
+import { DocxLoader } from '@langchain/community/document_loaders/fs/docx'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
 import { Document } from '@langchain/core/documents'
 import path from 'path'
@@ -10,6 +11,10 @@ export async function loadAndSplitFile(filePath: string): Promise<Document[]> {
 
   if (ext === '.pdf') {
     const loader = new PDFLoader(filePath)
+    docs = await loader.load()
+  } else if (ext === '.docx' || ext === '.doc') {
+    // Word 文档加载
+    const loader = new DocxLoader(filePath)
     docs = await loader.load()
   } else if (ext === '.txt' || ext === '.md') {
     // 自定义文本文件加载逻辑

@@ -5,11 +5,17 @@ import type { KnowledgeBaseSnapshot } from '../types/files'
 const electronAPI = {
   ipcRenderer: {
     send: (channel: string, ...args: unknown[]) => ipcRenderer.send(channel, ...args),
-    on: (channel: string, listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void) => {
+    on: (
+      channel: string,
+      listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void
+    ) => {
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
     },
-    once: (channel: string, listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void) => {
+    once: (
+      channel: string,
+      listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void
+    ) => {
       ipcRenderer.once(channel, listener)
     },
     invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
@@ -27,10 +33,26 @@ export interface ChatSource {
   pageNumber?: number
 }
 
-export interface AppSettings {
-  ollamaUrl: string
+export type ModelProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek' | 'zhipu' | 'moonshot'
+
+export interface ProviderConfig {
+  apiKey?: string
+  baseUrl?: string
   chatModel: string
+  embeddingModel?: string
+}
+
+export interface AppSettings {
+  provider: ModelProvider
+  ollama: ProviderConfig
+  openai: ProviderConfig
+  anthropic: ProviderConfig
+  deepseek: ProviderConfig
+  zhipu: ProviderConfig
+  moonshot: ProviderConfig
+  embeddingProvider: 'ollama'
   embeddingModel: string
+  ollamaUrl: string
 }
 
 export interface ProcessFileResult {
@@ -90,7 +112,21 @@ const api = {
   // Settings API
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: Partial<AppSettings>): Promise<{ success: boolean }> =>
-    ipcRenderer.invoke('settings:save', settings)
+    ipcRenderer.invoke('settings:save', settings),
+
+  // Database APIs
+  getConversations: () => ipcRenderer.invoke('db:getConversations'),
+  createConversation: (key: string, label: string) =>
+    ipcRenderer.invoke('db:createConversation', key, label),
+  deleteConversation: (key: string) => ipcRenderer.invoke('db:deleteConversation', key),
+  getMessages: (key: string, limit?: number, offset?: number) =>
+    ipcRenderer.invoke('db:getMessages', key, limit, offset),
+  saveMessage: (conversationKey: string, message: unknown) =>
+    ipcRenderer.invoke('db:saveMessage', conversationKey, message),
+  updateMessage: (messageKey: string, updates: unknown) =>
+    ipcRenderer.invoke('db:updateMessage', messageKey, updates),
+  generateTitle: (conversationKey: string, question: string, answer: string) =>
+    ipcRenderer.invoke('rag:generateTitle', conversationKey, question, answer)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

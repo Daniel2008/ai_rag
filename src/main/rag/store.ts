@@ -76,8 +76,41 @@ export async function addDocumentsToStore(docs: Document[]): Promise<void> {
   console.log(`Added ${docs.length} documents to LanceDB`)
 }
 
-export async function searchSimilarDocuments(query: string, k = 4): Promise<Document[]> {
+export interface SearchOptions {
+  k?: number
+  sources?: string[]
+}
+
+export async function searchSimilarDocuments(
+  query: string,
+  options: SearchOptions = {}
+): Promise<Document[]> {
+  const { k = 4, sources } = options
   const store = await getVectorStore()
+
+  // 如果指定了 sources，先检索更多文档，然后过滤
+  // 因为 LanceDB 的过滤可能不直接支持 metadata 字段
+  if (sources && sources.length > 0) {
+    // 标准化路径进行比较
+    const normalizePath = (p: string): string => {
+      return p.toLowerCase().replace(/\\/g, '/').trim()
+    }
+    const sourceSet = new Set(sources.map((s) => normalizePath(s)))
+
+    // 检索更多文档以确保有足够的匹配
+    const allDocs = await store.similaritySearch(query, k * 10)
+
+    // 过滤匹配的文档
+    const filteredDocs = allDocs.filter((doc) => {
+      const docSource =
+        typeof doc.metadata?.source === 'string' ? normalizePath(doc.metadata.source) : ''
+      return sourceSet.has(docSource)
+    })
+
+    // 返回前 k 个匹配的文档
+    return filteredDocs.slice(0, k)
+  }
+
   return store.similaritySearch(query, k)
 }
 

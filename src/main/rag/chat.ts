@@ -1,10 +1,13 @@
 import { ChatOllama } from '@langchain/ollama'
+import { ChatOpenAI } from '@langchain/openai'
+import { ChatAnthropic } from '@langchain/anthropic'
 import { StringOutputParser } from '@langchain/core/output_parsers'
 import { PromptTemplate } from '@langchain/core/prompts'
 import { searchSimilarDocuments } from './store'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { Document } from '@langchain/core/documents'
-import { getSettings } from '../settings'
+import { getSettings, type ModelProvider } from '../settings'
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 
 export interface ChatSource {
   content: string
@@ -21,26 +24,78 @@ interface ChatOptions {
   sources?: string[]
 }
 
+// 创建对应供应商的模型实例
+function createChatModel(provider: ModelProvider): BaseChatModel {
+  const settings = getSettings()
+
+  switch (provider) {
+    case 'ollama': {
+      const config = settings.ollama
+      return new ChatOllama({
+        baseUrl: settings.ollamaUrl || config.baseUrl,
+        model: config.chatModel
+      })
+    }
+    case 'openai': {
+      const config = settings.openai
+      return new ChatOpenAI({
+        openAIApiKey: config.apiKey,
+        configuration: { baseURL: config.baseUrl },
+        modelName: config.chatModel
+      })
+    }
+    case 'anthropic': {
+      const config = settings.anthropic
+      return new ChatAnthropic({
+        anthropicApiKey: config.apiKey,
+        anthropicApiUrl: config.baseUrl,
+        modelName: config.chatModel
+      })
+    }
+    case 'deepseek': {
+      // DeepSeek 使用 OpenAI 兼容 API
+      const config = settings.deepseek
+      return new ChatOpenAI({
+        openAIApiKey: config.apiKey,
+        configuration: { baseURL: config.baseUrl },
+        modelName: config.chatModel
+      })
+    }
+    case 'zhipu': {
+      // 智谱 AI 使用 OpenAI 兼容 API
+      const config = settings.zhipu
+      return new ChatOpenAI({
+        openAIApiKey: config.apiKey,
+        configuration: { baseURL: config.baseUrl },
+        modelName: config.chatModel
+      })
+    }
+    case 'moonshot': {
+      // Moonshot 使用 OpenAI 兼容 API
+      const config = settings.moonshot
+      return new ChatOpenAI({
+        openAIApiKey: config.apiKey,
+        configuration: { baseURL: config.baseUrl },
+        modelName: config.chatModel
+      })
+    }
+    default:
+      throw new Error(`Unsupported provider: ${provider}`)
+  }
+}
+
 export async function chatWithRag(
   question: string,
   options: ChatOptions = {}
 ): Promise<ChatResult> {
   const settings = getSettings()
 
-  // 1. Retrieve relevant documents
-  let contextDocs = await searchSimilarDocuments(question)
+  // 1. Retrieve relevant documents - 直接在检索时传入 sources 过滤
+  const contextDocs = await searchSimilarDocuments(question, {
+    k: 4,
+    sources: options.sources
+  })
 
-  if (options.sources && options.sources.length > 0) {
-    const sourceSet = new Set(options.sources.map((source) => source.toLowerCase()))
-    const filteredDocs = contextDocs.filter((doc) => {
-      const docSource =
-        typeof doc.metadata?.source === 'string' ? doc.metadata.source.toLowerCase() : ''
-      return sourceSet.has(docSource)
-    })
-    if (filteredDocs.length > 0) {
-      contextDocs = filteredDocs
-    }
-  }
   const context = contextDocs.map((doc) => doc.pageContent).join('\n\n')
 
   console.log(`Retrieved ${contextDocs.length} docs for context`)
@@ -76,11 +131,8 @@ Answer:`
 
   const prompt = PromptTemplate.fromTemplate(template)
 
-  // 4. Initialize Model with settings
-  const model = new ChatOllama({
-    baseUrl: settings.ollamaUrl,
-    model: settings.chatModel
-  })
+  // 4. Initialize Model based on current provider
+  const model = createChatModel(settings.provider)
 
   // 5. Create Chain
   const chain = RunnableSequence.from([prompt, model, new StringOutputParser()])
@@ -94,5 +146,32 @@ Answer:`
   return {
     stream,
     sources
+  }
+}
+
+export async function generateConversationTitle(question: string, answer: string): Promise<string> {
+  const settings = getSettings()
+  const model = createChatModel(settings.provider)
+
+  const template = `Summarize the following conversation into a short title (max 10 characters).
+Only return the title, nothing else. Do not use quotes.
+
+Question: {question}
+Answer: {answer}
+
+Title:`
+
+  const prompt = PromptTemplate.fromTemplate(template)
+  const chain = RunnableSequence.from([prompt, model, new StringOutputParser()])
+
+  try {
+    const title = await chain.invoke({
+      question: question.slice(0, 200),
+      answer: answer.slice(0, 200)
+    })
+    return title.trim()
+  } catch (error) {
+    console.error('Failed to generate title:', error)
+    return question.slice(0, 10)
   }
 }

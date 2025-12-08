@@ -1,9 +1,15 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, basename } from 'path'
 import icon from '../../resources/icon.png?asset'
-
-// 使用环境变量检测开发模式，因为 app.isPackaged 在模块加载时不可用
-const isDev = process.env.NODE_ENV === 'development' || !!process.env['ELECTRON_RENDERER_URL']
+import {
+  getAllConversations,
+  createConversation,
+  deleteConversation,
+  getMessages,
+  saveMessage,
+  updateMessage,
+  updateConversationTimestamp
+} from './db/service'
 import { loadAndSplitFile } from './rag/loader'
 import { addDocumentsToStore, initVectorStore } from './rag/store'
 import { chatWithRag } from './rag/chat'
@@ -18,6 +24,9 @@ import {
   deleteDocumentCollection,
   refreshKnowledgeBase
 } from './rag/knowledgeBase'
+
+// 使用环境变量检测开发模式，因为 app.isPackaged 在模块加载时不可用
+const isDev = process.env.NODE_ENV === 'development' || !!process.env['ELECTRON_RENDERER_URL']
 
 function createWindow(): void {
   // Create the browser window.
@@ -95,13 +104,34 @@ app.whenReady().then(async () => {
     }
   })
 
+  // Database IPC
+  ipcMain.handle('db:getConversations', () => getAllConversations())
+
+  ipcMain.handle('db:createConversation', (_, key: string, label: string) =>
+    createConversation(key, label)
+  )
+
+  ipcMain.handle('db:deleteConversation', (_, key: string) => deleteConversation(key))
+
+  ipcMain.handle('db:getMessages', (_, key: string, limit?: number, offset?: number) =>
+    getMessages(key, limit, offset)
+  )
+
+  ipcMain.handle('db:saveMessage', (_, conversationKey: string, message: any) =>
+    saveMessage(conversationKey, message)
+  )
+
+  ipcMain.handle('db:updateMessage', (_, messageKey: string, updates: any) =>
+    updateMessage(messageKey, updates)
+  )
+
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
   ipcMain.handle('dialog:openFile', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: 'Documents', extensions: ['pdf', 'txt', 'md'] }]
+      filters: [{ name: 'Documents', extensions: ['pdf', 'docx', 'doc', 'txt', 'md'] }]
     })
     if (canceled) return null
     return filePaths[0]
@@ -205,6 +235,16 @@ app.whenReady().then(async () => {
       event.reply('rag:chat-error', String(error))
     }
   })
+
+  ipcMain.handle(
+    'rag:generateTitle',
+    async (_, conversationKey: string, question: string, _answer: string) => {
+      // 直接使用用户第一个问题作为会话标题（截取前20个字符）
+      const title = question.trim().slice(0, 20) + (question.length > 20 ? '...' : '')
+      updateConversationTimestamp(conversationKey, title)
+      return title
+    }
+  )
 
   // Settings IPC
   ipcMain.handle('settings:get', () => {
