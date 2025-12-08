@@ -66,15 +66,19 @@ const api = {
   deleteCollection: (collectionId: string): Promise<KnowledgeBaseSnapshot> =>
     ipcRenderer.invoke('collections:delete', collectionId),
   onChatToken: (callback: (token: string) => void): void => {
+    ipcRenderer.removeAllListeners('rag:chat-token')
     ipcRenderer.on('rag:chat-token', (_, token) => callback(token))
   },
   onChatSources: (callback: (sources: ChatSource[]) => void): void => {
+    ipcRenderer.removeAllListeners('rag:chat-sources')
     ipcRenderer.on('rag:chat-sources', (_, sources) => callback(sources))
   },
   onChatDone: (callback: () => void): void => {
+    ipcRenderer.removeAllListeners('rag:chat-done')
     ipcRenderer.on('rag:chat-done', () => callback())
   },
   onChatError: (callback: (error: string) => void): void => {
+    ipcRenderer.removeAllListeners('rag:chat-error')
     ipcRenderer.on('rag:chat-error', (_, error) => callback(error))
   },
   removeAllChatListeners: (): void => {
