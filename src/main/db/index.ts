@@ -40,5 +40,8 @@ function initSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_messages_conv_key ON messages(conversation_key);
     CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
+    
+    -- 性能优化：复合索引，用于按会话查询并按时间排序
+    CREATE INDEX IF NOT EXISTS idx_messages_conv_timestamp ON messages(conversation_key, timestamp DESC);
   `)
 }

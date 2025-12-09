@@ -620,3 +620,5 @@ export function AppSidebar({
     </aside>
   )
 }
+
+export default AppSidebar

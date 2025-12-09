@@ -18,6 +18,10 @@ export interface ElectronRequestOutput {
   error?: string
 }
 
+// 性能优化：Token 批量处理配置
+const TOKEN_BATCH_INTERVAL = 50 // 批量处理间隔（毫秒）
+const TOKEN_BATCH_SIZE = 5 // 最大批量大小
+
 /**
  * Electron IPC 请求类
  * 通过 IPC 与主进程通信，实现流式响应
@@ -33,6 +37,10 @@ export class ElectronXRequest extends AbstractXRequestClass<
   private _manual = true
   private resolveHandler: (() => void) | null = null
   private chunks: ElectronRequestOutput[] = []
+
+  // 性能优化：Token 缓冲区
+  private tokenBuffer: string = ''
+  private batchTimer: ReturnType<typeof setTimeout> | null = null
 
   get asyncHandler(): Promise<void> {
     return this._asyncHandler ?? Promise.resolve()
@@ -64,17 +72,41 @@ export class ElectronXRequest extends AbstractXRequestClass<
 
     this._isRequesting = true
     this.chunks = []
+    this.tokenBuffer = ''
 
     // 创建 Promise 用于跟踪请求状态
     this._asyncHandler = new Promise<void>((resolve) => {
       this.resolveHandler = resolve
     })
 
-    // 设置 IPC 监听器
+    // 性能优化：刷新缓冲区中的 token
+    const flushTokenBuffer = (): void => {
+      if (this.tokenBuffer) {
+        const output: ElectronRequestOutput = { type: 'token', content: this.tokenBuffer }
+        this.chunks.push(output)
+        this.options.callbacks?.onUpdate?.(output, new Headers())
+        this.tokenBuffer = ''
+      }
+      if (this.batchTimer) {
+        clearTimeout(this.batchTimer)
+        this.batchTimer = null
+      }
+    }
+
+    // 性能优化：批量处理 token
     const handleToken = (token: string): void => {
-      const output: ElectronRequestOutput = { type: 'token', content: token }
-      this.chunks.push(output)
-      this.options.callbacks?.onUpdate?.(output, new Headers())
+      this.tokenBuffer += token
+
+      // 如果缓冲区足够大，立即刷新
+      if (this.tokenBuffer.length >= TOKEN_BATCH_SIZE) {
+        flushTokenBuffer()
+        return
+      }
+
+      // 否则设置定时器延迟刷新
+      if (!this.batchTimer) {
+        this.batchTimer = setTimeout(flushTokenBuffer, TOKEN_BATCH_INTERVAL)
+      }
     }
 
     const handleSources = (sources: ChatSource[]): void => {
@@ -84,6 +116,9 @@ export class ElectronXRequest extends AbstractXRequestClass<
     }
 
     const handleDone = (): void => {
+      // 刷新剩余的 token
+      flushTokenBuffer()
+
       const output: ElectronRequestOutput = { type: 'done' }
       this.chunks.push(output)
       this._isRequesting = false
@@ -93,6 +128,13 @@ export class ElectronXRequest extends AbstractXRequestClass<
     }
 
     const handleError = (error: string): void => {
+      // 清理缓冲区
+      if (this.batchTimer) {
+        clearTimeout(this.batchTimer)
+        this.batchTimer = null
+      }
+      this.tokenBuffer = ''
+
       this._isRequesting = false
       this.options.callbacks?.onError?.(new Error(error))
       this.cleanup()
@@ -100,6 +142,10 @@ export class ElectronXRequest extends AbstractXRequestClass<
     }
 
     const cleanup = (): void => {
+      if (this.batchTimer) {
+        clearTimeout(this.batchTimer)
+        this.batchTimer = null
+      }
       window.api.removeAllChatListeners()
     }
     this.cleanup = cleanup
@@ -122,11 +168,32 @@ export class ElectronXRequest extends AbstractXRequestClass<
   abort(): void {
     if (this._isRequesting) {
       this._isRequesting = false
+      // 清理 token 缓冲
+      if (this.batchTimer) {
+        clearTimeout(this.batchTimer)
+        this.batchTimer = null
+      }
+      this.tokenBuffer = ''
       // 通知成功（中止也算一种成功结束）
       this.options.callbacks?.onSuccess?.(this.chunks, new Headers())
       this.cleanup()
       this.resolveHandler?.()
     }
+  }
+
+  /**
+   * 强制清理所有监听器（用于组件卸载时）
+   */
+  dispose(): void {
+    this._isRequesting = false
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer)
+      this.batchTimer = null
+    }
+    this.tokenBuffer = ''
+    this.cleanup()
+    this.resolveHandler?.()
+    this.chunks = []
   }
 }
 

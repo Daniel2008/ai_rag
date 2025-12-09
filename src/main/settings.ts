@@ -78,15 +78,38 @@ const store = new (StoreConstructor as new (
   config: Record<string, unknown>
 ) => ElectronStore<AppSettings>)(storeConfig)
 
-export function getSettings(): AppSettings {
+// 合并供应商配置，确保所有字段都有值
+function mergeProviderConfig(
+  stored: Partial<ProviderConfig> | undefined,
+  defaultConfig: ProviderConfig
+): ProviderConfig {
+  if (!stored) return defaultConfig
   return {
-    provider: store.get('provider') || defaults.provider,
-    ollama: store.get('ollama') || defaults.ollama,
-    openai: store.get('openai') || defaults.openai,
-    anthropic: store.get('anthropic') || defaults.anthropic,
-    deepseek: store.get('deepseek') || defaults.deepseek,
-    zhipu: store.get('zhipu') || defaults.zhipu,
-    moonshot: store.get('moonshot') || defaults.moonshot,
+    apiKey: stored.apiKey ?? defaultConfig.apiKey,
+    baseUrl: stored.baseUrl ?? defaultConfig.baseUrl,
+    chatModel: stored.chatModel ?? defaultConfig.chatModel,
+    embeddingModel: stored.embeddingModel ?? defaultConfig.embeddingModel
+  }
+}
+
+export function getSettings(): AppSettings {
+  const provider = store.get('provider') || defaults.provider
+  const openaiStored = store.get('openai')
+  const deepseekStored = store.get('deepseek')
+
+  // 调试日志
+  console.log('[Settings] Current provider:', provider)
+  console.log('[Settings] OpenAI stored:', JSON.stringify(openaiStored))
+  console.log('[Settings] DeepSeek stored:', JSON.stringify(deepseekStored))
+
+  return {
+    provider,
+    ollama: mergeProviderConfig(store.get('ollama'), defaults.ollama),
+    openai: mergeProviderConfig(openaiStored, defaults.openai),
+    anthropic: mergeProviderConfig(store.get('anthropic'), defaults.anthropic),
+    deepseek: mergeProviderConfig(deepseekStored, defaults.deepseek),
+    zhipu: mergeProviderConfig(store.get('zhipu'), defaults.zhipu),
+    moonshot: mergeProviderConfig(store.get('moonshot'), defaults.moonshot),
     embeddingProvider: store.get('embeddingProvider') || defaults.embeddingProvider,
     embeddingModel: store.get('embeddingModel') || defaults.embeddingModel,
     ollamaUrl: store.get('ollamaUrl') || defaults.ollamaUrl

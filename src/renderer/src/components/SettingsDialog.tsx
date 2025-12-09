@@ -10,7 +10,8 @@ import {
   message,
   Select,
   Divider,
-  Collapse
+  Collapse,
+  AutoComplete
 } from 'antd'
 import { ApiOutlined, RobotOutlined, KeyOutlined } from '@ant-design/icons'
 
@@ -158,13 +159,13 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
           name={[provider, 'chatModel']}
           rules={[{ required: provider === currentProvider, message: '请选择或输入模型' }]}
         >
-          <Select
-            showSearch
+          <AutoComplete
             allowClear
             placeholder="选择或输入模型名称"
             options={modelOptions}
-            mode="tags"
-            maxCount={1}
+            filterOption={(inputValue, option) =>
+              option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
+            }
           />
         </Form.Item>
       </div>
@@ -235,13 +236,13 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
           name="embeddingModel"
           rules={[{ required: true, message: '请选择向量模型' }]}
         >
-          <Select
-            showSearch
+          <AutoComplete
             allowClear
-            placeholder="选择向量模型"
+            placeholder="选择或输入向量模型"
             options={EMBEDDING_MODELS.map((m) => ({ value: m, label: m }))}
-            mode="tags"
-            maxCount={1}
+            filterOption={(inputValue, option) =>
+              option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
+            }
           />
         </Form.Item>
 

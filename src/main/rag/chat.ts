@@ -28,9 +28,12 @@ interface ChatOptions {
 function createChatModel(provider: ModelProvider): BaseChatModel {
   const settings = getSettings()
 
+  console.log(`[Chat] Creating model for provider: ${provider}`)
+
   switch (provider) {
     case 'ollama': {
       const config = settings.ollama
+      console.log(`[Chat] Ollama config:`, { baseUrl: settings.ollamaUrl, model: config.chatModel })
       return new ChatOllama({
         baseUrl: settings.ollamaUrl || config.baseUrl,
         model: config.chatModel
@@ -38,49 +41,159 @@ function createChatModel(provider: ModelProvider): BaseChatModel {
     }
     case 'openai': {
       const config = settings.openai
-      return new ChatOpenAI({
-        openAIApiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        modelName: config.chatModel
+      console.log(`[Chat] OpenAI config:`, {
+        hasApiKey: !!config.apiKey,
+        baseUrl: config.baseUrl,
+        model: config.chatModel
       })
+      if (!config.apiKey) {
+        throw new Error('OpenAI API Key 未设置，请在设置中配置')
+      }
+      // 使用类型断言避免类型实例化过深问题
+      return new ChatOpenAI({
+        apiKey: config.apiKey,
+        configuration: { baseURL: config.baseUrl },
+        model: config.chatModel
+      }) as unknown as BaseChatModel
     }
     case 'anthropic': {
       const config = settings.anthropic
+      if (!config.apiKey) {
+        throw new Error('Anthropic API Key 未设置，请在设置中配置')
+      }
+      // ChatAnthropic 使用 anthropicApiUrl 而非 baseURL
+      // 使用类型断言避免类型实例化过深问题
       return new ChatAnthropic({
         anthropicApiKey: config.apiKey,
         anthropicApiUrl: config.baseUrl,
-        modelName: config.chatModel
-      })
+        model: config.chatModel
+      }) as unknown as BaseChatModel
     }
     case 'deepseek': {
       // DeepSeek 使用 OpenAI 兼容 API
       const config = settings.deepseek
-      return new ChatOpenAI({
-        openAIApiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        modelName: config.chatModel
+      console.log(`[Chat] DeepSeek config:`, {
+        hasApiKey: !!config.apiKey,
+        apiKeyLength: config.apiKey?.length,
+        baseUrl: config.baseUrl,
+        model: config.chatModel
       })
+      if (!config.apiKey) {
+        throw new Error('DeepSeek API Key 未设置，请在设置中配置')
+      }
+      // 使用类型断言避免类型实例化过深问题
+      return new ChatOpenAI({
+        apiKey: config.apiKey,
+        configuration: { baseURL: config.baseUrl },
+        model: config.chatModel
+      }) as unknown as BaseChatModel
     }
     case 'zhipu': {
       // 智谱 AI 使用 OpenAI 兼容 API
       const config = settings.zhipu
+      if (!config.apiKey) {
+        throw new Error('智谱 AI API Key 未设置，请在设置中配置')
+      }
+      // 使用类型断言避免类型实例化过深问题
       return new ChatOpenAI({
-        openAIApiKey: config.apiKey,
+        apiKey: config.apiKey,
         configuration: { baseURL: config.baseUrl },
-        modelName: config.chatModel
-      })
+        model: config.chatModel
+      }) as unknown as BaseChatModel
     }
     case 'moonshot': {
       // Moonshot 使用 OpenAI 兼容 API
       const config = settings.moonshot
+      if (!config.apiKey) {
+        throw new Error('Moonshot API Key 未设置，请在设置中配置')
+      }
+      // 使用类型断言避免类型实例化过深问题
       return new ChatOpenAI({
-        openAIApiKey: config.apiKey,
+        apiKey: config.apiKey,
         configuration: { baseURL: config.baseUrl },
-        modelName: config.chatModel
-      })
+        model: config.chatModel
+      }) as unknown as BaseChatModel
     }
     default:
       throw new Error(`Unsupported provider: ${provider}`)
+  }
+}
+
+// DeepSeek Reasoner 专用流式请求（支持 reasoning_content）
+async function* streamDeepSeekReasoner(
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+  prompt: string
+): AsyncGenerator<string> {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      stream: true
+    })
+  })
+
+  if (!response.ok) {
+    throw new Error(`DeepSeek API error: ${response.status} ${response.statusText}`)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('No response body')
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let hasStartedThinking = false
+  let hasEndedThinking = false
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      const data = line.slice(6)
+      if (data === '[DONE]') continue
+
+      try {
+        const json = JSON.parse(data)
+        const delta = json.choices?.[0]?.delta
+
+        // 处理思维链内容
+        if (delta?.reasoning_content) {
+          if (!hasStartedThinking) {
+            yield '<think>'
+            hasStartedThinking = true
+          }
+          yield delta.reasoning_content
+        }
+
+        // 处理正常内容
+        if (delta?.content) {
+          if (hasStartedThinking && !hasEndedThinking) {
+            yield '</think>'
+            hasEndedThinking = true
+          }
+          yield delta.content
+        }
+      } catch {
+        // 忽略解析错误
+      }
+    }
+  }
+
+  // 确保思维链标签闭合
+  if (hasStartedThinking && !hasEndedThinking) {
+    yield '</think>'
   }
 }
 
@@ -119,6 +232,36 @@ export async function chatWithRag(
   })
 
   // 3. Construct Prompt
+  const promptText = `You are a helpful assistant. Answer the question based on the following context. 
+If the context doesn't contain relevant information, say so.
+
+Context:
+${context}
+
+Question: ${question}
+
+Answer:`
+
+  // 4. 检查是否是 DeepSeek Reasoner 模型（需要特殊处理思维链）
+  const isDeepSeekReasoner =
+    settings.provider === 'deepseek' && settings.deepseek.chatModel.includes('reasoner')
+
+  if (isDeepSeekReasoner) {
+    console.log('[Chat] Using DeepSeek Reasoner with reasoning_content support')
+    const config = settings.deepseek
+    if (!config.apiKey) {
+      throw new Error('DeepSeek API Key 未设置，请在设置中配置')
+    }
+    const stream = streamDeepSeekReasoner(
+      config.apiKey,
+      config.baseUrl || 'https://api.deepseek.com',
+      config.chatModel,
+      promptText
+    )
+    return { stream, sources }
+  }
+
+  // 5. 其他模型使用 LangChain
   const template = `You are a helpful assistant. Answer the question based on the following context. 
 If the context doesn't contain relevant information, say so.
 
@@ -130,14 +273,9 @@ Question: {question}
 Answer:`
 
   const prompt = PromptTemplate.fromTemplate(template)
-
-  // 4. Initialize Model based on current provider
   const model = createChatModel(settings.provider)
-
-  // 5. Create Chain
   const chain = RunnableSequence.from([prompt, model, new StringOutputParser()])
 
-  // 6. Run Chain (Stream)
   const stream = await chain.stream({
     context,
     question

@@ -11,6 +11,9 @@ import {
   type ElectronRequestOutput
 } from './ElectronXRequest'
 
+// 跟踪活跃的请求实例，用于清理
+const activeRequests = new Set<ElectronXRequest>()
+
 /** 聊天消息类型 */
 export interface ElectronChatMessage {
   role: 'user' | 'assistant'
@@ -38,12 +41,27 @@ export class ElectronChatProvider extends AbstractChatProvider<
 
   constructor(config: ElectronChatProviderConfig = {}) {
     super({
-      request: () =>
-        new ElectronXRequest({
+      request: () => {
+        const request = new ElectronXRequest({
           manual: true
         })
+        activeRequests.add(request)
+        return request
+      }
     })
     this.config = config
+  }
+
+  /**
+   * 清理所有活跃的请求和监听器
+   * 在组件卸载时调用
+   */
+  dispose(): void {
+    for (const request of activeRequests) {
+      request.dispose()
+    }
+    activeRequests.clear()
+    window.api.removeAllChatListeners()
   }
 
   /**

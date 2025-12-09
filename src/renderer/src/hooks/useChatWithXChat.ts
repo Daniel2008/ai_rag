@@ -3,12 +3,15 @@
  * 完全使用 useXChat 管理消息，按照官方文档的方式使用
  */
 
-import { useCallback, useEffect, useRef, useMemo } from 'react'
+import { useCallback, useEffect, useRef, useMemo, useState } from 'react'
 import { useXChat } from '@ant-design/x-sdk'
 import type { MessageInstance } from 'antd/es/message/interface'
 import type { ChatMessage, ChatSource } from '../types/chat'
 import { ElectronChatProvider, type ElectronChatMessage } from '../providers/ElectronChatProvider'
 import type { ElectronRequestInput, ElectronRequestOutput } from '../providers/ElectronXRequest'
+
+// 性能优化：内存中最大消息数量
+const MAX_MESSAGES_IN_MEMORY = 100
 
 export interface UseChatWithXChatOptions {
   messageApi: MessageInstance
@@ -74,11 +77,16 @@ export function useChatWithXChat({
   onSaveMessage,
   onUpdateMessage
 }: UseChatWithXChatOptions): UseChatWithXChatReturn {
-  // 创建 Provider 实例（使用 ref 保持稳定）
-  const providerRef = useRef<ElectronChatProvider | null>(null)
-  if (!providerRef.current) {
-    providerRef.current = new ElectronChatProvider()
-  }
+  // 按照官方文档推荐，使用 useState 保持 Provider 实例稳定
+  // https://x.ant.design/x-sdks/chat-provider-cn
+  const [provider] = useState(() => new ElectronChatProvider())
+
+  // 性能优化：组件卸载时清理 Provider 和监听器
+  useEffect(() => {
+    return () => {
+      provider.dispose()
+    }
+  }, [provider])
 
   // 持久化回调的 ref
   const onSaveMessageRef = useRef(onSaveMessage)
@@ -93,7 +101,8 @@ export function useChatWithXChat({
   // 跟踪已保存的消息 ID，避免重复保存
   const savedMessageIdsRef = useRef<Set<string>>(new Set())
 
-  // 使用 useXChat - 传入 conversationKey 来区分不同会话
+  // 按照官方文档使用 useXChat - 传入 conversationKey 来区分不同会话
+  // https://x.ant.design/x-sdks/chat-provider-cn
   const {
     messages: xMessages,
     onRequest,
@@ -106,8 +115,8 @@ export function useChatWithXChat({
     ElectronRequestInput,
     ElectronRequestOutput
   >({
-    provider: providerRef.current,
-    conversationKey: conversationKey,
+    provider,
+    conversationKey,
     requestPlaceholder: { role: 'assistant', content: '' },
     requestFallback: (_, { error }) => ({
       role: 'assistant',
@@ -132,6 +141,7 @@ export function useChatWithXChat({
     if (!conversationKey) {
       setXMessages([])
       savedMessageIdsRef.current.clear()
+      messageTimestampsRef.current.clear()
       prevHistoryLengthRef.current = 0
       return
     }
@@ -143,10 +153,20 @@ export function useChatWithXChat({
 
     // 在会话切换或历史消息刚加载完成时，加载历史消息
     if (isConversationChanged || historyJustLoaded) {
+      // 清理时间戳缓存
+      if (isConversationChanged) {
+        messageTimestampsRef.current.clear()
+      }
+
       // 将历史消息转换为 useXChat 格式
-      const xHistoryMessages = historyMessages
+      let xHistoryMessages = historyMessages
         .filter((m) => m.role !== 'system' || m.content.trim()) // 过滤空的系统消息
         .map((msg) => toXChatMessage(msg))
+
+      // 性能优化：限制内存中的消息数量
+      if (xHistoryMessages.length > MAX_MESSAGES_IN_MEMORY) {
+        xHistoryMessages = xHistoryMessages.slice(-MAX_MESSAGES_IN_MEMORY)
+      }
 
       setXMessages(xHistoryMessages)
       // 将历史消息 ID 标记为已保存
@@ -154,9 +174,22 @@ export function useChatWithXChat({
     }
   }, [conversationKey, historyMessages, setXMessages, isRequesting])
 
+  // 性能优化：定期清理超出限制的消息
+  useEffect(() => {
+    if (xMessages.length > MAX_MESSAGES_IN_MEMORY && !isRequesting) {
+      const trimmedMessages = xMessages.slice(-MAX_MESSAGES_IN_MEMORY)
+      setXMessages(trimmedMessages)
+    }
+  }, [xMessages.length, isRequesting, setXMessages])
+
+  // 缓存消息的时间戳，避免每次渲染都生成新值
+  const messageTimestampsRef = useRef<Map<string, number>>(new Map())
+
   // 将 xMessages 转换为 ChatMessage 格式用于渲染
   // 使用索引和内容生成唯一 key，避免 useXChat 的 msg_X ID 冲突
   const messages = useMemo<ChatMessage[]>(() => {
+    const timestampCache = messageTimestampsRef.current
+
     return xMessages.map((xMsg, index) => {
       // 对于历史消息（非 msg_ 开头），使用原始 ID
       // 对于新消息（msg_ 开头），使用索引+内容哈希确保唯一性
@@ -165,6 +198,13 @@ export function useChatWithXChat({
         ? `render-${index}-${xMsg.message.content.slice(0, 20)}`
         : originalId
 
+      // 性能优化：使用缓存的时间戳，避免每次渲染都生成新值
+      let timestamp = timestampCache.get(originalId)
+      if (!timestamp) {
+        timestamp = Date.now()
+        timestampCache.set(originalId, timestamp)
+      }
+
       return {
         key: uniqueKey,
         role: xMsg.message.role === 'user' ? 'user' : 'ai',
@@ -172,7 +212,7 @@ export function useChatWithXChat({
         sources: xMsg.message.sources,
         typing: xMsg.status === 'loading' || xMsg.status === 'updating',
         status: mapStatus(xMsg.status),
-        timestamp: Date.now()
+        timestamp
       }
     })
   }, [xMessages])

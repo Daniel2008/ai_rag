@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import type { ReactElement } from 'react'
 import { XProvider } from '@ant-design/x'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
-import { Form, FloatButton, message as antdMessage, theme as antdTheme } from 'antd'
+import { Form, FloatButton, message as antdMessage, theme as antdTheme, Spin } from 'antd'
 
 import { getTheme } from './theme'
-import { SettingsDialog, type AppSettings } from './components/SettingsDialog'
-import { AppSidebar } from './components/AppSidebar'
+import type { AppSettings } from './components/SettingsDialog'
 import { ChatSidebar, WelcomeScreen, ChatArea, ChatInput, CollectionModal } from './components/chat'
 import { useConversations, useChatWithXChat, useKnowledgeBase } from './hooks'
 import type { DocumentCollection } from './types/files'
+
+// 性能优化：懒加载设置对话框和知识库面板
+const SettingsDialog = lazy(() => import('./components/SettingsDialog'))
+const AppSidebar = lazy(() => import('./components/AppSidebar'))
 
 function App(): ReactElement {
   const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
@@ -396,6 +399,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
               onRetryMessage={handleRetryMessage}
               onLoadMore={loadMoreMessages}
               hasMore={hasMore}
+              conversationKey={activeConversationKey}
             />
           )}
         </main>
@@ -421,21 +425,29 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         />
       </section>
 
-      {/* 右侧：知识库面板 */}
-      <AppSidebar
-        collections={collections}
-        activeCollectionId={activeCollectionId}
-        activeDocument={activeDocument}
-        files={files}
-        onCollectionChange={(key) => setActiveCollectionId(key || undefined)}
-        onCreateCollection={openCreateCollection}
-        onEditCollection={openEditCollection}
-        onDeleteCollection={(id) => void handleDeleteCollection(id)}
-        onUpload={(targetCollectionId) => void handleUpload(targetCollectionId)}
-        onUpdateActiveDocument={setActiveDocument}
-        onReindexDocument={handleReindexDocument}
-        onRemoveDocument={handleRemoveDocument}
-      />
+      {/* 右侧：知识库面板（懒加载） */}
+      <Suspense
+        fallback={
+          <div className="w-80 flex items-center justify-center">
+            <Spin />
+          </div>
+        }
+      >
+        <AppSidebar
+          collections={collections}
+          activeCollectionId={activeCollectionId}
+          activeDocument={activeDocument}
+          files={files}
+          onCollectionChange={(key) => setActiveCollectionId(key || undefined)}
+          onCreateCollection={openCreateCollection}
+          onEditCollection={openEditCollection}
+          onDeleteCollection={(id) => void handleDeleteCollection(id)}
+          onUpload={(targetCollectionId) => void handleUpload(targetCollectionId)}
+          onUpdateActiveDocument={setActiveDocument}
+          onReindexDocument={handleReindexDocument}
+          onRemoveDocument={handleRemoveDocument}
+        />
+      </Suspense>
 
       {/* 文档集编辑弹窗 */}
       <CollectionModal
@@ -447,15 +459,19 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         onSubmit={() => void handleCollectionSubmit()}
       />
 
-      {/* 设置弹窗 */}
-      <SettingsDialog
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onSaved={(saved) => {
-          setCurrentSettings(saved)
-          setSettingsOpen(false)
-        }}
-      />
+      {/* 设置弹窗（懒加载） */}
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsDialog
+            isOpen={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            onSaved={(saved) => {
+              setCurrentSettings(saved)
+              setSettingsOpen(false)
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* 浮动按钮 - 回到顶部 */}
       <FloatButton.BackTop visibilityHeight={400} style={{ right: 340 }} />
