@@ -220,6 +220,24 @@ export function ChatArea({
   // 使用 firstKey 来判断消息是否真正属于新会话，解决异步加载时序问题
   const prevFirstKeyRef = useRef<string | undefined>(undefined)
   const needsInitialScrollRef = useRef(false)
+  // 跟踪用户是否在底部附近（用于决定是否自动滚动）
+  const isNearBottomRef = useRef(true)
+
+  // 检测用户滚动位置
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const checkScrollPosition = (): void => {
+      const { scrollTop, scrollHeight, clientHeight } = container
+      // 如果距离底部小于 150px，认为用户在底部
+      const nearBottom = scrollHeight - scrollTop - clientHeight < 150
+      isNearBottomRef.current = nearBottom
+    }
+
+    container.addEventListener('scroll', checkScrollPosition, { passive: true })
+    return () => container.removeEventListener('scroll', checkScrollPosition)
+  }, [])
 
   // 历史消息加载完成后滚动到底部（根据 Ant Design X 官方文档使用 scrollTo API）
   useEffect(() => {
@@ -235,6 +253,7 @@ export function ChatArea({
       prevConversationKeyRef.current = conversationKey
       needsInitialScrollRef.current = true // 标记需要初始滚动
       prevMessagesLengthRef.current = 0 // 重置消息计数
+      isNearBottomRef.current = true // 新会话重置为底部
     }
 
     // 初始滚动条件：需要滚动 + 有消息 + 消息数据已更新 + 非加载更多
@@ -266,13 +285,13 @@ export function ChatArea({
       setTimeout(scrollTask, 500)
     }
 
-    // 新消息滚动：非初始滚动阶段 + 消息数量增加
+    // 新消息滚动：非初始滚动阶段 + 消息数量增加 + 用户在底部附近
     const hasNewMessage =
       !needsInitialScrollRef.current &&
       currentMessages.length > prevMessagesLengthRef.current &&
       prevMessagesLengthRef.current > 0
 
-    if (hasNewMessage && !loadingMore) {
+    if (hasNewMessage && !loadingMore && isNearBottomRef.current) {
       requestAnimationFrame(() => {
         if (bubbleListRef.current && lastKey) {
           bubbleListRef.current.scrollTo({ key: lastKey, block: 'end', behavior: 'smooth' })
@@ -280,8 +299,8 @@ export function ChatArea({
       })
     }
 
-    // 正在输入时持续滚动
-    if (isTyping && currentMessages.length > 0 && !loadingMore && !needsInitialScrollRef.current) {
+    // 正在输入时持续滚动（仅当用户在底部附近时）
+    if (isTyping && currentMessages.length > 0 && !loadingMore && !needsInitialScrollRef.current && isNearBottomRef.current) {
       requestAnimationFrame(() => {
         if (bubbleListRef.current && lastKey) {
           bubbleListRef.current.scrollTo({ key: lastKey, block: 'end', behavior: 'smooth' })
@@ -505,7 +524,7 @@ export function ChatArea({
         <Bubble.List
           ref={bubbleListRef}
           role={roles}
-          autoScroll={!loadingMore}
+          autoScroll={false}
           items={bubbleItems}
         />
       </div>

@@ -39,6 +39,21 @@ const electronAPI = {
 
 // Custom APIs for renderer
 const api = {
+  // Window Control APIs
+  minimizeWindow: (): void => ipcRenderer.send('window:minimize'),
+  maximizeWindow: (): void => ipcRenderer.send('window:maximize'),
+  closeWindow: (): void => ipcRenderer.send('window:close'),
+  isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
+  onMaximizedChange: (callback: (isMaximized: boolean) => void): (() => void) => {
+    const handler = (_: Electron.IpcRendererEvent, isMaximized: boolean): void => {
+      callback(isMaximized)
+    }
+    ipcRenderer.on('window:maximized-changed', handler)
+    return () => ipcRenderer.removeListener('window:maximized-changed', handler)
+  },
+  // Platform info
+  platform: process.platform,
+
   selectFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFile'),
   processFile: (path: string): Promise<ProcessFileResult> =>
     ipcRenderer.invoke('rag:processFile', path),

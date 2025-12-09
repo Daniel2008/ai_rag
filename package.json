@@ -26,6 +26,7 @@
     "@ant-design/x": "^2.1.0",
     "@ant-design/x-markdown": "^2.1.0",
     "@ant-design/x-sdk": "^2.1.0",
+    "@huggingface/transformers": "^3.8.1",
     "@lancedb/lancedb": "^0.19.1",
     "@langchain/anthropic": "^1.2.3",
     "@langchain/community": "^1.0.7",

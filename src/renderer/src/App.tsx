@@ -13,6 +13,7 @@ import type { DocumentCollection } from './types/files'
 // 性能优化：懒加载设置对话框和知识库面板
 const SettingsDialog = lazy(() => import('./components/SettingsDialog'))
 const AppSidebar = lazy(() => import('./components/AppSidebar'))
+const TitleBar = lazy(() => import('./components/TitleBar'))
 
 function App(): ReactElement {
   const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
@@ -363,120 +364,128 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   )
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: token.colorBgLayout }}>
-      {contextHolder}
-
-      {/* 左侧：对话历史 */}
-      <ChatSidebar
-        themeMode={themeMode}
-        sidebarCollapsed={sidebarCollapsed}
-        conversationItems={conversationItems}
-        activeConversationKey={activeConversationKey}
-        readyDocuments={readyDocuments}
-        onThemeChange={onThemeChange}
-        onActiveConversationChange={handleActiveConversationChange}
-        onCreateNewConversation={createNewConversation}
-        onDeleteConversation={handleDeleteConversation}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
-
-      {/* 中间：聊天区域 */}
-      <section className="flex min-w-0 flex-1 flex-col">
-        <main className="flex flex-1 flex-col overflow-hidden">
-          {shouldShowWelcome ? (
-            <WelcomeScreen
-              themeMode={themeMode}
-              readyDocuments={readyDocuments}
-              onPromptClick={handlePromptClick}
-            />
-          ) : (
-            <ChatArea
-              themeMode={themeMode}
-              currentMessages={displayMessages}
-              bubbleListRef={bubbleListRef}
-              isTyping={isTyping}
-              copiedMessageKey={copiedMessageKey}
-              onCopyMessage={handleCopyMessage}
-              onRetryMessage={handleRetryMessage}
-              onLoadMore={loadMoreMessages}
-              hasMore={hasMore}
-              conversationKey={activeConversationKey}
-            />
-          )}
-        </main>
-
-        {/* 输入区域 */}
-        <ChatInput
-          themeMode={themeMode}
-          inputValue={inputValue}
-          isTyping={isTyping}
-          readyDocuments={readyDocuments}
-          questionScope={questionScope}
-          activeDocument={activeDocument}
-          activeFile={activeFile}
-          collections={collections}
-          resolvedCollectionId={resolvedCollectionId}
-          showQuickQuestions={displayMessages.length <= 1}
-          onInputChange={setInputValue}
-          onSubmit={handleSend}
-          onQuestionScopeChange={setQuestionScope}
-          onCollectionChange={setActiveCollectionId}
-          onStopGeneration={stopGeneration}
-          onPromptClick={handlePromptClick}
-        />
-      </section>
-
-      {/* 右侧：知识库面板（懒加载） */}
-      <Suspense
-        fallback={
-          <div className="w-80 flex items-center justify-center">
-            <Spin />
-          </div>
-        }
-      >
-        <AppSidebar
-          collections={collections}
-          activeCollectionId={activeCollectionId}
-          activeDocument={activeDocument}
-          files={files}
-          processProgress={processProgress}
-          onCollectionChange={(key) => setActiveCollectionId(key || undefined)}
-          onCreateCollection={openCreateCollection}
-          onEditCollection={openEditCollection}
-          onDeleteCollection={(id) => void handleDeleteCollection(id)}
-          onUpload={(targetCollectionId) => void handleUpload(targetCollectionId)}
-          onUpdateActiveDocument={setActiveDocument}
-          onReindexDocument={handleReindexDocument}
-          onRemoveDocument={handleRemoveDocument}
-        />
+    <div className="flex flex-col h-screen overflow-hidden" style={{ background: token.colorBgLayout }}>
+      {/* 自定义标题栏 */}
+      <Suspense fallback={<div className="h-10" style={{ background: token.colorBgElevated }} />}>
+        <TitleBar title="AI RAG Assistant" />
       </Suspense>
 
-      {/* 文档集编辑弹窗 */}
-      <CollectionModal
-        open={collectionModalOpen}
-        editingCollection={editingCollection}
-        collectionForm={collectionForm}
-        fileOptions={collectionFileOptions}
-        onClose={handleCollectionModalClose}
-        onSubmit={() => void handleCollectionSubmit()}
-      />
+      {/* 主内容区域 */}
+      <div className="flex flex-1 overflow-hidden">
+        {contextHolder}
 
-      {/* 设置弹窗（懒加载） */}
-      {settingsOpen && (
-        <Suspense fallback={null}>
-          <SettingsDialog
-            isOpen={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
-            onSaved={(saved) => {
-              setCurrentSettings(saved)
-              setSettingsOpen(false)
-            }}
+        {/* 左侧：对话历史 */}
+        <ChatSidebar
+          themeMode={themeMode}
+          sidebarCollapsed={sidebarCollapsed}
+          conversationItems={conversationItems}
+          activeConversationKey={activeConversationKey}
+          readyDocuments={readyDocuments}
+          onThemeChange={onThemeChange}
+          onActiveConversationChange={handleActiveConversationChange}
+          onCreateNewConversation={createNewConversation}
+          onDeleteConversation={handleDeleteConversation}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+
+        {/* 中间：聊天区域 */}
+        <section className="flex min-w-0 flex-1 flex-col">
+          <main className="flex flex-1 flex-col overflow-hidden">
+            {shouldShowWelcome ? (
+              <WelcomeScreen
+                themeMode={themeMode}
+                readyDocuments={readyDocuments}
+                onPromptClick={handlePromptClick}
+              />
+            ) : (
+              <ChatArea
+                themeMode={themeMode}
+                currentMessages={displayMessages}
+                bubbleListRef={bubbleListRef}
+                isTyping={isTyping}
+                copiedMessageKey={copiedMessageKey}
+                onCopyMessage={handleCopyMessage}
+                onRetryMessage={handleRetryMessage}
+                onLoadMore={loadMoreMessages}
+                hasMore={hasMore}
+                conversationKey={activeConversationKey}
+              />
+            )}
+          </main>
+
+          {/* 输入区域 */}
+          <ChatInput
+            themeMode={themeMode}
+            inputValue={inputValue}
+            isTyping={isTyping}
+            readyDocuments={readyDocuments}
+            questionScope={questionScope}
+            activeDocument={activeDocument}
+            activeFile={activeFile}
+            collections={collections}
+            resolvedCollectionId={resolvedCollectionId}
+            showQuickQuestions={displayMessages.length <= 1}
+            onInputChange={setInputValue}
+            onSubmit={handleSend}
+            onQuestionScopeChange={setQuestionScope}
+            onCollectionChange={setActiveCollectionId}
+            onStopGeneration={stopGeneration}
+            onPromptClick={handlePromptClick}
+          />
+        </section>
+
+        {/* 右侧：知识库面板（懒加载） */}
+        <Suspense
+          fallback={
+            <div className="w-80 flex items-center justify-center">
+              <Spin />
+            </div>
+          }
+        >
+          <AppSidebar
+            collections={collections}
+            activeCollectionId={activeCollectionId}
+            activeDocument={activeDocument}
+            files={files}
+            processProgress={processProgress}
+            onCollectionChange={(key) => setActiveCollectionId(key || undefined)}
+            onCreateCollection={openCreateCollection}
+            onEditCollection={openEditCollection}
+            onDeleteCollection={(id) => void handleDeleteCollection(id)}
+            onUpload={(targetCollectionId) => void handleUpload(targetCollectionId)}
+            onUpdateActiveDocument={setActiveDocument}
+            onReindexDocument={handleReindexDocument}
+            onRemoveDocument={handleRemoveDocument}
           />
         </Suspense>
-      )}
 
-      {/* 浮动按钮 - 回到顶部 */}
-      <FloatButton.BackTop visibilityHeight={400} style={{ right: 340 }} />
+        {/* 文档集编辑弹窗 */}
+        <CollectionModal
+          open={collectionModalOpen}
+          editingCollection={editingCollection}
+          collectionForm={collectionForm}
+          fileOptions={collectionFileOptions}
+          onClose={handleCollectionModalClose}
+          onSubmit={() => void handleCollectionSubmit()}
+        />
+
+        {/* 设置弹窗（懒加载） */}
+        {settingsOpen && (
+          <Suspense fallback={null}>
+            <SettingsDialog
+              isOpen={settingsOpen}
+              onClose={() => setSettingsOpen(false)}
+              onSaved={(saved) => {
+                setCurrentSettings(saved)
+                setSettingsOpen(false)
+              }}
+            />
+          </Suspense>
+        )}
+
+        {/* 浮动按钮 - 回到顶部 */}
+        <FloatButton.BackTop visibilityHeight={400} style={{ right: 340 }} />
+      </div>
     </div>
   )
 }
