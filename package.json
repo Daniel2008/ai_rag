@@ -5,13 +5,153 @@
   "main": "./out/main/index.js",
   "author": "ZhiHui Team",
   "homepage": "https://github.com/zhihui-rag",
+  "build": {
+    "appId": "com.zhihui.rag",
+    "productName": "智汇",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "buildDependenciesFromSource": false,
+    "nodeGypRebuild": false,
+    "files": [
+      "!**/.vscode/*",
+      "!**/.kilocode/*",
+      "!**/.cursor/*",
+      "!**/.trae/*",
+      "!**/.git/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,README,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
+      "!src/*",
+      "!electron.vite.config.{js,ts,mjs,cjs}",
+      "!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}",
+      "!{.env,.env.*,.npmrc,pnpm-lock.yaml}",
+      "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
+    ],
+    "asarUnpack": [
+      "resources/**",
+      "**/@lancedb/**",
+      "**/apache-arrow/**",
+      "**/@huggingface/**",
+      "**/better-sqlite3/**",
+      "**/onnxruntime-node/**",
+      "**/vectordb/**",
+      "**/*.node"
+    ],
+    "asar": true,
+    "compression": "normal",
+    "extraResources": [
+      {
+        "from": "node_modules/@lancedb",
+        "to": "node_modules/@lancedb",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "node_modules/apache-arrow",
+        "to": "node_modules/apache-arrow",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "node_modules/@huggingface/transformers",
+        "to": "node_modules/@huggingface/transformers",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "node_modules/onnxruntime-node",
+        "to": "node_modules/onnxruntime-node",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "executableName": "ZhiHui",
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "${name}-${version}-setup.${ext}",
+      "shortcutName": "${productName}",
+      "uninstallDisplayName": "${productName}",
+      "createDesktopShortcut": "always",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": [
+        {
+          "NSCameraUsageDescription": "Application requests access to the device's camera."
+        },
+        {
+          "NSMicrophoneUsageDescription": "Application requests access to the device's microphone."
+        },
+        {
+          "NSDocumentsFolderUsageDescription": "Application requests access to the user's Documents folder."
+        },
+        {
+          "NSDownloadsFolderUsageDescription": "Application requests access to the user's Downloads folder."
+        }
+      ],
+      "notarize": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "artifactName": "${name}-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage"
+        }
+      ],
+      "maintainer": "electronjs.org",
+      "category": "Utility"
+    },
+    "appImage": {
+      "artifactName": "${name}-${version}.${ext}"
+    },
+    "npmRebuild": true,
+    "publish": {
+      "provider": "generic",
+      "url": "https://example.com/auto-updates"
+    }
+  },
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "start": "electron-vite preview",
+    "start": "electron-forge start",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "build:fast": "electron-vite build",
@@ -23,7 +163,9 @@
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
     "rebuild": "electron-builder install-app-deps",
-    "icon:generate": "npx electron-icon-builder --input=build/icon.png --output=build --flatten"
+    "icon:generate": "npx electron-icon-builder --input=build/icon.png --output=build --flatten",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
   },
   "dependencies": {
     "@ant-design/cssinjs": "^2.0.1",
@@ -40,8 +182,8 @@
     "@langchain/openai": "^1.1.3",
     "@langchain/textsplitters": "^1.0.1",
     "antd": "^6.0.1",
-    "apache-arrow": "^21.1.0",
-    "better-sqlite3": "^12.5.0",
+    "apache-arrow": "^18.1.0",
+    "better-sqlite3": "11.10.0",
     "clsx": "^2.1.1",
     "docx": "^9.5.1",
     "electron-store": "^11.0.2",
@@ -49,13 +191,16 @@
     "lucide-react": "^0.556.0",
     "mammoth": "^1.11.0",
     "ollama": "^0.6.3",
+    "onnxruntime-node": "^1.23.2",
     "pdf-parse": "^1.1.1",
+    "pnpm": "^10.25.0",
     "pptxgenjs": "^4.0.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7.10.2",
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
@@ -66,13 +211,14 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.22",
-    "electron": "^39.2.6",
+    "electron": "^37.10.3",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
+    "node-gyp": "^12.1.0",
     "postcss": "^8.5.6",
     "prettier": "^3.7.4",
     "react": "^19.2.1",

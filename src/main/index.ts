@@ -1,5 +1,30 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, basename } from 'path'
+import { join, basename, dirname } from 'path'
+import Module from 'module'
+
+// 修复打包后原生模块路径解析问题
+if (app.isPackaged) {
+  // 获取 app.asar.unpacked 路径
+  const unpackedPath = join(dirname(app.getAppPath()), 'app.asar.unpacked', 'node_modules')
+
+  // 扩展模块搜索路径
+  const originalResolveLookupPaths = (Module as any)._resolveLookupPaths
+  ;(Module as any)._resolveLookupPaths = function (request: string, parent: any) {
+    const result = originalResolveLookupPaths.call(this, request, parent)
+    if (result && Array.isArray(result)) {
+      // 添加 unpacked 路径到搜索路径
+      if (!result.includes(unpackedPath)) {
+        result.unshift(unpackedPath)
+      }
+    }
+    return result
+  }
+
+  // 设置 NODE_PATH 环境变量
+  const existingNodePath = process.env.NODE_PATH || ''
+  process.env.NODE_PATH = existingNodePath ? `${unpackedPath}${require('path').delimiter}${existingNodePath}` : unpackedPath
+  ;(Module as any)._initPaths()
+}
 import icon from '../../resources/icon.png?asset'
 import {
   getAllConversations,

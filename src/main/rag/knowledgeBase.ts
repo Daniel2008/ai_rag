@@ -2,7 +2,7 @@ import ElectronStore from 'electron-store'
 import fs from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { loadAndSplitFile } from './loader'
-import { addDocumentsToStore, resetVectorStore } from './store'
+import { addDocumentsToStore, resetVectorStore, removeSourceFromStore } from './store'
 import type {
   DocumentCollection,
   IndexedFileRecord,
@@ -95,7 +95,13 @@ export async function removeIndexedFileRecord(path: string): Promise<KnowledgeBa
   }
   saveIndexedFileRecords(filtered)
   removeFileFromCollections(path)
-  return refreshKnowledgeBase()
+  try {
+    await removeSourceFromStore(path)
+  } catch (e) {
+    console.warn('Failed to remove source from store:', e)
+  }
+  pruneCollectionsForMissingFiles()
+  return getSnapshot()
 }
 
 export async function refreshKnowledgeBase(): Promise<KnowledgeBaseSnapshot> {
@@ -174,7 +180,11 @@ async function rebuildVectorStore(records: IndexedFileRecord[]): Promise<Indexed
 
   for (const record of records) {
     // 处理 URL 类型的记录
-    if (record.sourceType === 'url' || record.path.startsWith('http://') || record.path.startsWith('https://')) {
+    if (
+      record.sourceType === 'url' ||
+      record.path.startsWith('http://') ||
+      record.path.startsWith('https://')
+    ) {
       try {
         console.log('重建 URL 索引:', record.path)
         const result = await loadFromUrl(record.path)

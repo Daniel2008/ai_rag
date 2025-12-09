@@ -1,5 +1,5 @@
-import { LanceDB } from '@langchain/community/vectorstores/lancedb'
-import { connect, Connection, Table } from '@lancedb/lancedb'
+import type { LanceDB } from '@langchain/community/vectorstores/lancedb'
+import type { Connection, Table } from '@lancedb/lancedb'
 import { OllamaEmbeddings } from '@langchain/ollama'
 import { Embeddings } from '@langchain/core/embeddings'
 import { Document } from '@langchain/core/documents'
@@ -19,6 +19,19 @@ import {
 let db: Connection | null = null
 let table: Table | null = null
 let vectorStore: LanceDB | null = null
+let LanceDBCtor: typeof import('@langchain/community/vectorstores/lancedb').LanceDB | null = null
+let connectFn: typeof import('@lancedb/lancedb').connect | null = null
+
+async function loadLanceModules(): Promise<void> {
+  if (!LanceDBCtor) {
+    const mod = await import('@langchain/community/vectorstores/lancedb')
+    LanceDBCtor = mod.LanceDB
+  }
+  if (!connectFn) {
+    const mod = await import('@lancedb/lancedb')
+    connectFn = mod.connect
+  }
+}
 
 // 性能优化：缓存 Embeddings 实例
 let cachedEmbeddings: Embeddings | null = null
@@ -91,17 +104,19 @@ export async function initVectorStore(): Promise<void> {
   }
 
   try {
-    db = await connect(dbPath)
+    await loadLanceModules()
+    db = await connectFn!(dbPath)
 
     // Check if table exists
-    const tableNames = await db.tableNames()
+    const conn = db as Connection
+    const tableNames = await conn.tableNames()
 
     if (tableNames.includes(TABLE_NAME)) {
       // Open existing table
       try {
-        table = await db.openTable(TABLE_NAME)
+        table = await conn.openTable(TABLE_NAME)
         const embeddings = getEmbeddings()
-        vectorStore = new LanceDB(embeddings, { table })
+        vectorStore = new LanceDBCtor!(embeddings, { table })
         console.log('Opened existing LanceDB table')
       } catch (tableError) {
         // 表打开失败，可能是因为嵌入模型维度不匹配，标记为需要重建
@@ -129,21 +144,24 @@ async function ensureTableWithDocuments(docs: Document[]): Promise<LanceDB> {
   const embeddings = getEmbeddings()
 
   if (!db) {
-    db = await connect(dbPath)
+    await loadLanceModules()
+    db = await connectFn!(dbPath)
   }
 
   // 总是使用 fromDocuments 创建新表，这样可以确保表结构正确
   // 如果表已存在，LanceDB.fromDocuments 会添加到现有表
   console.log('Creating/updating LanceDB table with documents')
-  const store = await LanceDB.fromDocuments(docs, embeddings, {
+  await loadLanceModules()
+  const store = await LanceDBCtor!.fromDocuments(docs, embeddings, {
     uri: dbPath,
     tableName: TABLE_NAME
   })
 
   // 更新缓存的 table 引用
-  const tableNames = await db.tableNames()
+  const conn2 = db as Connection
+  const tableNames = await conn2.tableNames()
   if (tableNames.includes(TABLE_NAME)) {
-    table = await db.openTable(TABLE_NAME)
+    table = await conn2.openTable(TABLE_NAME)
   }
 
   return store
@@ -250,6 +268,36 @@ export async function resetVectorStore(): Promise<void> {
   await closeVectorStore()
   if (fs.existsSync(dbPath)) {
     await fsPromises.rm(dbPath, { recursive: true, force: true })
+  }
+}
+
+function escapePredicateValue(value: string): string {
+  return value.replace(/"/g, '\\"')
+}
+
+export async function removeSourceFromStore(source: string): Promise<void> {
+  await initVectorStore()
+  if (!db) return
+  const conn = db as Connection
+  if (!table) {
+    const names = await conn.tableNames()
+    if (!names.includes(TABLE_NAME)) return
+    table = await conn.openTable(TABLE_NAME)
+  }
+  const v = escapePredicateValue(source)
+  const predicates = [
+    `source == "${v}"`,
+    `metadata.source == "${v}"`,
+    `path == "${v}"`,
+    `url == "${v}"`
+  ]
+  for (const p of predicates) {
+    try {
+      await (table as unknown as { delete: (where: string) => Promise<void> }).delete(p)
+      break
+    } catch (e) {
+      console.warn('Delete by source failed with predicate', p, e)
+    }
   }
 }
 

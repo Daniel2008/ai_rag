@@ -14,8 +14,9 @@ export function getAllConversations(): { key: string; label: string; timestamp: 
 export function createConversation(key: string, label: string) {
   const db = getDB()
   const now = Date.now()
+  // 使用 INSERT OR IGNORE 避免重复 key 导致的错误
   const stmt = db.prepare(
-    'INSERT INTO conversations (key, label, timestamp, created_at) VALUES (?, ?, ?, ?)'
+    'INSERT OR IGNORE INTO conversations (key, label, timestamp, created_at) VALUES (?, ?, ?, ?)'
   )
   stmt.run(key, label, now, now)
 }

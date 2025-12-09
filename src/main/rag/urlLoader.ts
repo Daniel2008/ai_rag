@@ -52,9 +52,19 @@ export interface UrlLoadResult {
 const CONTENT_SELECTORS = [
   { selector: /<article[^>]*>([\s\S]*?)<\/article>/gi, weight: 100 },
   { selector: /<main[^>]*>([\s\S]*?)<\/main>/gi, weight: 90 },
-  { selector: /<div[^>]*class="[^"]*(?:post-content|article-content|entry-content|content-body|main-content)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi, weight: 85 },
-  { selector: /<div[^>]*id="[^"]*(?:content|main|article|post)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi, weight: 80 },
-  { selector: /<div[^>]*class="[^"]*(?:content|body|text)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi, weight: 70 },
+  {
+    selector:
+      /<div[^>]*class="[^"]*(?:post-content|article-content|entry-content|content-body|main-content)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    weight: 85
+  },
+  {
+    selector: /<div[^>]*id="[^"]*(?:content|main|article|post)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    weight: 80
+  },
+  {
+    selector: /<div[^>]*class="[^"]*(?:content|body|text)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    weight: 70
+  },
   { selector: /<section[^>]*class="[^"]*content[^"]*"[^>]*>([\s\S]*?)<\/section>/gi, weight: 65 }
 ]
 
@@ -133,15 +143,20 @@ function extractMetaInfo(html: string): PageMeta {
   if (titleMatch) meta.title = decodeHtmlEntities(titleMatch[1].trim())
 
   // Meta description
-  const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
+  const descMatch =
+    html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
     html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i)
   if (descMatch) meta.description = decodeHtmlEntities(descMatch[1].trim())
 
   // Meta keywords
-  const keywordsMatch = html.match(/<meta[^>]*name=["']keywords["'][^>]*content=["']([^"']+)["']/i) ||
+  const keywordsMatch =
+    html.match(/<meta[^>]*name=["']keywords["'][^>]*content=["']([^"']+)["']/i) ||
     html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']keywords["']/i)
   if (keywordsMatch) {
-    meta.keywords = keywordsMatch[1].split(/[,，]/).map(k => k.trim()).filter(k => k)
+    meta.keywords = keywordsMatch[1]
+      .split(/[,，]/)
+      .map((k) => k.trim())
+      .filter((k) => k)
   }
 
   // Author
@@ -149,20 +164,28 @@ function extractMetaInfo(html: string): PageMeta {
   if (authorMatch) meta.author = decodeHtmlEntities(authorMatch[1].trim())
 
   // Publish date
-  const dateMatch = html.match(/<meta[^>]*(?:property=["']article:published_time["']|name=["']publishdate["'])[^>]*content=["']([^"']+)["']/i) ||
-    html.match(/<time[^>]*datetime=["']([^"']+)["']/i)
+  const dateMatch =
+    html.match(
+      /<meta[^>]*(?:property=["']article:published_time["']|name=["']publishdate["'])[^>]*content=["']([^"']+)["']/i
+    ) || html.match(/<time[^>]*datetime=["']([^"']+)["']/i)
   if (dateMatch) meta.publishDate = dateMatch[1]
 
   // Open Graph
-  const ogImageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
+  const ogImageMatch = html.match(
+    /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i
+  )
   if (ogImageMatch) meta.ogImage = ogImageMatch[1]
 
-  const ogSiteMatch = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i)
+  const ogSiteMatch = html.match(
+    /<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i
+  )
   if (ogSiteMatch) meta.siteName = decodeHtmlEntities(ogSiteMatch[1])
 
   // 如果没有从 meta 获取到 title，尝试从 og:title 获取
   if (!meta.title) {
-    const ogTitleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)
+    const ogTitleMatch = html.match(
+      /<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i
+    )
     if (ogTitleMatch) meta.title = decodeHtmlEntities(ogTitleMatch[1])
   }
 
@@ -204,7 +227,10 @@ function extractPageLinks(html: string, baseUrl: string): string[] {
  * 计算文本密度得分（用于判断内容质量）
  */
 function calculateTextDensity(html: string): number {
-  const textLength = html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().length
+  const textLength = html
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim().length
   const htmlLength = html.length
   return htmlLength > 0 ? textLength / htmlLength : 0
 }
@@ -252,7 +278,10 @@ function extractMainContent(html: string): string {
 /**
  * 清理 HTML，提取纯文本内容
  */
-function cleanHtml(html: string, extractContent: boolean = true): { title: string; content: string; meta: PageMeta } {
+function cleanHtml(
+  html: string,
+  extractContent: boolean = true
+): { title: string; content: string; meta: PageMeta } {
   // 提取元信息
   const meta = extractMetaInfo(html)
 
@@ -280,8 +309,8 @@ function cleanHtml(html: string, extractContent: boolean = true): { title: strin
   // 清理多余空白
   content = content
     .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]+/g, ' ')
@@ -297,7 +326,11 @@ function cleanHtml(html: string, extractContent: boolean = true): { title: strin
 /**
  * 检测内容类型并处理
  */
-function processContent(rawContent: string, contentType: string, url: string): { title: string; content: string; meta: PageMeta } {
+function processContent(
+  rawContent: string,
+  contentType: string,
+  url: string
+): { title: string; content: string; meta: PageMeta } {
   // JSON 内容
   if (contentType.includes('application/json')) {
     try {
@@ -355,7 +388,71 @@ function processContent(rawContent: string, contentType: string, url: string): {
  * 延迟函数
  */
 function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function buildJinaReaderUrl(u: string): string {
+  try {
+    const parsed = new URL(u)
+    const proto = parsed.protocol.replace(':', '')
+    return `https://r.jina.ai/${proto}://${parsed.host}${parsed.pathname}${parsed.search}`
+  } catch {
+    return `https://r.jina.ai/https://${u}`
+  }
+}
+
+function isWikipediaUrl(u: string): boolean {
+  try {
+    const parsed = new URL(u)
+    return parsed.hostname.endsWith('wikipedia.org') && parsed.pathname.startsWith('/wiki/')
+  } catch {
+    return false
+  }
+}
+
+function getWikipediaLangAndTitle(u: string): { lang: string; title: string } | null {
+  try {
+    const parsed = new URL(u)
+    const lang = parsed.hostname.split('.')[0] || 'en'
+    const title = decodeURIComponent(parsed.pathname.replace(/^\/wiki\//, ''))
+    return { lang, title }
+  } catch {
+    return null
+  }
+}
+
+async function fetchWikipediaPlain(u: string, userAgent: string): Promise<string | null> {
+  const info = getWikipediaLangAndTitle(u)
+  if (!info) return null
+  const url = `https://${info.lang}.wikipedia.org/api/rest_v1/page/plain/${encodeURIComponent(info.title)}`
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': userAgent,
+        Accept: 'text/plain,*/*;q=0.1'
+      }
+    })
+    if (!resp.ok) return null
+    return await resp.text()
+  } catch {
+    return null
+  }
+}
+
+function toGitHubRaw(u: string): string | null {
+  try {
+    const parsed = new URL(u)
+    if (parsed.hostname === 'github.com') {
+      const m = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/)
+      if (m) {
+        const [, owner, repo, branch, pathPart] = m
+        return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${pathPart}`
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -367,13 +464,14 @@ export async function loadFromUrl(
 ): Promise<UrlLoadResult> {
   const {
     timeout = 30000,
-    extractContent = true,
+    extractContent: _extractContent = true,
     maxRetries = 2,
     extractLinks = false,
     extractMeta = true,
     minContentLength = 50,
     userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   } = options
+  void _extractContent // 保留选项以便将来使用
 
   let lastError = ''
 
@@ -384,19 +482,22 @@ export async function loadFromUrl(
       if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
         return { success: false, url, error: '仅支持 HTTP/HTTPS 协议' }
       }
+      const encodedUrl = parsedUrl.href
 
       // 发起请求
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeout)
 
-      const response = await fetch(url, {
+      const response = await fetch(encodedUrl, {
         signal: controller.signal,
         headers: {
           'User-Agent': userAgent,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,text/plain;q=0.7,*/*;q=0.5',
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,text/plain;q=0.7,*/*;q=0.5',
           'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
           'Accept-Encoding': 'identity', // 避免压缩问题
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-cache',
+          Referer: new URL(encodedUrl).origin
         },
         redirect: 'follow'
       })
@@ -412,14 +513,159 @@ export async function loadFromUrl(
             continue
           }
         }
+        const jrUrl = buildJinaReaderUrl(encodedUrl)
+        try {
+          const jrResp = await fetch(jrUrl, {
+            headers: {
+              'User-Agent': userAgent,
+              Accept: 'text/plain,*/*;q=0.1'
+            }
+          })
+          if (jrResp.ok) {
+            const jrText = await jrResp.text()
+            const contentType = 'text/plain'
+            const { title, content, meta } = processContent(jrText, contentType, url)
+            if (!content || content.length < minContentLength) {
+              return {
+                success: false,
+                url,
+                error: `页面内容过少（${content.length} 字符），最小要求 ${minContentLength} 字符`
+              }
+            }
+            const links = extractLinks ? extractPageLinks(jrText, url) : undefined
+            const splitter = new RecursiveCharacterTextSplitter({
+              chunkSize: 1000,
+              chunkOverlap: 200,
+              separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+            })
+            const docs = await splitter.createDocuments(
+              [content],
+              [
+                {
+                  source: url,
+                  title: title || url,
+                  type: 'url',
+                  fetchedAt: new Date().toISOString(),
+                  ...(extractMeta && meta.description ? { description: meta.description } : {}),
+                  ...(extractMeta && meta.author ? { author: meta.author } : {}),
+                  ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
+                }
+              ]
+            )
+            return {
+              success: true,
+              url,
+              title: title || url,
+              content,
+              documents: docs,
+              meta: extractMeta ? meta : undefined,
+              links,
+              contentLength: content.length
+            }
+          }
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : '代理抓取失败'
+        }
+        if (isWikipediaUrl(encodedUrl)) {
+          const wikiText = await fetchWikipediaPlain(encodedUrl, userAgent)
+          if (wikiText) {
+            const contentType = 'text/plain'
+            const { title, content, meta } = processContent(wikiText, contentType, url)
+            if (content && content.length >= minContentLength) {
+              const splitter = new RecursiveCharacterTextSplitter({
+                chunkSize: 1000,
+                chunkOverlap: 200,
+                separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+              })
+              const docs = await splitter.createDocuments(
+                [content],
+                [
+                  {
+                    source: url,
+                    title: title || url,
+                    type: 'url',
+                    fetchedAt: new Date().toISOString(),
+                    ...(extractMeta && meta.description ? { description: meta.description } : {}),
+                    ...(extractMeta && meta.author ? { author: meta.author } : {}),
+                    ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
+                  }
+                ]
+              )
+              return {
+                success: true,
+                url,
+                title: title || url,
+                content,
+                documents: docs,
+                meta: extractMeta ? meta : undefined,
+                contentLength: content.length
+              }
+            }
+          }
+        }
+        const ghRaw = toGitHubRaw(encodedUrl)
+        if (ghRaw) {
+          try {
+            const ghResp = await fetch(ghRaw, {
+              headers: {
+                'User-Agent': userAgent,
+                Accept: '*/*'
+              }
+            })
+            if (ghResp.ok) {
+              const ghText = await ghResp.text()
+              const contentType = 'text/plain'
+              const { title, content, meta } = processContent(ghText, contentType, url)
+              if (content && content.length >= minContentLength) {
+                const splitter = new RecursiveCharacterTextSplitter({
+                  chunkSize: 1000,
+                  chunkOverlap: 200,
+                  separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+                })
+                const docs = await splitter.createDocuments(
+                  [content],
+                  [
+                    {
+                      source: url,
+                      title: title || url,
+                      type: 'url',
+                      fetchedAt: new Date().toISOString(),
+                      ...(extractMeta && meta.description ? { description: meta.description } : {}),
+                      ...(extractMeta && meta.author ? { author: meta.author } : {}),
+                      ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
+                    }
+                  ]
+                )
+                return {
+                  success: true,
+                  url,
+                  title: title || url,
+                  content,
+                  documents: docs,
+                  meta: extractMeta ? meta : undefined,
+                  contentLength: content.length
+                }
+              }
+            }
+          } catch (e) {
+            lastError = e instanceof Error ? e.message : 'GitHub 原始内容抓取失败'
+          }
+        }
         return { success: false, url, error: lastError }
       }
 
       const contentType = response.headers.get('content-type') || 'text/html'
 
       // 检查内容类型
-      const supportedTypes = ['text/html', 'text/plain', 'application/json', 'text/markdown', 'application/xml', 'text/xml']
-      const isSupported = supportedTypes.some(t => contentType.includes(t))
+      const supportedTypes = [
+        'text/html',
+        'text/plain',
+        'application/json',
+        'text/markdown',
+        'application/xml',
+        'text/xml'
+      ]
+      const isSupported = supportedTypes.some((t) => contentType.includes(t))
 
       if (!isSupported) {
         return { success: false, url, error: `不支持的内容类型: ${contentType}` }
@@ -432,7 +678,11 @@ export async function loadFromUrl(
       const { title, content, meta } = processContent(rawContent, contentType, url)
 
       if (!content || content.length < minContentLength) {
-        return { success: false, url, error: `页面内容过少（${content.length} 字符），最小要求 ${minContentLength} 字符` }
+        return {
+          success: false,
+          url,
+          error: `页面内容过少（${content.length} 字符），最小要求 ${minContentLength} 字符`
+        }
       }
 
       // 提取链接
@@ -447,15 +697,17 @@ export async function loadFromUrl(
 
       const docs = await splitter.createDocuments(
         [content],
-        [{
-          source: url,
-          title: title || url,
-          type: 'url',
-          fetchedAt: new Date().toISOString(),
-          ...(extractMeta && meta.description ? { description: meta.description } : {}),
-          ...(extractMeta && meta.author ? { author: meta.author } : {}),
-          ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
-        }]
+        [
+          {
+            source: url,
+            title: title || url,
+            type: 'url',
+            fetchedAt: new Date().toISOString(),
+            ...(extractMeta && meta.description ? { description: meta.description } : {}),
+            ...(extractMeta && meta.author ? { author: meta.author } : {}),
+            ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
+          }
+        ]
       )
 
       return {
@@ -468,12 +720,148 @@ export async function loadFromUrl(
         links,
         contentLength: content.length
       }
-
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           lastError = '请求超时'
         } else if (error.message.includes('fetch')) {
+          const jrUrl = buildJinaReaderUrl(url)
+          try {
+            const jrResp = await fetch(jrUrl, {
+              headers: {
+                'User-Agent': userAgent,
+                Accept: 'text/plain,*/*;q=0.1'
+              }
+            })
+            if (jrResp.ok) {
+              const jrText = await jrResp.text()
+              const contentType = 'text/plain'
+              const { title, content, meta } = processContent(jrText, contentType, url)
+              if (!content || content.length < minContentLength) {
+                lastError = `页面内容过少（${content.length} 字符），最小要求 ${minContentLength} 字符`
+              } else {
+                const links = extractLinks ? extractPageLinks(jrText, url) : undefined
+                const splitter = new RecursiveCharacterTextSplitter({
+                  chunkSize: 1000,
+                  chunkOverlap: 200,
+                  separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+                })
+                const docs = await splitter.createDocuments(
+                  [content],
+                  [
+                    {
+                      source: url,
+                      title: title || url,
+                      type: 'url',
+                      fetchedAt: new Date().toISOString(),
+                      ...(extractMeta && meta.description ? { description: meta.description } : {}),
+                      ...(extractMeta && meta.author ? { author: meta.author } : {}),
+                      ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
+                    }
+                  ]
+                )
+                return {
+                  success: true,
+                  url,
+                  title: title || url,
+                  content,
+                  documents: docs,
+                  meta: extractMeta ? meta : undefined,
+                  links,
+                  contentLength: content.length
+                }
+              }
+            }
+          } catch (e) {
+            lastError = e instanceof Error ? e.message : '代理抓取失败'
+          }
+          if (isWikipediaUrl(url)) {
+            const wikiText = await fetchWikipediaPlain(url, userAgent)
+            if (wikiText) {
+              const contentType = 'text/plain'
+              const { title, content, meta } = processContent(wikiText, contentType, url)
+              if (content && content.length >= minContentLength) {
+                const splitter = new RecursiveCharacterTextSplitter({
+                  chunkSize: 1000,
+                  chunkOverlap: 200,
+                  separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+                })
+                const docs = await splitter.createDocuments(
+                  [content],
+                  [
+                    {
+                      source: url,
+                      title: title || url,
+                      type: 'url',
+                      fetchedAt: new Date().toISOString(),
+                      ...(extractMeta && meta.description ? { description: meta.description } : {}),
+                      ...(extractMeta && meta.author ? { author: meta.author } : {}),
+                      ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
+                    }
+                  ]
+                )
+                return {
+                  success: true,
+                  url,
+                  title: title || url,
+                  content,
+                  documents: docs,
+                  meta: extractMeta ? meta : undefined,
+                  contentLength: content.length
+                }
+              }
+            }
+          }
+          const ghRaw2 = toGitHubRaw(url)
+          if (ghRaw2) {
+            try {
+              const ghResp = await fetch(ghRaw2, {
+                headers: {
+                  'User-Agent': userAgent,
+                  Accept: '*/*'
+                }
+              })
+              if (ghResp.ok) {
+                const ghText = await ghResp.text()
+                const contentType = 'text/plain'
+                const { title, content, meta } = processContent(ghText, contentType, url)
+                if (content && content.length >= minContentLength) {
+                  const splitter = new RecursiveCharacterTextSplitter({
+                    chunkSize: 1000,
+                    chunkOverlap: 200,
+                    separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+                  })
+                  const docs = await splitter.createDocuments(
+                    [content],
+                    [
+                      {
+                        source: url,
+                        title: title || url,
+                        type: 'url',
+                        fetchedAt: new Date().toISOString(),
+                        ...(extractMeta && meta.description
+                          ? { description: meta.description }
+                          : {}),
+                        ...(extractMeta && meta.author ? { author: meta.author } : {}),
+                        ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
+                      }
+                    ]
+                  )
+                  return {
+                    success: true,
+                    url,
+                    title: title || url,
+                    content,
+                    documents: docs,
+                    meta: extractMeta ? meta : undefined,
+                    contentLength: content.length
+                  }
+                }
+              }
+            } catch (e) {
+              lastError = e instanceof Error ? e.message : 'GitHub 原始内容抓取失败'
+            }
+          }
           lastError = '网络连接失败'
         } else {
           lastError = error.message
@@ -500,7 +888,12 @@ export async function loadFromUrls(
   urls: string[],
   options: UrlLoadOptions = {},
   onProgress?: (current: number, total: number, url: string, result?: UrlLoadResult) => void
-): Promise<{ results: UrlLoadResult[]; documents: Document[]; successCount: number; failCount: number }> {
+): Promise<{
+  results: UrlLoadResult[]
+  documents: Document[]
+  successCount: number
+  failCount: number
+}> {
   const results: UrlLoadResult[] = []
   const allDocuments: Document[] = []
   let successCount = 0
@@ -538,7 +931,10 @@ export async function loadFromUrls(
 /**
  * 验证 URL 是否可访问
  */
-export async function validateUrl(url: string, timeout: number = 10000): Promise<{ valid: boolean; error?: string }> {
+export async function validateUrl(
+  url: string,
+  timeout: number = 10000
+): Promise<{ valid: boolean; error?: string }> {
   try {
     const parsedUrl = new URL(url)
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {

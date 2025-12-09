@@ -75,7 +75,7 @@ export async function loadAndSplitFile(filePath: string): Promise<Document[]> {
 
   // 计算每个 chunk 的位置
   let currentPosition = 0
-  const sanitizedDocs = splitDocs.map((doc, index) => {
+  const sanitizedDocs = splitDocs.map((doc) => {
     const locPageNumber = doc.metadata?.loc?.pageNumber
     const resolvedPageNumber =
       typeof locPageNumber === 'number' && Number.isFinite(locPageNumber) ? locPageNumber : 0
