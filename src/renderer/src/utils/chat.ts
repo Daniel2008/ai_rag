@@ -81,8 +81,6 @@ export function mergeRecordsWithTransient(
     status: 'ready' as const,
     error: undefined
   }))
-  const transient = prevFiles.filter(
-    (file) => !recordMap.has(file.path) && file.status !== 'ready'
-  )
+  const transient = prevFiles.filter((file) => !recordMap.has(file.path) && file.status !== 'ready')
   return [...normalized, ...transient].sort((a, b) => b.updatedAt - a.updatedAt)
 }

@@ -1,5 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { KnowledgeBaseSnapshot } from '../types/files'
+import type { ChatSource, AppSettings, ProcessFileResult } from '../types/chat'
+
+// 重新导出共享类型，保持向后兼容
+export type {
+  ChatSource,
+  ModelProvider,
+  ProviderConfig,
+  AppSettings,
+  ProcessFileResult
+} from '../types/chat'
 
 // 自定义 electronAPI 替代 @electron-toolkit/preload
 const electronAPI = {
@@ -25,41 +35,6 @@ const electronAPI = {
     platform: process.platform,
     versions: process.versions
   }
-}
-
-export interface ChatSource {
-  content: string
-  fileName: string
-  pageNumber?: number
-}
-
-export type ModelProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek' | 'zhipu' | 'moonshot'
-
-export interface ProviderConfig {
-  apiKey?: string
-  baseUrl?: string
-  chatModel: string
-  embeddingModel?: string
-}
-
-export interface AppSettings {
-  provider: ModelProvider
-  ollama: ProviderConfig
-  openai: ProviderConfig
-  anthropic: ProviderConfig
-  deepseek: ProviderConfig
-  zhipu: ProviderConfig
-  moonshot: ProviderConfig
-  embeddingProvider: 'ollama'
-  embeddingModel: string
-  ollamaUrl: string
-}
-
-export interface ProcessFileResult {
-  success: boolean
-  count?: number
-  preview?: string
-  error?: string
 }
 
 // Custom APIs for renderer
@@ -108,6 +83,16 @@ const api = {
     ipcRenderer.removeAllListeners('rag:chat-sources')
     ipcRenderer.removeAllListeners('rag:chat-done')
     ipcRenderer.removeAllListeners('rag:chat-error')
+  },
+  // 文档处理进度监听
+  onProcessProgress: (
+    callback: (progress: { stage: string; percent: number; error?: string }) => void
+  ): void => {
+    ipcRenderer.removeAllListeners('rag:process-progress')
+    ipcRenderer.on('rag:process-progress', (_, progress) => callback(progress))
+  },
+  removeProcessProgressListener: (): void => {
+    ipcRenderer.removeAllListeners('rag:process-progress')
   },
   // Settings API
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),

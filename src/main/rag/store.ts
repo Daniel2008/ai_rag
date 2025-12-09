@@ -116,18 +116,37 @@ export async function getVectorStore(): Promise<LanceDB> {
   return vectorStore
 }
 
-export async function addDocumentsToStore(docs: Document[]): Promise<void> {
+/** 进度回调函数类型 */
+export type ProgressCallback = (current: number, total: number, stage: string) => void
+
+/** 批量添加文档的批次大小 */
+const BATCH_SIZE = 10
+
+export async function addDocumentsToStore(
+  docs: Document[],
+  onProgress?: ProgressCallback
+): Promise<void> {
   if (docs.length === 0) return
+
+  const total = docs.length
 
   // 如果 vectorStore 不存在（表还没创建），使用文档来创建
   if (!vectorStore) {
+    onProgress?.(0, total, '正在创建索引...')
     vectorStore = await ensureTableWithDocuments(docs)
+    onProgress?.(total, total, '索引创建完成')
     console.log(`Created LanceDB table and added ${docs.length} documents`)
     return
   }
 
-  // vectorStore 已存在，直接添加文档
-  await vectorStore.addDocuments(docs)
+  // vectorStore 已存在，分批添加文档以报告进度
+  let processed = 0
+  for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+    const batch = docs.slice(i, i + BATCH_SIZE)
+    await vectorStore.addDocuments(batch)
+    processed += batch.length
+    onProgress?.(processed, total, `正在索引文档 (${processed}/${total})`)
+  }
   console.log(`Added ${docs.length} documents to LanceDB`)
 }
 

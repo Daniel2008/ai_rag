@@ -129,7 +129,10 @@ export function ChatSidebar({
       {/* 对话列表 */}
       <div className="flex-1 overflow-y-auto conversation-list">
         <div className="px-3 py-2">
-          <Typography.Text type="secondary" className="text-xs font-medium uppercase tracking-wider">
+          <Typography.Text
+            type="secondary"
+            className="text-xs font-medium uppercase tracking-wider"
+          >
             对话历史
           </Typography.Text>
         </div>
@@ -163,7 +166,11 @@ export function ChatSidebar({
               />
             </Tooltip>
           </Space>
-          <Badge count={readyDocuments} size="small" style={{ backgroundColor: token.colorSuccess }}>
+          <Badge
+            count={readyDocuments}
+            size="small"
+            style={{ backgroundColor: token.colorSuccess }}
+          >
             <Tooltip title="知识库文档数">
               <Button type="text" icon={<DatabaseOutlined />} />
             </Tooltip>

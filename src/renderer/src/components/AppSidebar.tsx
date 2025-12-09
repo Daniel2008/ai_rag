@@ -35,15 +35,19 @@ import {
   Collapse,
   Dropdown,
   Typography,
-  Flex
+  Flex,
+  Progress
 } from 'antd'
 import type { DocumentCollection, IndexedFile } from '../types/files'
+import type { ProcessProgress } from '../hooks/useKnowledgeBase'
 
 interface AppSidebarProps {
   collections: DocumentCollection[]
   activeCollectionId?: string
   activeDocument?: string
   files: IndexedFile[]
+  /** 文档处理进度 */
+  processProgress?: ProcessProgress | null
   onCollectionChange: (key: string) => void
   onCreateCollection: () => void
   onEditCollection: (collection: DocumentCollection) => void
@@ -129,6 +133,7 @@ export function AppSidebar({
   activeCollectionId,
   activeDocument,
   files,
+  processProgress,
   onCollectionChange,
   onCreateCollection,
   onEditCollection,
@@ -516,6 +521,51 @@ export function AppSidebar({
           style={{ borderRadius: 10 }}
           variant="filled"
         />
+
+        {/* 导入进度条 */}
+        {processProgress && (
+          <div
+            className="mt-4 p-3 rounded-xl"
+            style={{
+              background: processProgress.error
+                ? 'rgba(255, 77, 79, 0.1)'
+                : `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, rgba(124, 58, 237, 0.05) 100%)`,
+              border: `1px solid ${processProgress.error ? token.colorError : token.colorPrimaryBorder}`
+            }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <Typography.Text
+                className="text-xs font-medium"
+                style={{ color: processProgress.error ? token.colorError : token.colorPrimary }}
+              >
+                {processProgress.error ? '导入失败' : '正在导入文档'}
+              </Typography.Text>
+              <Typography.Text
+                className="text-xs"
+                style={{ color: processProgress.error ? token.colorError : token.colorPrimary }}
+              >
+                {processProgress.percent}%
+              </Typography.Text>
+            </div>
+            <Progress
+              percent={processProgress.percent}
+              size="small"
+              showInfo={false}
+              status={processProgress.error ? 'exception' : 'active'}
+              strokeColor={
+                processProgress.error
+                  ? token.colorError
+                  : {
+                      '0%': token.colorPrimary,
+                      '100%': '#7c3aed'
+                    }
+              }
+            />
+            <Typography.Text type="secondary" className="text-xs mt-1 block">
+              {processProgress.stage}
+            </Typography.Text>
+          </div>
+        )}
       </div>
 
       {/* 文档集列表 */}

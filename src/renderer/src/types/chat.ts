@@ -1,14 +1,8 @@
 import type { ReactElement } from 'react'
 
-/** 聊天来源信息 */
-export interface ChatSource {
-  content: string
-  fileName: string
-  pageNumber?: number
-}
-
-/** 问题检索范围 */
-export type QuestionScope = 'all' | 'active' | 'collection'
+// 从共享类型导入并重新导出
+export type { ChatSource, QuestionScope } from '../../../types/chat'
+import type { ChatSource } from '../../../types/chat'
 
 /** 聊天消息 */
 export interface ChatMessage {

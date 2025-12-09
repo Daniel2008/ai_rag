@@ -1,21 +1,11 @@
+// ===== 核心 Hooks =====
 export { useConversations } from './useConversations'
 export type { UseConversationsReturn } from './useConversations'
-
-export { useChatStream } from './useChatStream'
-export type { UseChatStreamOptions, UseChatStreamReturn } from './useChatStream'
 
 export { useKnowledgeBase } from './useKnowledgeBase'
 export type { UseKnowledgeBaseOptions, UseKnowledgeBaseReturn } from './useKnowledgeBase'
 
-// @ant-design/x-sdk 集成的 hooks
+// ===== @ant-design/x-sdk 集成 Hooks =====
+// 主要使用的聊天 Hook，基于 useXChat 管理消息
 export { useChatWithXChat } from './useChatWithXChat'
 export type { UseChatWithXChatOptions, UseChatWithXChatReturn } from './useChatWithXChat'
-
-export { useChatWithXStream } from './useChatWithXStream'
-export type { UseChatWithXStreamOptions, UseChatWithXStreamReturn } from './useChatWithXStream'
-
-export { useXChatManager } from './useXChatManager'
-export type { UseXChatManagerOptions, UseXChatManagerReturn } from './useXChatManager'
-
-export { useXConversationsManager } from './useXConversationsManager'
-export type { UseXConversationsManagerReturn } from './useXConversationsManager'

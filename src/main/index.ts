@@ -137,11 +137,24 @@ app.whenReady().then(async () => {
     return filePaths[0]
   })
 
-  ipcMain.handle('rag:processFile', async (_, filePath) => {
+  ipcMain.handle('rag:processFile', async (event, filePath) => {
     try {
       console.log('Processing file:', filePath)
+
+      // 发送进度：开始解析文档
+      event.sender.send('rag:process-progress', {
+        stage: '正在解析文档...',
+        percent: 10
+      })
+
       const docs = await loadAndSplitFile(filePath)
       console.log(`Processed ${docs.length} chunks`)
+
+      // 发送进度：文档解析完成
+      event.sender.send('rag:process-progress', {
+        stage: `文档解析完成，共 ${docs.length} 个片段`,
+        percent: 30
+      })
 
       const preview = docs[0]?.pageContent.slice(0, 160)
       const record = {
@@ -153,11 +166,19 @@ app.whenReady().then(async () => {
       }
 
       try {
-        await addDocumentsToStore(docs)
+        // 添加进度回调
+        await addDocumentsToStore(docs, (current, total, stage) => {
+          const percent = 30 + Math.round((current / total) * 60)
+          event.sender.send('rag:process-progress', { stage, percent })
+        })
         upsertIndexedFileRecord(record)
       } catch (error) {
         if (isSchemaMismatchError(error)) {
           console.warn('Detected LanceDB schema mismatch, rebuilding knowledge base...')
+          event.sender.send('rag:process-progress', {
+            stage: '正在重建索引...',
+            percent: 80
+          })
           upsertIndexedFileRecord(record)
           await refreshKnowledgeBase()
         } else {
@@ -165,9 +186,21 @@ app.whenReady().then(async () => {
         }
       }
 
+      // 发送进度：完成
+      event.sender.send('rag:process-progress', {
+        stage: '索引完成',
+        percent: 100
+      })
+
       return { success: true, count: docs.length, preview }
     } catch (error) {
       console.error('Error processing file:', error)
+      // 发送错误进度
+      event.sender.send('rag:process-progress', {
+        stage: '处理失败',
+        percent: 0,
+        error: String(error)
+      })
       return { success: false, error: String(error) }
     }
   })

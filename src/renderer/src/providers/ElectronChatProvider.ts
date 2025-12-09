@@ -36,7 +36,6 @@ export class ElectronChatProvider extends AbstractChatProvider<
   ElectronRequestInput,
   ElectronRequestOutput
 > {
-  private pendingSources: ChatSource[] = []
   private config: ElectronChatProviderConfig
 
   constructor(config: ElectronChatProviderConfig = {}) {
@@ -69,6 +68,7 @@ export class ElectronChatProvider extends AbstractChatProvider<
    */
   transformParams(
     requestParams: Partial<ElectronRequestInput>,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _options: XRequestOptions<ElectronRequestInput, ElectronRequestOutput>
   ): ElectronRequestInput {
     return {
@@ -117,11 +117,15 @@ export class ElectronChatProvider extends AbstractChatProvider<
   }
 }
 
-// 单例实例
+// ===== 单例模式 API（备用） =====
+// 当前 useChatWithXChat 使用 useState 管理 Provider 实例
+// 以下单例 API 保留以支持全局状态管理场景
+
 let providerInstance: ElectronChatProvider | null = null
 
 /**
- * 获取或创建 ElectronChatProvider 实例
+ * 获取或创建 ElectronChatProvider 单例实例
+ * @description 适用于需要全局共享 Provider 的场景
  */
 export function getElectronChatProvider(config?: ElectronChatProviderConfig): ElectronChatProvider {
   if (!providerInstance) {
@@ -131,8 +135,12 @@ export function getElectronChatProvider(config?: ElectronChatProviderConfig): El
 }
 
 /**
- * 重置 Provider 实例（用于配置变更时）
+ * 重置 Provider 单例实例
+ * @description 在配置变更后调用以重新创建 Provider
  */
 export function resetElectronChatProvider(): void {
+  if (providerInstance) {
+    providerInstance.dispose()
+  }
   providerInstance = null
 }

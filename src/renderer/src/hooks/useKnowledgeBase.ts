@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MessageInstance } from 'antd/es/message/interface'
 import type { DocumentCollection, IndexedFile, KnowledgeBaseSnapshot } from '../types/files'
 import type { QuestionScope } from '../types/chat'
@@ -6,6 +6,13 @@ import { extractFileName, mergeRecordsWithTransient } from '../utils/chat'
 
 export interface UseKnowledgeBaseOptions {
   messageApi: MessageInstance
+}
+
+/** 文档处理进度 */
+export interface ProcessProgress {
+  stage: string
+  percent: number
+  error?: string
 }
 
 export interface UseKnowledgeBaseReturn {
@@ -17,6 +24,8 @@ export interface UseKnowledgeBaseReturn {
   readyDocuments: number
   activeFile: IndexedFile | undefined
   resolvedCollectionId: string | undefined
+  /** 当前处理进度（null 表示没有正在处理的任务） */
+  processProgress: ProcessProgress | null
   setActiveDocument: (path: string | undefined) => void
   setActiveCollectionId: React.Dispatch<React.SetStateAction<string | undefined>>
   setQuestionScope: React.Dispatch<React.SetStateAction<QuestionScope>>
@@ -32,6 +41,22 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
   const [activeDocument, setActiveDocumentState] = useState<string | undefined>(undefined)
   const [activeCollectionId, setActiveCollectionId] = useState<string | undefined>(undefined)
   const [questionScope, setQuestionScope] = useState<QuestionScope>('all')
+  const [processProgress, setProcessProgress] = useState<ProcessProgress | null>(null)
+
+  // 监听文档处理进度
+  useEffect(() => {
+    window.api.onProcessProgress((progress) => {
+      setProcessProgress(progress)
+      // 处理完成后自动清除进度
+      if (progress.percent === 100 || progress.error) {
+        setTimeout(() => setProcessProgress(null), 2000)
+      }
+    })
+
+    return () => {
+      window.api.removeProcessProgressListener()
+    }
+  }, [])
 
   const readyDocuments = useMemo(
     () => files.filter((file) => file.status === 'ready').length,
@@ -226,6 +251,7 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
     readyDocuments,
     activeFile,
     resolvedCollectionId,
+    processProgress,
     setActiveDocument,
     setActiveCollectionId,
     setQuestionScope,

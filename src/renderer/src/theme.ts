@@ -17,7 +17,7 @@ const lightColors = {
   colorBorderSecondary: '#f1f5f9',
   colorText: '#1e293b',
   colorTextSecondary: '#64748b',
-  colorTextTertiary: '#94a3b8',
+  colorTextTertiary: '#94a3b8'
 }
 
 const darkColors = {
@@ -34,7 +34,7 @@ const darkColors = {
   colorBorderSecondary: '#1e293b',
   colorText: '#f1f5f9',
   colorTextSecondary: '#94a3b8',
-  colorTextTertiary: '#64748b',
+  colorTextTertiary: '#64748b'
 }
 
 export function getTheme(mode: ThemeMode) {
@@ -62,65 +62,65 @@ export function getTheme(mode: ThemeMode) {
       borderRadiusLG: 16,
       borderRadiusSM: 8,
       controlOutline: 'transparent',
-      fontFamily: "'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      fontFamily:
+        "'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       fontSize: 14,
       lineHeight: 1.6,
-      motion: true,
+      motion: true
     },
     components: {
       Tag: {
         borderRadius: 6,
-        colorBgContainer: mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+        colorBgContainer: mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)'
       },
       Card: {
         borderRadiusLG: 16,
-        boxShadow: mode === 'dark' 
-          ? '0 4px 24px rgba(0,0,0,0.4)' 
-          : '0 4px 24px rgba(0,0,0,0.06)',
+        boxShadow: mode === 'dark' ? '0 4px 24px rgba(0,0,0,0.4)' : '0 4px 24px rgba(0,0,0,0.06)'
       },
       Button: {
         borderRadius: 10,
         controlHeight: 40,
         controlHeightSM: 32,
         controlHeightLG: 48,
-        primaryShadow: mode === 'dark' 
-          ? '0 4px 12px rgba(129, 140, 248, 0.3)' 
-          : '0 4px 12px rgba(79, 70, 229, 0.25)',
+        primaryShadow:
+          mode === 'dark'
+            ? '0 4px 12px rgba(129, 140, 248, 0.3)'
+            : '0 4px 12px rgba(79, 70, 229, 0.25)'
       },
       Input: {
         borderRadius: 10,
         controlHeight: 40,
         colorBgContainer: mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
-        hoverBorderColor: colors.colorPrimary,
+        hoverBorderColor: colors.colorPrimary
       },
       Select: {
         borderRadius: 10,
-        controlHeight: 36,
+        controlHeight: 36
       },
       Modal: {
-        borderRadiusLG: 20,
+        borderRadiusLG: 20
       },
       Form: {
-        controlHeight: 40,
+        controlHeight: 40
       },
       Segmented: {
         itemSelectedBg: colors.colorPrimary,
         itemSelectedColor: '#ffffff',
-        borderRadius: 8,
+        borderRadius: 8
       },
       Collapse: {
         borderRadiusLG: 12,
-        headerBg: 'transparent',
+        headerBg: 'transparent'
       },
       List: {
-        itemPaddingSM: '12px 16px',
+        itemPaddingSM: '12px 16px'
       },
       Message: {
-        borderRadiusLG: 12,
+        borderRadiusLG: 12
       },
       Tooltip: {
-        borderRadius: 8,
-      },
+        borderRadius: 8
+      }
     }
   }
 }

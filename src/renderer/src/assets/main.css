@@ -369,27 +369,31 @@ body.dark {
 
 /* Message Actions */
 .message-actions {
-  opacity: 0;
-  transition: opacity 0.2s ease;
+  /* opacity: 0; Removed to make actions always visible */
+  /* transition: opacity 0.2s ease; */
 }
 
-.ant-bubble:hover .message-actions {
+/* .ant-bubble:hover .message-actions {
   opacity: 1;
-}
+} */
 
-/* User message action buttons - white on purple background */
+/* User message action buttons - adaptive color */
 .ant-bubble[data-role='user'] .user-action-btn {
-  color: rgba(255, 255, 255, 0.85) !important;
+  /* color: rgba(255, 255, 255, 0.85) !important; */
   transition: all 0.2s ease;
 }
 
 .ant-bubble[data-role='user'] .user-action-btn:hover {
-  color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.2) !important;
+  /* color: #ffffff !important; */
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+.dark .ant-bubble[data-role='user'] .user-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
 }
 
 .ant-bubble[data-role='user'] .user-action-btn:active {
-  background: rgba(255, 255, 255, 0.3) !important;
+  background: rgba(0, 0, 0, 0.1) !important;
 }
 
 .ant-bubble[data-role='user'] .user-action-btn .anticon {

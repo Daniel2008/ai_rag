@@ -8,17 +8,10 @@ import { RunnableSequence } from '@langchain/core/runnables'
 import { Document } from '@langchain/core/documents'
 import { getSettings, type ModelProvider } from '../settings'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import type { ChatSource, ChatResult } from '../../types/chat'
 
-export interface ChatSource {
-  content: string
-  fileName: string
-  pageNumber?: number
-}
-
-export interface ChatResult {
-  stream: AsyncGenerator<string>
-  sources: ChatSource[]
-}
+// 重新导出共享类型，保持向后兼容
+export type { ChatSource, ChatResult } from '../../types/chat'
 
 interface ChatOptions {
   sources?: string[]

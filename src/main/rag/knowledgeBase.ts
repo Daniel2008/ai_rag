@@ -22,7 +22,9 @@ const storeConfig: Record<string, unknown> = {
   projectName: 'ai-rag-app',
   defaults: { files: [], collections: [] }
 }
-const store = new (StoreConstructor as new (config: Record<string, unknown>) => ElectronStore<KnowledgeBaseStoreShape>)(storeConfig)
+const store = new (StoreConstructor as new (
+  config: Record<string, unknown>
+) => ElectronStore<KnowledgeBaseStoreShape>)(storeConfig)
 
 export function getIndexedFileRecords(): IndexedFileRecord[] {
   return store.get('files')

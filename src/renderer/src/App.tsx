@@ -88,6 +88,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     readyDocuments,
     activeFile,
     resolvedCollectionId,
+    processProgress,
     setActiveCollectionId,
     setQuestionScope,
     syncKnowledgeBase,
@@ -438,6 +439,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
           activeCollectionId={activeCollectionId}
           activeDocument={activeDocument}
           files={files}
+          processProgress={processProgress}
           onCollectionChange={(key) => setActiveCollectionId(key || undefined)}
           onCreateCollection={openCreateCollection}
           onEditCollection={openEditCollection}

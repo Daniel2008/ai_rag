@@ -15,7 +15,7 @@ import {
   CheckOutlined,
   DatabaseOutlined
 } from '@ant-design/icons'
-import type { ChatMessage, ChatSource } from '../../types/chat'
+import type { ChatMessage } from '../../types/chat'
 
 interface ChatAreaProps {
   themeMode: 'light' | 'dark'
@@ -56,9 +56,6 @@ function parseContent(content: string): { think: string | null; realContent: str
 
 interface MessageContentProps {
   message: ChatMessage
-  copiedMessageKey: string | null
-  onCopyMessage: (content: string, key: string) => void
-  onRetryMessage: (content: string) => void
   isTyping: boolean
 }
 
@@ -86,105 +83,79 @@ function formatTimestamp(timestamp?: number): string {
   return `${dateStr} ${timeStr}`
 }
 
-// 性能优化：将 AI 消息的 footer 渲染函数提取出来，避免每次重建
-const renderAiFooter = (
-  _: unknown,
-  info: { extraInfo?: { sources?: ChatSource[] } }
-): ReactElement | null => {
-  const sources = info.extraInfo?.sources as ChatSource[] | undefined
-  if (!sources?.length) return null
-  return (
-    <div className="sources-container mt-3">
-      <Sources
-        inline
-        items={sources.map((source, index) => ({
-          key: `${source.fileName}-${index}`,
-          title: source.fileName,
-          icon: <FileTextOutlined />,
-          description: source.pageNumber ? `第 ${source.pageNumber} 页` : undefined
-        }))}
-        title={
-          <span className="flex items-center gap-2">
-            <DatabaseOutlined />
-            引用来源 ({sources.length})
-          </span>
-        }
-      />
-    </div>
-  )
+// 消息操作按钮组件
+interface MessageActionsProps {
+  message: ChatMessage
+  copiedMessageKey: string | null
+  onCopyMessage: (content: string, key: string) => void
+  onRetryMessage: (content: string) => void
+  isTyping: boolean
 }
 
-const MessageContent = memo(
-  ({ message, copiedMessageKey, onCopyMessage, onRetryMessage, isTyping }: MessageContentProps) => {
+const MessageActions = memo(
+  ({ message, copiedMessageKey, onCopyMessage, onRetryMessage, isTyping }: MessageActionsProps) => {
     const { token } = antdTheme.useToken()
-    const { think, realContent } = useMemo(() => parseContent(message.content), [message.content])
-    const hasContent = realContent.trim().length > 0
-    const isThinking = message.typing && !hasContent && !!think
 
-    const renderMessageActions = useCallback(() => {
-      if (message.role === 'system') return null
+    if (message.role === 'system') return null
 
-      const timeStr = formatTimestamp(message.timestamp)
-      // 用户消息在紫色背景上需要白色按钮
-      const isUserMessage = message.role === 'user'
-      const buttonStyle = isUserMessage ? { color: 'rgba(255, 255, 255, 0.85)' } : undefined
+    const timeStr = formatTimestamp(message.timestamp)
+    const isUserMessage = message.role === 'user'
 
-      return (
-        <div className="message-actions flex items-center gap-2 mt-2">
-          {/* 时间戳 */}
-          {timeStr && (
-            <span
-              className="text-xs"
-              style={{
-                color: isUserMessage ? 'rgba(255, 255, 255, 0.7)' : token.colorTextSecondary,
-                opacity: isUserMessage ? 1 : 0.6
-              }}
-            >
-              {timeStr}
-            </span>
-          )}
-          <Tooltip title={copiedMessageKey === message.key ? '已复制' : '复制'}>
+    return (
+      <div
+        className={`message-actions flex items-center gap-2 mt-1 ${isUserMessage ? 'justify-end' : ''}`}
+      >
+        {/* 时间戳 */}
+        {timeStr && (
+          <span
+            className="text-xs"
+            style={{
+              color: token.colorTextSecondary,
+              opacity: 0.6
+            }}
+          >
+            {timeStr}
+          </span>
+        )}
+        <Tooltip title={copiedMessageKey === message.key ? '已复制' : '复制'}>
+          <Button
+            type="text"
+            size="small"
+            className={isUserMessage ? 'user-action-btn' : ''}
+            icon={
+              copiedMessageKey === message.key ? (
+                <CheckOutlined style={{ color: token.colorSuccess }} />
+              ) : (
+                <CopyOutlined />
+              )
+            }
+            onClick={() => onCopyMessage(message.content, message.key)}
+          />
+        </Tooltip>
+        {message.role === 'user' && (
+          <Tooltip title="重新发送">
             <Button
               type="text"
               size="small"
-              style={buttonStyle}
-              className={isUserMessage ? 'user-action-btn' : ''}
-              icon={
-                copiedMessageKey === message.key ? (
-                  <CheckOutlined
-                    style={{ color: isUserMessage ? '#86efac' : token.colorSuccess }}
-                  />
-                ) : (
-                  <CopyOutlined style={buttonStyle} />
-                )
-              }
-              onClick={() => onCopyMessage(message.content, message.key)}
+              className="user-action-btn"
+              icon={<ReloadOutlined />}
+              onClick={() => onRetryMessage(message.content)}
+              disabled={isTyping}
             />
           </Tooltip>
-          {message.role === 'user' && (
-            <Tooltip title="重新发送">
-              <Button
-                type="text"
-                size="small"
-                style={buttonStyle}
-                className="user-action-btn"
-                icon={<ReloadOutlined style={buttonStyle} />}
-                onClick={() => onRetryMessage(message.content)}
-                disabled={isTyping}
-              />
-            </Tooltip>
-          )}
-        </div>
-      )
-    }, [
-      message,
-      copiedMessageKey,
-      token.colorSuccess,
-      token.colorTextSecondary,
-      onCopyMessage,
-      onRetryMessage,
-      isTyping
-    ])
+        )}
+      </div>
+    )
+  }
+)
+
+MessageActions.displayName = 'MessageActions'
+
+const MessageContent = memo(
+  ({ message }: MessageContentProps) => {
+    const { think, realContent } = useMemo(() => parseContent(message.content), [message.content])
+    const hasContent = realContent.trim().length > 0
+    const isThinking = message.typing && !hasContent && !!think
 
     return (
       <div className="flex flex-col gap-3">
@@ -203,7 +174,6 @@ const MessageContent = memo(
         {hasContent ? (
           <div className="markdown-content">
             <XMarkdown>{realContent}</XMarkdown>
-            {renderMessageActions()}
           </div>
         ) : message.typing && !think ? (
           <div className="typing-indicator">
@@ -218,13 +188,11 @@ const MessageContent = memo(
     )
   },
   (prev, next) => {
-    // 自定义比较逻辑：只有当内容、typing状态、key、复制状态、时间戳、是否正在打字变化时才重渲染
+    // 自定义比较逻辑
     return (
       prev.message.content === next.message.content &&
       prev.message.typing === next.message.typing &&
       prev.message.key === next.message.key &&
-      prev.message.timestamp === next.message.timestamp &&
-      prev.copiedMessageKey === next.copiedMessageKey &&
       prev.isTyping === next.isTyping
     )
   }
@@ -249,54 +217,81 @@ export function ChatArea({
   const [loadingMore, setLoadingMore] = useState(false)
   const prevConversationKeyRef = useRef<string | undefined>(undefined)
   const prevMessagesLengthRef = useRef(0)
-  const hasScrolledForConversationRef = useRef(false)
-
-  // 会话切换时重置滚动状态
-  useEffect(() => {
-    if (conversationKey !== prevConversationKeyRef.current) {
-      hasScrolledForConversationRef.current = false
-      prevConversationKeyRef.current = conversationKey
-    }
-  }, [conversationKey])
+  // 使用 firstKey 来判断消息是否真正属于新会话，解决异步加载时序问题
+  const prevFirstKeyRef = useRef<string | undefined>(undefined)
+  const needsInitialScrollRef = useRef(false)
 
   // 历史消息加载完成后滚动到底部（根据 Ant Design X 官方文档使用 scrollTo API）
   useEffect(() => {
-    // 当有消息且还没有为当前会话滚动过时，滚动到底部
-    if (currentMessages.length > 0 && !hasScrolledForConversationRef.current && !loadingMore) {
-      hasScrolledForConversationRef.current = true
-      // 延迟确保 DOM 渲染完成
-      setTimeout(() => {
-        const lastMessage = currentMessages[currentMessages.length - 1]
-        if (lastMessage && bubbleListRef.current) {
-          bubbleListRef.current.scrollTo({ key: lastMessage.key, behavior: 'instant' })
-        }
-      }, 50)
-    }
-  }, [currentMessages, loadingMore, bubbleListRef])
+    // 检测是否切换了会话
+    const isNewConversation = conversationKey !== prevConversationKeyRef.current
+    // 获取消息的第一条和最后一条 key
+    const firstKey = currentMessages[0]?.key
+    const lastKey = currentMessages[currentMessages.length - 1]?.key
+    // 检测消息数据是否真正更新（firstKey 变化说明是不同会话的数据）
+    const isMessagesUpdated = firstKey !== prevFirstKeyRef.current
 
-  // 新消息到来时滚动到底部（非加载历史消息）
-  useEffect(() => {
-    // 当消息数量增加且不是加载更多历史时，滚动到底部
-    const hasNewMessage = currentMessages.length > prevMessagesLengthRef.current
-    if (hasNewMessage && !loadingMore && prevMessagesLengthRef.current > 0) {
+    if (isNewConversation) {
+      prevConversationKeyRef.current = conversationKey
+      needsInitialScrollRef.current = true // 标记需要初始滚动
+      prevMessagesLengthRef.current = 0 // 重置消息计数
+    }
+
+    // 初始滚动条件：需要滚动 + 有消息 + 消息数据已更新 + 非加载更多
+    // 关键：通过 isMessagesUpdated 确保是新会话的消息，而不是旧会话残留数据
+    const shouldInitialScroll =
+      needsInitialScrollRef.current &&
+      currentMessages.length > 0 &&
+      isMessagesUpdated &&
+      !loadingMore
+
+    if (shouldInitialScroll) {
+      needsInitialScrollRef.current = false
+      prevFirstKeyRef.current = firstKey
+
+      // 滚动任务：使用 key 定位 + top: 'bottom' 双重保障
+      const scrollTask = (): void => {
+        requestAnimationFrame(() => {
+          if (bubbleListRef.current && lastKey) {
+            bubbleListRef.current.scrollTo({ key: lastKey, block: 'end', behavior: 'instant' })
+            bubbleListRef.current.scrollTo({ top: 'bottom', behavior: 'instant' })
+          }
+        })
+      }
+
+      // 多次尝试，应对 XMarkdown 异步渲染导致的高度变化
+      scrollTask()
+      setTimeout(scrollTask, 100)
+      setTimeout(scrollTask, 300)
+      setTimeout(scrollTask, 500)
+    }
+
+    // 新消息滚动：非初始滚动阶段 + 消息数量增加
+    const hasNewMessage =
+      !needsInitialScrollRef.current &&
+      currentMessages.length > prevMessagesLengthRef.current &&
+      prevMessagesLengthRef.current > 0
+
+    if (hasNewMessage && !loadingMore) {
       requestAnimationFrame(() => {
-        const lastMessage = currentMessages[currentMessages.length - 1]
-        if (lastMessage && bubbleListRef.current) {
-          bubbleListRef.current.scrollTo({ key: lastMessage.key, behavior: 'smooth' })
+        if (bubbleListRef.current && lastKey) {
+          bubbleListRef.current.scrollTo({ key: lastKey, block: 'end', behavior: 'smooth' })
         }
       })
     }
+
     // 正在输入时持续滚动
-    if (isTyping && currentMessages.length > 0 && !loadingMore) {
+    if (isTyping && currentMessages.length > 0 && !loadingMore && !needsInitialScrollRef.current) {
       requestAnimationFrame(() => {
-        const lastMessage = currentMessages[currentMessages.length - 1]
-        if (lastMessage && bubbleListRef.current) {
-          bubbleListRef.current.scrollTo({ key: lastMessage.key, behavior: 'smooth' })
+        if (bubbleListRef.current && lastKey) {
+          bubbleListRef.current.scrollTo({ key: lastKey, block: 'end', behavior: 'smooth' })
         }
       })
     }
+
+    // 更新消息长度（用于新消息检测）
     prevMessagesLengthRef.current = currentMessages.length
-  }, [currentMessages, isTyping, loadingMore, bubbleListRef])
+  }, [conversationKey, currentMessages, isTyping, loadingMore, bubbleListRef])
 
   // 处理滚动加载
   const handleScroll = useCallback(async () => {
@@ -365,7 +360,6 @@ export function ChatArea({
     [token.colorWarningBg, token.colorWarning]
   )
 
-  // 性能优化：只依赖具体的 token 值而非整个 token 对象
   const roles = useMemo<RoleType>(
     () => ({
       user: {
@@ -394,8 +388,7 @@ export function ChatArea({
             padding: '12px 16px',
             maxWidth: '85%'
           }
-        },
-        footer: renderAiFooter
+        }
       },
       system: {
         placement: 'start',
@@ -426,13 +419,11 @@ export function ChatArea({
   )
 
   // 构建 Bubble.List 需要的 items 数组
-  // 性能优化：限制渲染的消息数量，只渲染最近的 MAX_RENDERED_MESSAGES 条
   const bubbleItems = useMemo(() => {
     const filteredMessages = currentMessages.filter(
       (m) => m.role !== 'system' || m.content.trim().length > 0
     )
 
-    // 如果消息数量超过限制，只取最近的消息
     const messagesToRender =
       filteredMessages.length > MAX_RENDERED_MESSAGES
         ? filteredMessages.slice(-MAX_RENDERED_MESSAGES)
@@ -444,21 +435,45 @@ export function ChatArea({
       const typing = message.typing && hasContent
       const loading = message.typing && !hasContent && !think
 
-      return {
-        key: message.key,
-        role: message.role,
-        content: (
-          <MessageContent
+      // 构建 Footer
+      const footer = (
+        <div className="flex flex-col w-full">
+          {message.role === 'ai' && message.sources && message.sources.length > 0 && (
+            <div className="sources-container mt-2 mb-1">
+              <Sources
+                inline
+                items={message.sources.map((source, index) => ({
+                  key: `${source.fileName}-${index}`,
+                  title: source.fileName,
+                  icon: <FileTextOutlined />,
+                  description: source.pageNumber ? `第 ${source.pageNumber} 页` : undefined
+                }))}
+                title={
+                  <span className="flex items-center gap-2">
+                    <DatabaseOutlined />
+                    引用来源 ({message.sources.length})
+                  </span>
+                }
+              />
+            </div>
+          )}
+          <MessageActions
             message={message}
             copiedMessageKey={copiedMessageKey}
             onCopyMessage={onCopyMessage}
             onRetryMessage={onRetryMessage}
             isTyping={isTyping}
           />
-        ),
+        </div>
+      )
+
+      return {
+        key: message.key,
+        role: message.role,
+        content: <MessageContent message={message} isTyping={isTyping} />,
         typing,
         loading,
-        extraInfo: { sources: message.sources, timestamp: message.timestamp }
+        footer
       }
     })
   }, [currentMessages, isTyping, copiedMessageKey, onCopyMessage, onRetryMessage])
@@ -497,6 +512,3 @@ export function ChatArea({
     </div>
   )
 }
-
-// 移除 RenderBubble，因为我们回到了 items 模式，直接在 useMemo 里构建 item 对象
-// MessageContent 保持不变，作为 memo 组件继续发挥作用

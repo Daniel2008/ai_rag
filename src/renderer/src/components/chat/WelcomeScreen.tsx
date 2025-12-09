@@ -45,9 +45,7 @@ export function WelcomeScreen({
           </Typography.Text>
           <Prompts
             items={WELCOME_PROMPTS}
-            onItemClick={({ data }) =>
-              onPromptClick(String(data.description ?? data.label ?? ''))
-            }
+            onItemClick={({ data }) => onPromptClick(String(data.description ?? data.label ?? ''))}
             wrap
           />
         </div>
