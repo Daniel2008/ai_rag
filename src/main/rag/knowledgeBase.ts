@@ -166,10 +166,42 @@ export function deleteDocumentCollection(id: string): KnowledgeBaseSnapshot {
 }
 
 async function rebuildVectorStore(records: IndexedFileRecord[]): Promise<IndexedFileRecord[]> {
+  // 动态导入 URL 加载器（避免循环依赖）
+  const { loadFromUrl } = await import('./urlLoader')
+
   await resetVectorStore()
   const refreshed: IndexedFileRecord[] = []
 
   for (const record of records) {
+    // 处理 URL 类型的记录
+    if (record.sourceType === 'url' || record.path.startsWith('http://') || record.path.startsWith('https://')) {
+      try {
+        console.log('重建 URL 索引:', record.path)
+        const result = await loadFromUrl(record.path)
+        if (result.success && result.documents) {
+          await addDocumentsToStore(result.documents)
+          refreshed.push({
+            ...record,
+            chunkCount: result.documents.length,
+            preview: result.content?.slice(0, 160) ?? record.preview,
+            updatedAt: Date.now(),
+            sourceType: 'url',
+            siteName: result.meta?.siteName || record.siteName
+          })
+        } else {
+          console.warn('URL 内容获取失败，保留原记录:', record.path, result.error)
+          // 保留原记录但标记为需要更新
+          refreshed.push(record)
+        }
+      } catch (err) {
+        console.error('重建 URL 索引失败:', record.path, err)
+        // 保留原记录
+        refreshed.push(record)
+      }
+      continue
+    }
+
+    // 处理本地文件
     try {
       await fs.access(record.path)
     } catch (error) {
@@ -184,7 +216,8 @@ async function rebuildVectorStore(records: IndexedFileRecord[]): Promise<Indexed
         ...record,
         chunkCount: docs.length,
         preview: docs[0]?.pageContent.slice(0, 160) ?? record.preview,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        sourceType: 'file'
       })
     } catch (err) {
       console.error('重建知识库时处理文件失败:', record.path, err)

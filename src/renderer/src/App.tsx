@@ -495,6 +495,22 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             onEditCollection={openEditCollection}
             onDeleteCollection={(id) => void handleDeleteCollection(id)}
             onUpload={(targetCollectionId) => void handleUpload(targetCollectionId)}
+            onAddUrl={async (url, targetCollectionId) => {
+              const result = await window.api.processUrl(url)
+              if (result.success) {
+                // 将 URL 添加到文档集
+                const collection = collections.find((c) => c.id === targetCollectionId)
+                if (collection) {
+                  const snapshot = await window.api.updateCollection({
+                    id: targetCollectionId,
+                    files: [...collection.files, url]
+                  })
+                  syncKnowledgeBase(snapshot)
+                }
+              } else {
+                throw new Error(result.error || '导入失败')
+              }
+            }}
             onUpdateActiveDocument={setActiveDocument}
             onReindexDocument={handleReindexDocument}
             onRemoveDocument={handleRemoveDocument}

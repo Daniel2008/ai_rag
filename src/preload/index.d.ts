@@ -1,9 +1,28 @@
 import type { KnowledgeBaseSnapshot } from '../types/files'
 
 export interface ChatSource {
+  /** 引用内容片段 */
   content: string
+  /** 文件名 */
   fileName: string
+  /** 页码 */
   pageNumber?: number
+  /** 完整文件路径 */
+  filePath?: string
+  /** 文件类型 */
+  fileType?: 'pdf' | 'word' | 'text' | 'markdown' | 'url' | 'unknown'
+  /** 相关度分数 (0-1) */
+  score?: number
+  /** 内容在文档中的位置（字符偏移） */
+  position?: number
+  /** 来源类型 */
+  sourceType?: 'file' | 'url'
+  /** URL 来源的站点名称 */
+  siteName?: string
+  /** URL 来源的原始链接 */
+  url?: string
+  /** 抓取/导入时间 */
+  fetchedAt?: string
 }
 
 export type ModelProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek' | 'zhipu' | 'moonshot'
@@ -41,6 +60,36 @@ export interface ProcessFileResult {
   success: boolean
   count?: number
   preview?: string
+  error?: string
+}
+
+/** 文档类型 */
+export type DocumentType = 'word' | 'ppt'
+
+/** 文档主题风格 */
+export type DocumentTheme = 'professional' | 'modern' | 'simple' | 'creative'
+
+/** 文档生成请求 */
+export interface DocumentGenerateRequest {
+  type: DocumentType
+  title: string
+  description?: string
+  sources?: string[]
+  theme?: DocumentTheme
+}
+
+/** 文档生成进度 */
+export interface DocumentProgress {
+  stage: 'outline' | 'content' | 'generating' | 'complete' | 'error'
+  percent: number
+  message: string
+  error?: string
+}
+
+/** 文档生成结果 */
+export interface DocumentGenerateResult {
+  success: boolean
+  filePath?: string
   error?: string
 }
 
@@ -83,6 +132,13 @@ declare global {
       
       selectFile: () => Promise<string | null>
       processFile: (path: string) => Promise<ProcessFileResult>
+      processUrl: (url: string) => Promise<{
+        success: boolean
+        count?: number
+        title?: string
+        preview?: string
+        error?: string
+      }>
       chat: (payload: { question: string; sources?: string[] }) => void
       getKnowledgeBase: () => Promise<KnowledgeBaseSnapshot>
       removeIndexedFile: (filePath: string) => Promise<KnowledgeBaseSnapshot>
@@ -122,6 +178,14 @@ declare global {
       saveMessage: (conversationKey: string, message: ChatMessage) => Promise<void>
       updateMessage: (messageKey: string, updates: Partial<ChatMessage>) => Promise<void>
       generateTitle: (conversationKey: string, question: string, answer: string) => Promise<string>
+
+      // Document Generation APIs
+      generateDocument: (request: DocumentGenerateRequest) => Promise<DocumentGenerateResult>
+      onDocumentProgress: (callback: (progress: DocumentProgress) => void) => void
+      removeDocumentProgressListener: () => void
+      // 文档处理进度
+      onProcessProgress: (callback: (progress: { stage: string; percent: number; error?: string }) => void) => void
+      removeProcessProgressListener: () => void
     }
   }
 }

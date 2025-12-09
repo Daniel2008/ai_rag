@@ -14,11 +14,15 @@
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "build:fast": "electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
+    "build:win:fast": "npm run build:fast && electron-builder --win",
+    "build:win:dir": "npm run build:fast && electron-builder --win --dir",
     "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:linux": "electron-vite build && electron-builder --linux",
+    "rebuild": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@ant-design/cssinjs": "^2.0.1",
@@ -38,12 +42,14 @@
     "apache-arrow": "^21.1.0",
     "better-sqlite3": "^12.5.0",
     "clsx": "^2.1.1",
+    "docx": "^9.5.1",
     "electron-store": "^11.0.2",
     "langchain": "^1.1.5",
     "lucide-react": "^0.556.0",
     "mammoth": "^1.11.0",
     "ollama": "^0.6.3",
     "pdf-parse": "^1.1.1",
+    "pptxgenjs": "^4.0.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.4.0"

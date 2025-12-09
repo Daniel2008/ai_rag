@@ -2,22 +2,65 @@ appId: com.electron.app
 productName: ai-rag-app
 directories:
   buildResources: build
+  output: dist
+
+# 构建缓存 - 显著提升重复构建速度
+buildDependenciesFromSource: false
+nodeGypRebuild: false
+
+# 文件过滤 - 排除不需要的文件
 files:
   - '!**/.vscode/*'
+  - '!**/.kilocode/*'
+  - '!**/.cursor/*'
+  - '!**/.trae/*'
+  - '!**/.git/*'
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,README,readme}'
+  - '!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}'
+  - '!**/node_modules/*.d.ts'
+  - '!**/node_modules/.bin'
+  - '!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}'
+  - '!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}'
+  - '!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}'
+  - '!**/{appveyor.yml,.travis.yml,circle.yml}'
+  - '!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+
+# 原生模块解包 - 必须解包的模块
 asarUnpack:
   - resources/**
+  - node_modules/@lancedb/**
+  - node_modules/apache-arrow/**
+  - node_modules/@huggingface/**
+  - node_modules/better-sqlite3/**
+  - node_modules/onnxruntime-node/**
+
+# ASAR 压缩优化
+asar: true
+compression: normal
+
+# Windows 配置
 win:
   executableName: ai-rag-app
+  target:
+    - target: nsis
+      arch:
+        - x64
+
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+# macOS 配置
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -26,18 +69,28 @@ mac:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
+  target:
+    - target: dmg
+      arch:
+        - x64
+
 dmg:
   artifactName: ${name}-${version}.${ext}
+
+# Linux 配置 - 只构建 AppImage（最快）
 linux:
   target:
     - AppImage
-    - snap
-    - deb
   maintainer: electronjs.org
   category: Utility
+
 appImage:
   artifactName: ${name}-${version}.${ext}
-npmRebuild: false
+
+# 原生模块重建 - 按需启用
+npmRebuild: true
+
+# 发布配置
 publish:
   provider: generic
   url: https://example.com/auto-updates

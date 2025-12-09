@@ -22,7 +22,9 @@ import {
   FileUnknownOutlined,
   FileMarkdownOutlined,
   InboxOutlined,
-  BookOutlined
+  BookOutlined,
+  LinkOutlined,
+  GlobalOutlined
 } from '@ant-design/icons'
 import {
   Button,
@@ -36,7 +38,9 @@ import {
   Dropdown,
   Typography,
   Flex,
-  Progress
+  Progress,
+  Modal,
+  message
 } from 'antd'
 import type { DocumentCollection, IndexedFile } from '../types/files'
 import type { ProcessProgress } from '../hooks/useKnowledgeBase'
@@ -53,6 +57,7 @@ interface AppSidebarProps {
   onEditCollection: (collection: DocumentCollection) => void
   onDeleteCollection: (collectionId: string) => void
   onUpload: (targetCollectionId: string) => void
+  onAddUrl: (url: string, targetCollectionId: string) => Promise<void>
   onUpdateActiveDocument: (path?: string) => void
   onReindexDocument: (filePath: string) => void
   onRemoveDocument: (filePath: string) => void
@@ -82,8 +87,28 @@ const statusConfig: Record<
   }
 }
 
-// 根据文件名获取图标和颜色
-function getFileIconInfo(fileName: string): { icon: ReactElement; color: string; bgColor: string } {
+// 根据文件信息获取图标和颜色
+function getFileIconInfo(
+  fileName: string,
+  sourceType?: 'file' | 'url',
+  filePath?: string
+): { icon: ReactElement; color: string; bgColor: string } {
+  // URL 类型使用网页图标（检查 sourceType、fileName 或 path）
+  const isUrl =
+    sourceType === 'url' ||
+    fileName.startsWith('http://') ||
+    fileName.startsWith('https://') ||
+    filePath?.startsWith('http://') ||
+    filePath?.startsWith('https://')
+
+  if (isUrl) {
+    return {
+      icon: <GlobalOutlined />,
+      color: '#722ed1',
+      bgColor: 'rgba(114, 46, 209, 0.1)'
+    }
+  }
+
   const ext = fileName.split('.').pop()?.toLowerCase()
   switch (ext) {
     case 'pdf':
@@ -109,8 +134,8 @@ function getFileIconInfo(fileName: string): { icon: ReactElement; color: string;
     case 'txt':
       return {
         icon: <FileTextOutlined />,
-        color: '#722ed1',
-        bgColor: 'rgba(114, 46, 209, 0.1)'
+        color: '#faad14',
+        bgColor: 'rgba(250, 173, 20, 0.1)'
       }
     case 'md':
     case 'markdown':
@@ -118,6 +143,13 @@ function getFileIconInfo(fileName: string): { icon: ReactElement; color: string;
         icon: <FileMarkdownOutlined />,
         color: '#13c2c2',
         bgColor: 'rgba(19, 194, 194, 0.1)'
+      }
+    case 'html':
+    case 'htm':
+      return {
+        icon: <GlobalOutlined />,
+        color: '#722ed1',
+        bgColor: 'rgba(114, 46, 209, 0.1)'
       }
     default:
       return {
@@ -139,6 +171,7 @@ export function AppSidebar({
   onEditCollection,
   onDeleteCollection,
   onUpload,
+  onAddUrl,
   onUpdateActiveDocument,
   onReindexDocument,
   onRemoveDocument
@@ -148,6 +181,45 @@ export function AppSidebar({
     activeCollectionId && collections.some((c) => c.id === activeCollectionId)
       ? activeCollectionId
       : undefined
+
+  // URL 输入模态框状态
+  const [urlModalOpen, setUrlModalOpen] = useState(false)
+  const [urlInput, setUrlInput] = useState('')
+  const [urlLoading, setUrlLoading] = useState(false)
+  const [targetCollectionForUrl, setTargetCollectionForUrl] = useState<string>('')
+
+  const handleOpenUrlModal = (collectionId: string): void => {
+    setTargetCollectionForUrl(collectionId)
+    setUrlInput('')
+    setUrlModalOpen(true)
+  }
+
+  const handleAddUrl = async (): Promise<void> => {
+    if (!urlInput.trim()) {
+      message.warning('请输入 URL')
+      return
+    }
+
+    // 简单验证 URL 格式
+    try {
+      new URL(urlInput.trim())
+    } catch {
+      message.error('请输入有效的 URL')
+      return
+    }
+
+    setUrlLoading(true)
+    try {
+      await onAddUrl(urlInput.trim(), targetCollectionForUrl)
+      setUrlModalOpen(false)
+      setUrlInput('')
+      message.success('URL 内容已添加到知识库')
+    } catch (error) {
+      message.error(`添加失败: ${error instanceof Error ? error.message : '未知错误'}`)
+    } finally {
+      setUrlLoading(false)
+    }
+  }
 
   // 稳定 activeKey 数组引用，避免 Collapse 无限循环
   const collapseActiveKey = useMemo(
@@ -253,6 +325,16 @@ export function AppSidebar({
                   style={{ color: token.colorPrimary }}
                 />
               </Tooltip>
+              <Tooltip title="从 URL 导入">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<LinkOutlined />}
+                  onClick={() => handleOpenUrlModal(collection.id)}
+                  className="hover:bg-primary/10"
+                  style={{ color: token.colorPrimary }}
+                />
+              </Tooltip>
               <Dropdown
                 menu={{
                   items: [
@@ -316,7 +398,7 @@ export function AppSidebar({
                 <div className="flex flex-col gap-2">
                   {displayedFiles.map((file) => {
                     const statusInfo = statusConfig[file.status]
-                    const fileInfo = getFileIconInfo(file.name)
+                    const fileInfo = getFileIconInfo(file.name, file.sourceType, file.path)
                     const isSelected = activeDocument === file.path
 
                     return (
@@ -633,7 +715,7 @@ export function AppSidebar({
         )}
       </div>
 
-      {/* 底部提示 */}
+      {/* 底部操作区 */}
       <div
         className="px-4 py-3"
         style={{
@@ -641,6 +723,7 @@ export function AppSidebar({
           background: token.colorFillQuaternary
         }}
       >
+        {/* 支持格式提示 */}
         <div className="flex items-center justify-center gap-2">
           <div className="flex -space-x-1">
             <div
@@ -661,12 +744,53 @@ export function AppSidebar({
             >
               <FileMarkdownOutlined style={{ fontSize: 10, color: '#13c2c2' }} />
             </div>
+            <div
+              className="w-5 h-5 rounded flex items-center justify-center"
+              style={{ background: 'rgba(79, 70, 229, 0.1)' }}
+            >
+              <GlobalOutlined style={{ fontSize: 10, color: '#4f46e5' }} />
+            </div>
           </div>
           <Typography.Text type="secondary" className="text-xs">
-            支持多种文档格式
+            支持文档和网页
           </Typography.Text>
         </div>
       </div>
+
+      {/* URL 导入模态框 */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2">
+            <GlobalOutlined style={{ color: token.colorPrimary }} />
+            <span>从 URL 导入内容</span>
+          </div>
+        }
+        open={urlModalOpen}
+        onCancel={() => setUrlModalOpen(false)}
+        onOk={handleAddUrl}
+        okText="导入"
+        cancelText="取消"
+        confirmLoading={urlLoading}
+        destroyOnClose
+      >
+        <div className="py-4">
+          <Typography.Text type="secondary" className="block mb-3">
+            输入网页 URL，系统将自动抓取页面内容并添加到知识库
+          </Typography.Text>
+          <Input
+            placeholder="https://example.com/article"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onPressEnter={handleAddUrl}
+            prefix={<LinkOutlined style={{ color: token.colorTextQuaternary }} />}
+            size="large"
+            autoFocus
+          />
+          <Typography.Text type="secondary" className="block mt-2 text-xs">
+            支持大多数 HTML 网页，会自动提取正文内容
+          </Typography.Text>
+        </div>
+      </Modal>
     </aside>
   )
 }

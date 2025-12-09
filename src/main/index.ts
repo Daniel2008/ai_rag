@@ -11,6 +11,7 @@ import {
   updateConversationTimestamp
 } from './db/service'
 import { loadAndSplitFile } from './rag/loader'
+import { loadFromUrl } from './rag/urlLoader'
 import { addDocumentsToStore, initVectorStore, clearEmbeddingsCache } from './rag/store'
 import { chatWithRag } from './rag/chat'
 import { getSettings, saveSettings, AppSettings } from './settings'
@@ -24,6 +25,12 @@ import {
   deleteDocumentCollection,
   refreshKnowledgeBase
 } from './rag/knowledgeBase'
+import {
+  generateDocument,
+  setLLMChatFunction,
+  handleDocumentGenerationIfNeeded,
+  type DocumentGenerateRequest
+} from './document'
 
 // 使用环境变量检测开发模式，因为 app.isPackaged 在模块加载时不可用
 const isDev = process.env.NODE_ENV === 'development' || !!process.env['ELECTRON_RENDERER_URL']
@@ -234,6 +241,87 @@ app.whenReady().then(async () => {
     }
   })
 
+  // 从 URL 加载内容到知识库
+  ipcMain.handle('rag:processUrl', async (event, url: string) => {
+    try {
+      console.log('Processing URL:', url)
+
+      // 发送进度：开始抓取
+      event.sender.send('rag:process-progress', {
+        stage: '正在获取网页内容...',
+        percent: 10
+      })
+
+      const result = await loadFromUrl(url)
+
+      if (!result.success || !result.documents) {
+        throw new Error(result.error || '无法获取网页内容')
+      }
+
+      console.log(`Fetched ${result.documents.length} chunks from URL`)
+
+      // 发送进度：内容获取完成
+      event.sender.send('rag:process-progress', {
+        stage: `内容获取完成，共 ${result.documents.length} 个片段`,
+        percent: 30
+      })
+
+      const preview = result.content?.slice(0, 160) || ''
+      const record = {
+        path: url,
+        name: result.title || url,
+        chunkCount: result.documents.length,
+        preview,
+        updatedAt: Date.now(),
+        sourceType: 'url' as const,
+        url: url,
+        siteName: result.meta?.siteName
+      }
+
+      try {
+        // 添加进度回调
+        await addDocumentsToStore(result.documents, (current, total, stage) => {
+          const percent = 30 + Math.round((current / total) * 60)
+          event.sender.send('rag:process-progress', { stage, percent })
+        })
+        upsertIndexedFileRecord(record)
+      } catch (error) {
+        if (isSchemaMismatchError(error)) {
+          console.warn('Detected LanceDB schema mismatch, rebuilding knowledge base...')
+          event.sender.send('rag:process-progress', {
+            stage: '正在重建索引...',
+            percent: 80
+          })
+          upsertIndexedFileRecord(record)
+          await refreshKnowledgeBase()
+        } else {
+          throw error
+        }
+      }
+
+      // 发送进度：完成
+      event.sender.send('rag:process-progress', {
+        stage: '索引完成',
+        percent: 100
+      })
+
+      return {
+        success: true,
+        count: result.documents.length,
+        title: result.title,
+        preview
+      }
+    } catch (error) {
+      console.error('Error processing URL:', error)
+      event.sender.send('rag:process-progress', {
+        stage: '处理失败',
+        percent: 0,
+        error: String(error)
+      })
+      return { success: false, error: String(error) }
+    }
+  })
+
   ipcMain.handle('kb:list', () => {
     return getKnowledgeBaseSnapshot()
   })
@@ -282,6 +370,26 @@ app.whenReady().then(async () => {
 
     try {
       console.log('Chat question:', normalized.question)
+
+      // 检查是否是文档生成意图
+      const docGenerator = handleDocumentGenerationIfNeeded(
+        normalized.question,
+        normalized.sources
+      )
+
+      if (docGenerator) {
+        // 使用文档生成流程
+        console.log('Detected document generation intent')
+        event.reply('rag:chat-sources', []) // 文档生成自己管理来源
+
+        for await (const chunk of docGenerator) {
+          event.reply('rag:chat-token', chunk)
+        }
+        event.reply('rag:chat-done')
+        return
+      }
+
+      // 普通 RAG 聊天流程
       const { stream, sources } = await chatWithRag(normalized.question, {
         sources: normalized.sources
       })
@@ -307,6 +415,21 @@ app.whenReady().then(async () => {
       return title
     }
   )
+
+  // Document Generation IPC
+  ipcMain.handle('document:generate', async (_, request: DocumentGenerateRequest) => {
+    return generateDocument(request)
+  })
+
+  // 设置 LLM 聊天函数供文档生成使用
+  setLLMChatFunction(async (question: string, sources?: string[]) => {
+    const result = await chatWithRag(question, { sources })
+    let content = ''
+    for await (const chunk of result.stream) {
+      content += chunk
+    }
+    return { content, sources: result.sources }
+  })
 
   // Settings IPC
   ipcMain.handle('settings:get', () => {

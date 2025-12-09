@@ -57,6 +57,10 @@ const api = {
   selectFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFile'),
   processFile: (path: string): Promise<ProcessFileResult> =>
     ipcRenderer.invoke('rag:processFile', path),
+  processUrl: (
+    url: string
+  ): Promise<{ success: boolean; count?: number; title?: string; preview?: string; error?: string }> =>
+    ipcRenderer.invoke('rag:processUrl', url),
   chat: (payload: { question: string; sources?: string[] }): void =>
     ipcRenderer.send('rag:chat', payload),
   getKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:list'),
@@ -128,6 +132,30 @@ const api = {
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: Partial<AppSettings>): Promise<{ success: boolean }> =>
     ipcRenderer.invoke('settings:save', settings),
+
+  // Document Generation API
+  generateDocument: (request: {
+    type: 'word' | 'ppt'
+    title: string
+    description?: string
+    sources?: string[]
+    theme?: 'professional' | 'modern' | 'simple' | 'creative'
+  }): Promise<{ success: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke('document:generate', request),
+  onDocumentProgress: (
+    callback: (progress: {
+      stage: 'outline' | 'content' | 'generating' | 'complete' | 'error'
+      percent: number
+      message: string
+      error?: string
+    }) => void
+  ): void => {
+    ipcRenderer.removeAllListeners('document:progress')
+    ipcRenderer.on('document:progress', (_, progress) => callback(progress))
+  },
+  removeDocumentProgressListener: (): void => {
+    ipcRenderer.removeAllListeners('document:progress')
+  },
 
   // Database APIs
   getConversations: () => ipcRenderer.invoke('db:getConversations'),

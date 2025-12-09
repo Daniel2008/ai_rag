@@ -5,8 +5,50 @@ import { Document } from '@langchain/core/documents'
 import path from 'path'
 import fs from 'fs/promises'
 
+/** 文件类型映射 */
+type FileType = 'pdf' | 'word' | 'text' | 'markdown' | 'unknown'
+
+/** 根据扩展名获取文件类型 */
+function getFileType(ext: string): FileType {
+  switch (ext.toLowerCase()) {
+    case '.pdf':
+      return 'pdf'
+    case '.doc':
+    case '.docx':
+      return 'word'
+    case '.txt':
+      return 'text'
+    case '.md':
+    case '.markdown':
+      return 'markdown'
+    default:
+      return 'unknown'
+  }
+}
+
+/** 文档元数据接口 */
+export interface DocumentMetadata {
+  /** 原始文件路径 */
+  source: string
+  /** 文件名 */
+  fileName: string
+  /** 文件类型 */
+  fileType: FileType
+  /** 页码（PDF 等分页文档） */
+  pageNumber: number
+  /** 内容在原文档中的位置（字符偏移） */
+  position: number
+  /** 来源类型 */
+  sourceType: 'file' | 'url'
+  /** 导入时间 */
+  importedAt: string
+}
+
 export async function loadAndSplitFile(filePath: string): Promise<Document[]> {
   const ext = path.extname(filePath).toLowerCase()
+  const fileName = path.basename(filePath)
+  const fileType = getFileType(ext)
+  const importedAt = new Date().toISOString()
   let docs: Document[]
 
   if (ext === '.pdf') {
@@ -30,14 +72,26 @@ export async function loadAndSplitFile(filePath: string): Promise<Document[]> {
   })
 
   const splitDocs = await splitter.splitDocuments(docs)
-  const sanitizedDocs = splitDocs.map((doc) => {
+
+  // 计算每个 chunk 的位置
+  let currentPosition = 0
+  const sanitizedDocs = splitDocs.map((doc, index) => {
     const locPageNumber = doc.metadata?.loc?.pageNumber
     const resolvedPageNumber =
       typeof locPageNumber === 'number' && Number.isFinite(locPageNumber) ? locPageNumber : 0
 
-    const metadata: Record<string, unknown> = {
+    // 估算位置：基于 chunk 索引和平均 chunk 大小
+    const position = currentPosition
+    currentPosition += doc.pageContent.length
+
+    const metadata: DocumentMetadata = {
       source: typeof doc.metadata?.source === 'string' ? doc.metadata.source : filePath,
-      pageNumber: resolvedPageNumber
+      fileName,
+      fileType,
+      pageNumber: resolvedPageNumber,
+      position,
+      sourceType: 'file',
+      importedAt
     }
 
     return new Document({

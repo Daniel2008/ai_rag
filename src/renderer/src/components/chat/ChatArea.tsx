@@ -1,21 +1,32 @@
 import { memo, useMemo, useCallback, useRef, useState, useEffect } from 'react'
-import type { ReactElement } from 'react'
-import { Bubble, Sources, ThoughtChain } from '@ant-design/x'
+import type { ReactElement, ReactNode } from 'react'
+import { Bubble, ThoughtChain } from '@ant-design/x'
 import XMarkdown from '@ant-design/x-markdown'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
 import type { RoleType } from '@ant-design/x/es/bubble/interface'
-import { Avatar, Button, Tooltip, theme as antdTheme } from 'antd'
+import { Avatar, Button, Tooltip, Progress, Tag, Collapse, theme as antdTheme } from 'antd'
 import {
   FileTextOutlined,
+  FilePdfOutlined,
+  FileWordOutlined,
+  FileMarkdownOutlined,
+  GlobalOutlined,
   RobotOutlined,
   CopyOutlined,
   ReloadOutlined,
   UserOutlined,
   BulbOutlined,
   CheckOutlined,
-  DatabaseOutlined
+  DatabaseOutlined,
+  SearchOutlined,
+  OrderedListOutlined,
+  EditOutlined,
+  FileOutlined,
+  LoadingOutlined,
+  LinkOutlined,
+  ClockCircleOutlined
 } from '@ant-design/icons'
-import type { ChatMessage } from '../../types/chat'
+import type { ChatMessage, ChatSource } from '../../types/chat'
 
 interface ChatAreaProps {
   themeMode: 'light' | 'dark'
@@ -32,6 +43,227 @@ interface ChatAreaProps {
 
 // 性能优化：最大渲染消息数量，超过此数量只渲染最近的消息
 const MAX_RENDERED_MESSAGES = 50
+
+/** 获取文件类型图标 */
+function getFileTypeIcon(fileType?: ChatSource['fileType']): ReactElement {
+  switch (fileType) {
+    case 'pdf':
+      return <FilePdfOutlined style={{ color: '#ff4d4f' }} />
+    case 'word':
+      return <FileWordOutlined style={{ color: '#1890ff' }} />
+    case 'markdown':
+      return <FileMarkdownOutlined style={{ color: '#52c41a' }} />
+    case 'url':
+      return <GlobalOutlined style={{ color: '#722ed1' }} />
+    case 'text':
+      return <FileTextOutlined style={{ color: '#faad14' }} />
+    default:
+      return <FileOutlined />
+  }
+}
+
+/** 获取文件类型标签颜色 */
+function getFileTypeColor(fileType?: ChatSource['fileType']): string {
+  switch (fileType) {
+    case 'pdf':
+      return 'red'
+    case 'word':
+      return 'blue'
+    case 'markdown':
+      return 'green'
+    case 'url':
+      return 'purple'
+    case 'text':
+      return 'orange'
+    default:
+      return 'default'
+  }
+}
+
+/** 格式化时间 */
+function formatTime(dateStr?: string): string {
+  if (!dateStr) return ''
+  try {
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+
+    if (days === 0) return '今天'
+    if (days === 1) return '昨天'
+    if (days < 7) return `${days}天前`
+    return date.toLocaleDateString('zh-CN')
+  } catch {
+    return ''
+  }
+}
+
+/** 自定义引用来源显示组件 */
+const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactElement => {
+  const { token } = antdTheme.useToken()
+
+  const items = sources.map((source, index) => ({
+    key: `source-${index}`,
+    label: (
+      <div className="flex items-center gap-2 w-full">
+        {getFileTypeIcon(source.fileType)}
+        <span className="flex-1 truncate font-medium">{source.fileName}</span>
+        {source.score !== undefined && (
+          <Progress
+            percent={Math.round(source.score * 100)}
+            size="small"
+            style={{ width: 60 }}
+            strokeColor={source.score > 0.7 ? '#52c41a' : source.score > 0.5 ? '#faad14' : '#ff4d4f'}
+            format={(percent): string => `${percent}%`}
+          />
+        )}
+      </div>
+    ),
+    children: (
+      <div className="space-y-2 text-sm">
+        {/* 元信息标签 */}
+        <div className="flex flex-wrap gap-1">
+          {source.fileType && (
+            <Tag color={getFileTypeColor(source.fileType)} style={{ margin: 0 }}>
+              {source.fileType === 'url' ? '网页' : source.fileType.toUpperCase()}
+            </Tag>
+          )}
+          {source.pageNumber && source.pageNumber > 0 && (
+            <Tag color="cyan" style={{ margin: 0 }}>
+              第 {source.pageNumber} 页
+            </Tag>
+          )}
+          {source.sourceType === 'url' && source.siteName && (
+            <Tag icon={<GlobalOutlined />} style={{ margin: 0 }}>
+              {source.siteName}
+            </Tag>
+          )}
+        </div>
+
+        {/* 引用内容预览 */}
+        <div
+          className="p-2 rounded text-xs leading-relaxed"
+          style={{
+            background: token.colorFillQuaternary,
+            color: token.colorTextSecondary,
+            maxHeight: 100,
+            overflow: 'auto'
+          }}
+        >
+          {source.content}
+        </div>
+
+        {/* 底部信息 */}
+        <div
+          className="flex items-center gap-3 text-xs"
+          style={{ color: token.colorTextTertiary }}
+        >
+          {source.sourceType === 'url' && source.url && (
+            <Tooltip title={source.url}>
+              <span className="flex items-center gap-1 cursor-pointer hover:text-blue-500">
+                <LinkOutlined />
+                <span className="truncate max-w-[200px]">{source.url}</span>
+              </span>
+            </Tooltip>
+          )}
+          {source.filePath && source.sourceType !== 'url' && (
+            <Tooltip title={source.filePath}>
+              <span className="flex items-center gap-1">
+                <FileOutlined />
+                <span className="truncate max-w-[200px]">{source.filePath}</span>
+              </span>
+            </Tooltip>
+          )}
+          {source.fetchedAt && (
+            <span className="flex items-center gap-1">
+              <ClockCircleOutlined />
+              {formatTime(source.fetchedAt)}
+            </span>
+          )}
+        </div>
+      </div>
+    )
+  }))
+
+  return (
+    <div className="sources-detail mt-2">
+      <div
+        className="flex items-center gap-2 mb-2 text-sm font-medium"
+        style={{ color: token.colorTextSecondary }}
+      >
+        <DatabaseOutlined />
+        <span>引用来源 ({sources.length})</span>
+      </div>
+      <Collapse
+        items={items}
+        size="small"
+        bordered={false}
+        style={{
+          background: token.colorFillAlter,
+          borderRadius: token.borderRadius
+        }}
+        expandIconPosition="end"
+      />
+    </div>
+  )
+})
+
+SourcesDisplay.displayName = 'SourcesDisplay'
+
+/** 思维链步骤类型（与 Ant Design X ThoughtChain 兼容） */
+interface ThoughtStep {
+  id: string
+  title: string
+  status: 'loading' | 'success' | 'error' | 'abort'
+  content?: string
+  icon?: string
+}
+
+/** 获取步骤图标 */
+function getStepIcon(iconName?: string, status?: string): ReactNode {
+  if (status === 'loading') {
+    return <LoadingOutlined spin />
+  }
+  switch (iconName) {
+    case 'FileText':
+      return <FileTextOutlined />
+    case 'Search':
+      return <SearchOutlined />
+    case 'Database':
+      return <DatabaseOutlined />
+    case 'OrderedList':
+      return <OrderedListOutlined />
+    case 'Edit':
+      return <EditOutlined />
+    case 'File':
+      return <FileOutlined />
+    case 'Check':
+      return <CheckOutlined />
+    default:
+      return <BulbOutlined />
+  }
+}
+
+/** 解析思维链步骤标记 */
+function parseThoughtSteps(thinkContent: string): ThoughtStep[] {
+  const stepRegex = /\[STEP:([^:]+):([^:]+):([^:]+):([^\]]*)\]([\s\S]*?)\[\/STEP\]/g
+  const steps: Map<string, ThoughtStep> = new Map()
+
+  let match
+  while ((match = stepRegex.exec(thinkContent)) !== null) {
+    const [, id, title, status, icon, content] = match
+    // 用 id 作为 key，后面的会覆盖前面的（保留最新状态）
+    steps.set(id, {
+      id,
+      title,
+      status: status as ThoughtStep['status'],
+      content: content.trim(),
+      icon
+    })
+  }
+
+  return Array.from(steps.values())
+}
 
 function parseContent(content: string): { think: string | null; realContent: string } {
   const thinkStart = '<think>'
@@ -157,19 +389,39 @@ const MessageContent = memo(
     const hasContent = realContent.trim().length > 0
     const isThinking = message.typing && !hasContent && !!think
 
+    // 解析结构化的思维链步骤
+    const thoughtItems = useMemo(() => {
+      if (!think) return []
+
+      const steps = parseThoughtSteps(think)
+
+      // 如果有结构化步骤，使用结构化显示
+      if (steps.length > 0) {
+        return steps.map((step) => ({
+          key: step.id,
+          title: step.title,
+          description: step.content,
+          status: step.status === 'loading' && !message.typing ? 'success' : step.status,
+          icon: getStepIcon(step.icon, step.status),
+          collapsible: !!(step.content && step.content.length > 50)
+        }))
+      }
+
+      // 否则使用旧的方式（纯文本）
+      return [
+        {
+          key: 'thought',
+          title: '思考过程',
+          content: <XMarkdown>{think}</XMarkdown>,
+          status: isThinking ? ('loading' as const) : ('success' as const)
+        }
+      ]
+    }, [think, isThinking, message.typing])
+
     return (
       <div className="flex flex-col gap-3">
-        {think && (
-          <ThoughtChain
-            items={[
-              {
-                key: 'thought',
-                title: '思考过程',
-                content: <XMarkdown>{think}</XMarkdown>,
-                status: isThinking ? 'loading' : 'success'
-              }
-            ]}
-          />
+        {think && thoughtItems.length > 0 && (
+          <ThoughtChain items={thoughtItems} />
         )}
         {hasContent ? (
           <div className="markdown-content">
@@ -458,23 +710,7 @@ export function ChatArea({
       const footer = (
         <div className="flex flex-col w-full">
           {message.role === 'ai' && message.sources && message.sources.length > 0 && (
-            <div className="sources-container mt-2 mb-1">
-              <Sources
-                inline
-                items={message.sources.map((source, index) => ({
-                  key: `${source.fileName}-${index}`,
-                  title: source.fileName,
-                  icon: <FileTextOutlined />,
-                  description: source.pageNumber ? `第 ${source.pageNumber} 页` : undefined
-                }))}
-                title={
-                  <span className="flex items-center gap-2">
-                    <DatabaseOutlined />
-                    引用来源 ({message.sources.length})
-                  </span>
-                }
-              />
-            </div>
+            <SourcesDisplay sources={message.sources} />
           )}
           <MessageActions
             message={message}

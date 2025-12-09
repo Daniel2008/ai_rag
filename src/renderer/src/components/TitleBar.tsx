@@ -1,7 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
 import type { ReactElement } from 'react'
 import { theme as antdTheme } from 'antd'
 import { MinusOutlined, BorderOutlined, CloseOutlined, BlockOutlined } from '@ant-design/icons'
+
+// Electron 窗口拖拽区域样式
+const dragStyle: CSSProperties = { WebkitAppRegion: 'drag' } as CSSProperties
+const noDragStyle: CSSProperties = { WebkitAppRegion: 'no-drag' } as CSSProperties
 
 interface TitleBarProps {
   title?: string
@@ -39,7 +43,7 @@ export function TitleBar({ title = 'AI RAG Assistant' }: TitleBarProps): ReactEl
       <div
         className="h-10 flex items-center justify-center select-none"
         style={{
-          WebkitAppRegion: 'drag',
+          ...dragStyle,
           background: `linear-gradient(180deg, ${token.colorBgElevated} 0%, ${token.colorBgContainer} 100%)`
         }}
       >
@@ -58,7 +62,7 @@ export function TitleBar({ title = 'AI RAG Assistant' }: TitleBarProps): ReactEl
     <div
       className="h-10 flex items-center justify-between select-none"
       style={{
-        WebkitAppRegion: 'drag',
+        ...dragStyle,
         background: `linear-gradient(180deg, ${token.colorBgElevated} 0%, ${token.colorBgContainer} 100%)`,
         borderBottom: `1px solid ${token.colorBorderSecondary}`
       }}
@@ -97,7 +101,7 @@ export function TitleBar({ title = 'AI RAG Assistant' }: TitleBarProps): ReactEl
       {/* 右侧：窗口控制按钮 */}
       <div
         className="flex h-full"
-        style={{ WebkitAppRegion: 'no-drag' }}
+        style={noDragStyle}
       >
         {/* 最小化按钮 */}
         <button

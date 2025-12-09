@@ -17,6 +17,46 @@ interface ChatOptions {
   sources?: string[]
 }
 
+/** 根据文件名推断文件类型 */
+function inferFileType(fileName: string): ChatSource['fileType'] {
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'pdf':
+      return 'pdf'
+    case 'doc':
+    case 'docx':
+      return 'word'
+    case 'txt':
+      return 'text'
+    case 'md':
+    case 'markdown':
+      return 'markdown'
+    default:
+      // 检查是否是 URL
+      if (fileName.startsWith('http://') || fileName.startsWith('https://')) {
+        return 'url'
+      }
+      return 'unknown'
+  }
+}
+
+/** 去重：相同文件+页码只保留最相关的一个 */
+function deduplicateSources(sources: ChatSource[]): ChatSource[] {
+  const seen = new Map<string, ChatSource>()
+
+  for (const source of sources) {
+    const key = `${source.fileName}:${source.pageNumber || 0}`
+    const existing = seen.get(key)
+
+    // 保留分数更高的
+    if (!existing || (source.score || 0) > (existing.score || 0)) {
+      seen.set(key, source)
+    }
+  }
+
+  return Array.from(seen.values()).sort((a, b) => (b.score || 0) - (a.score || 0))
+}
+
 // 创建对应供应商的模型实例
 function createChatModel(provider: ModelProvider): BaseChatModel {
   const settings = getSettings()
@@ -206,23 +246,61 @@ export async function chatWithRag(
 
   console.log(`Retrieved ${contextDocs.length} docs for context`)
 
-  // 2. Extract sources for citations
-  const sources: ChatSource[] = contextDocs.map((doc: Document) => {
+  // 2. Extract sources for citations with detailed metadata
+  const sources: ChatSource[] = contextDocs.map((doc: Document, index: number) => {
+    const metadata = doc.metadata || {}
+
+    // 提取页码
     const rawPageNumber =
-      typeof doc.metadata?.pageNumber === 'number'
-        ? doc.metadata.pageNumber
-        : typeof doc.metadata?.loc?.pageNumber === 'number'
-          ? doc.metadata.loc.pageNumber
+      typeof metadata.pageNumber === 'number'
+        ? metadata.pageNumber
+        : typeof metadata.loc?.pageNumber === 'number'
+          ? metadata.loc.pageNumber
           : undefined
 
-    return {
-      content: doc.pageContent.slice(0, 200) + (doc.pageContent.length > 200 ? '...' : ''),
-      fileName: doc.metadata?.source
-        ? String(doc.metadata.source).split(/[\\/]/).pop() || 'Unknown'
-        : 'Unknown',
-      pageNumber: rawPageNumber && rawPageNumber > 0 ? rawPageNumber : undefined
+    // 提取文件路径和名称
+    const filePath = typeof metadata.source === 'string' ? metadata.source : undefined
+    const isUrlSource = filePath?.startsWith('http://') || filePath?.startsWith('https://')
+
+    // 优先使用 title（URL 来源），其次 fileName，最后从路径提取
+    let fileName = metadata.title || metadata.fileName
+    if (!fileName && filePath) {
+      const pathPart = filePath.split(/[\\/]/).pop() || 'Unknown'
+      // 对 URL 编码的文件名进行解码
+      try {
+        fileName = decodeURIComponent(pathPart)
+      } catch {
+        fileName = pathPart
+      }
     }
+    fileName = fileName || 'Unknown'
+
+    // 提取文件类型
+    const fileType = metadata.fileType || metadata.type || (isUrlSource ? 'url' : inferFileType(fileName))
+
+    // 计算相关度分数（基于检索顺序，越靠前越相关）
+    const score = 1 - index * 0.15 // 第一个 1.0，第二个 0.85，以此类推
+
+    // 构建详细的来源信息
+    const source: ChatSource = {
+      content: doc.pageContent.slice(0, 300) + (doc.pageContent.length > 300 ? '...' : ''),
+      fileName,
+      pageNumber: rawPageNumber && rawPageNumber > 0 ? rawPageNumber : undefined,
+      filePath,
+      fileType: fileType as ChatSource['fileType'],
+      score: Math.max(0.4, score), // 最低 0.4
+      position: typeof metadata.position === 'number' ? metadata.position : undefined,
+      sourceType: metadata.sourceType || (isUrlSource || metadata.type === 'url' ? 'url' : 'file'),
+      siteName: metadata.siteName,
+      url: isUrlSource || metadata.type === 'url' ? filePath : undefined,
+      fetchedAt: metadata.fetchedAt || metadata.importedAt
+    }
+
+    return source
   })
+
+  // 去重：相同文件+页码只保留最相关的一个
+  const uniqueSources = deduplicateSources(sources)
 
   // 3. Construct Prompt
   const promptText = `You are a helpful assistant. Answer the question based on the following context. 
@@ -251,7 +329,7 @@ Answer:`
       config.chatModel,
       promptText
     )
-    return { stream, sources }
+    return { stream, sources: uniqueSources }
   }
 
   // 5. 其他模型使用 LangChain
@@ -276,7 +354,7 @@ Answer:`
 
   return {
     stream,
-    sources
+    sources: uniqueSources
   }
 }
 
