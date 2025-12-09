@@ -11,7 +11,8 @@ import {
   Select,
   Divider,
   Collapse,
-  AutoComplete
+  AutoComplete,
+  Modal
 } from 'antd'
 import { ApiOutlined, RobotOutlined, KeyOutlined } from '@ant-design/icons'
 
@@ -24,6 +25,8 @@ export interface ProviderConfig {
   embeddingModel?: string
 }
 
+export type EmbeddingProvider = 'local' | 'ollama'
+
 export interface AppSettings {
   provider: ModelProvider
   ollama: ProviderConfig
@@ -32,7 +35,7 @@ export interface AppSettings {
   deepseek: ProviderConfig
   zhipu: ProviderConfig
   moonshot: ProviderConfig
-  embeddingProvider: 'ollama'
+  embeddingProvider: EmbeddingProvider
   embeddingModel: string
   ollamaUrl: string
 }
@@ -61,13 +64,23 @@ const MODEL_PRESETS: Record<ModelProvider, string[]> = {
   moonshot: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']
 }
 
-const EMBEDDING_MODELS = ['nomic-embed-text', 'mxbai-embed-large', 'all-minilm', 'bge-m3']
+// 本地嵌入模型（内置，自动下载）
+const LOCAL_EMBEDDING_MODELS = [
+  { value: 'nomic-embed-text', label: 'Nomic Embed Text v1.5 (推荐)' },
+  { value: 'all-MiniLM-L6', label: 'All-MiniLM-L6 (轻量)' },
+  { value: 'bge-small-zh', label: 'BGE Small 中文 (中文优化)' },
+  { value: 'multilingual-e5-small', label: 'E5 Small 多语言' }
+]
+
+// Ollama 嵌入模型
+const OLLAMA_EMBEDDING_MODELS = ['nomic-embed-text', 'mxbai-embed-large', 'all-minilm', 'bge-m3']
 
 export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps): ReactElement {
   const [form] = Form.useForm<AppSettings>()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [currentProvider, setCurrentProvider] = useState<ModelProvider>('ollama')
+  const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>('local')
 
   useEffect(() => {
     if (isOpen) {
@@ -81,6 +94,7 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
       const current = await window.api.getSettings()
       form.setFieldsValue(current)
       setCurrentProvider(current.provider || 'ollama')
+      setEmbeddingProvider(current.embeddingProvider || 'local')
     } catch (error) {
       console.error('Failed to load settings:', error)
       message.error('加载设置失败')
@@ -93,7 +107,27 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     try {
       const values = await form.validateFields()
       setSaving(true)
-      await window.api.saveSettings(values)
+      const result = await window.api.saveSettings(values)
+      
+      if (result.embeddingChanged) {
+        // 嵌入模型变更，显示警告提示
+        Modal.warning({
+          title: '嵌入模型已切换',
+          content: (
+            <div>
+              <p>
+                由于不同嵌入模型的向量维度不同，<strong>旧的索引数据将不兼容</strong>。
+              </p>
+              <p style={{ marginTop: 12 }}>请执行以下操作之一：</p>
+              <ul style={{ marginTop: 8, paddingLeft: 20 }}>
+                <li>删除知识库中的所有文档，然后重新导入</li>
+                <li>或在知识库面板中点击&ldquo;重建索引&rdquo;</li>
+              </ul>
+            </div>
+          ),
+          okText: '我知道了'
+        })
+      }
       message.success('设置已保存')
       onSaved?.(values)
     } catch (error) {
@@ -107,12 +141,12 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     }
   }
 
-  const handleProviderChange = (value: ModelProvider) => {
+  const handleProviderChange = (value: ModelProvider): void => {
     setCurrentProvider(value)
     form.setFieldValue('provider', value)
   }
 
-  const renderProviderConfig = (provider: ModelProvider) => {
+  const renderProviderConfig = (provider: ModelProvider): ReactElement => {
     const isOllama = provider === 'ollama'
     const modelOptions = MODEL_PRESETS[provider].map((m) => ({ value: m, label: m }))
 
@@ -225,10 +259,31 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
 
         {/* 向量模型设置 */}
         <Typography.Text strong className="mb-3 block">
-          📊 向量模型设置 (Ollama 本地)
+          📊 向量模型设置
         </Typography.Text>
+
+        <Form.Item
+          label="嵌入模式"
+          name="embeddingProvider"
+          rules={[{ required: true }]}
+        >
+          <Select
+            options={[
+              { value: 'local', label: '🚀 本地内置 (推荐，首次使用自动下载)' },
+              { value: 'ollama', label: '🦙 Ollama (需要本地运行 Ollama)' }
+            ]}
+            onChange={(value: EmbeddingProvider) => {
+              setEmbeddingProvider(value)
+              // 切换时重置为默认模型
+              form.setFieldValue('embeddingModel', value === 'local' ? 'nomic-embed-text' : 'nomic-embed-text')
+            }}
+          />
+        </Form.Item>
+
         <Typography.Paragraph type="secondary" className="text-xs mb-3">
-          向量模型用于文档索引，需要在本地 Ollama 中运行
+          {embeddingProvider === 'local'
+            ? '本地模式：首次使用时自动下载模型（约 50-150MB），无需额外配置'
+            : 'Ollama 模式：需要先在本地安装并运行 Ollama，然后拉取对应的嵌入模型'}
         </Typography.Paragraph>
 
         <Form.Item
@@ -236,14 +291,21 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
           name="embeddingModel"
           rules={[{ required: true, message: '请选择向量模型' }]}
         >
-          <AutoComplete
-            allowClear
-            placeholder="选择或输入向量模型"
-            options={EMBEDDING_MODELS.map((m) => ({ value: m, label: m }))}
-            filterOption={(inputValue, option) =>
-              option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
-            }
-          />
+          {embeddingProvider === 'local' ? (
+            <Select
+              options={LOCAL_EMBEDDING_MODELS}
+              placeholder="选择本地嵌入模型"
+            />
+          ) : (
+            <AutoComplete
+              allowClear
+              placeholder="选择或输入向量模型"
+              options={OLLAMA_EMBEDDING_MODELS.map((m) => ({ value: m, label: m }))}
+              filterOption={(inputValue, option) =>
+                option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
+              }
+            />
+          )}
         </Form.Item>
 
         <Divider />

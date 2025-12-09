@@ -24,6 +24,9 @@ export interface ProviderConfig {
   embeddingModel?: string
 }
 
+/** 嵌入模型提供商类型 */
+export type EmbeddingProvider = 'local' | 'ollama'
+
 /** 应用设置 */
 export interface AppSettings {
   provider: ModelProvider
@@ -33,7 +36,7 @@ export interface AppSettings {
   deepseek: ProviderConfig
   zhipu: ProviderConfig
   moonshot: ProviderConfig
-  embeddingProvider: 'ollama'
+  embeddingProvider: EmbeddingProvider
   embeddingModel: string
   ollamaUrl: string
 }

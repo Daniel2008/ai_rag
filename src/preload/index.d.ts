@@ -15,6 +15,8 @@ export interface ProviderConfig {
   embeddingModel?: string
 }
 
+export type EmbeddingProvider = 'local' | 'ollama'
+
 export interface AppSettings {
   provider: ModelProvider
   ollama: ProviderConfig
@@ -23,9 +25,16 @@ export interface AppSettings {
   deepseek: ProviderConfig
   zhipu: ProviderConfig
   moonshot: ProviderConfig
-  embeddingProvider: 'ollama'
+  embeddingProvider: EmbeddingProvider
   embeddingModel: string
   ollamaUrl: string
+}
+
+export interface EmbeddingProgress {
+  status: 'downloading' | 'loading' | 'ready' | 'error'
+  progress?: number
+  file?: string
+  message?: string
 }
 
 export interface ProcessFileResult {
@@ -64,6 +73,14 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      // 窗口控制
+      minimizeWindow: () => void
+      maximizeWindow: () => void
+      closeWindow: () => void
+      isWindowMaximized: () => Promise<boolean>
+      onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
+      platform: string
+      
       selectFile: () => Promise<string | null>
       processFile: (path: string) => Promise<ProcessFileResult>
       chat: (payload: { question: string; sources?: string[] }) => void
@@ -87,8 +104,11 @@ declare global {
       onChatDone: (callback: () => void) => void
       onChatError: (callback: (error: string) => void) => void
       removeAllChatListeners: () => void
+      // 嵌入模型进度
+      onEmbeddingProgress: (callback: (progress: EmbeddingProgress) => void) => void
+      removeEmbeddingProgressListener: () => void
       getSettings: () => Promise<AppSettings>
-      saveSettings: (settings: Partial<AppSettings>) => Promise<{ success: boolean }>
+      saveSettings: (settings: Partial<AppSettings>) => Promise<{ success: boolean; embeddingChanged?: boolean }>
 
       // Database APIs
       getConversations: () => Promise<{ key: string; label: string; timestamp: number }[]>

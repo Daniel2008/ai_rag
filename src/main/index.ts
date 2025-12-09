@@ -11,7 +11,7 @@ import {
   updateConversationTimestamp
 } from './db/service'
 import { loadAndSplitFile } from './rag/loader'
-import { addDocumentsToStore, initVectorStore } from './rag/store'
+import { addDocumentsToStore, initVectorStore, clearEmbeddingsCache } from './rag/store'
 import { chatWithRag } from './rag/chat'
 import { getSettings, saveSettings, AppSettings } from './settings'
 import {
@@ -313,8 +313,29 @@ app.whenReady().then(async () => {
     return getSettings()
   })
 
-  ipcMain.handle('settings:save', (_, settings: Partial<AppSettings>) => {
+  ipcMain.handle('settings:save', async (_, settings: Partial<AppSettings>) => {
+    const oldSettings = getSettings()
     saveSettings(settings)
+    
+    // 如果嵌入模型设置变化，清除缓存并通知用户
+    if (
+      settings.embeddingProvider !== undefined ||
+      settings.embeddingModel !== undefined
+    ) {
+      const newSettings = getSettings()
+      const embeddingChanged =
+        oldSettings.embeddingProvider !== newSettings.embeddingProvider ||
+        oldSettings.embeddingModel !== newSettings.embeddingModel
+      
+      if (embeddingChanged) {
+        await clearEmbeddingsCache()
+        console.log('Embedding settings changed, cache cleared')
+        
+        // 返回嵌入模型变更标记，让前端显示提示
+        return { success: true, embeddingChanged: true }
+      }
+    }
+    
     return { success: true }
   })
 

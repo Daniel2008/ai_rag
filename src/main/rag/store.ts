@@ -1,12 +1,19 @@
 import { LanceDB } from '@langchain/community/vectorstores/lancedb'
 import { connect, Connection, Table } from '@lancedb/lancedb'
 import { OllamaEmbeddings } from '@langchain/ollama'
+import { Embeddings } from '@langchain/core/embeddings'
 import { Document } from '@langchain/core/documents'
-import { app } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import fsPromises from 'fs/promises'
 import { getSettings } from '../settings'
+import {
+  LocalEmbeddings,
+  setProgressCallback,
+  type LocalEmbeddingModelName,
+  type ModelProgressCallback
+} from './localEmbeddings'
 
 // Singleton instances
 let db: Connection | null = null
@@ -14,8 +21,8 @@ let table: Table | null = null
 let vectorStore: LanceDB | null = null
 
 // 性能优化：缓存 Embeddings 实例
-let cachedEmbeddings: OllamaEmbeddings | null = null
-let cachedEmbeddingsConfig: { model: string; baseUrl: string } | null = null
+let cachedEmbeddings: Embeddings | null = null
+let cachedEmbeddingsConfig: { provider: string; model: string; baseUrl?: string } | null = null
 
 const TABLE_NAME = 'documents'
 
@@ -24,10 +31,19 @@ function getDbPath(): string {
   return path.join(userDataPath, 'lancedb')
 }
 
-// 性能优化：缓存 OllamaEmbeddings 实例，只在配置变化时重新创建
-function getEmbeddings(): OllamaEmbeddings {
+// 发送嵌入模型进度到渲染进程
+function sendEmbeddingProgress(progress: Parameters<ModelProgressCallback>[0]): void {
+  const windows = BrowserWindow.getAllWindows()
+  windows.forEach((win) => {
+    win.webContents.send('embedding:progress', progress)
+  })
+}
+
+// 性能优化：缓存 Embeddings 实例，只在配置变化时重新创建
+function getEmbeddings(): Embeddings {
   const settings = getSettings()
   const currentConfig = {
+    provider: settings.embeddingProvider,
     model: settings.embeddingModel,
     baseUrl: settings.ollamaUrl
   }
@@ -36,19 +52,30 @@ function getEmbeddings(): OllamaEmbeddings {
   if (
     cachedEmbeddings &&
     cachedEmbeddingsConfig &&
+    cachedEmbeddingsConfig.provider === currentConfig.provider &&
     cachedEmbeddingsConfig.model === currentConfig.model &&
     cachedEmbeddingsConfig.baseUrl === currentConfig.baseUrl
   ) {
     return cachedEmbeddings
   }
 
-  // 创建新实例并缓存
-  cachedEmbeddings = new OllamaEmbeddings({
-    model: currentConfig.model,
-    baseUrl: currentConfig.baseUrl
-  })
-  cachedEmbeddingsConfig = currentConfig
+  // 根据提供者创建不同的嵌入实例
+  if (currentConfig.provider === 'local') {
+    // 使用本地嵌入模型，设置全局进度回调
+    setProgressCallback(sendEmbeddingProgress)
+    cachedEmbeddings = new LocalEmbeddings({
+      modelName: currentConfig.model as LocalEmbeddingModelName,
+      onProgress: sendEmbeddingProgress
+    })
+  } else {
+    // 使用 Ollama 嵌入模型
+    cachedEmbeddings = new OllamaEmbeddings({
+      model: currentConfig.model,
+      baseUrl: currentConfig.baseUrl
+    })
+  }
 
+  cachedEmbeddingsConfig = currentConfig
   return cachedEmbeddings
 }
 
@@ -63,22 +90,36 @@ export async function initVectorStore(): Promise<void> {
     fs.mkdirSync(dbPath, { recursive: true })
   }
 
-  db = await connect(dbPath)
-  const embeddings = getEmbeddings()
+  try {
+    db = await connect(dbPath)
 
-  // Check if table exists
-  const tableNames = await db.tableNames()
+    // Check if table exists
+    const tableNames = await db.tableNames()
 
-  if (tableNames.includes(TABLE_NAME)) {
-    // Open existing table
-    table = await db.openTable(TABLE_NAME)
-    vectorStore = new LanceDB(embeddings, { table })
-    console.log('Opened existing LanceDB table')
-  } else {
-    // 表不存在时，我们不立即创建，而是标记需要在添加文档时创建
-    // 设置一个空的 vectorStore 标记，让 addDocumentsToStore 负责创建
+    if (tableNames.includes(TABLE_NAME)) {
+      // Open existing table
+      try {
+        table = await db.openTable(TABLE_NAME)
+        const embeddings = getEmbeddings()
+        vectorStore = new LanceDB(embeddings, { table })
+        console.log('Opened existing LanceDB table')
+      } catch (tableError) {
+        // 表打开失败，可能是因为嵌入模型维度不匹配，标记为需要重建
+        console.warn('Failed to open existing table, may need rebuild:', tableError)
+        vectorStore = null
+        table = null
+      }
+    } else {
+      // 表不存在时，我们不立即创建，而是标记需要在添加文档时创建
+      // 设置一个空的 vectorStore 标记，让 addDocumentsToStore 负责创建
+      vectorStore = null
+      console.log('LanceDB table does not exist, will be created on first document add')
+    }
+  } catch (error) {
+    console.warn('Failed to connect to LanceDB:', error)
+    db = null
     vectorStore = null
-    console.log('LanceDB table does not exist, will be created on first document add')
+    table = null
   }
 }
 
@@ -91,19 +132,21 @@ async function ensureTableWithDocuments(docs: Document[]): Promise<LanceDB> {
     db = await connect(dbPath)
   }
 
-  const tableNames = await db.tableNames()
-
-  if (tableNames.includes(TABLE_NAME)) {
-    table = await db.openTable(TABLE_NAME)
-    return new LanceDB(embeddings, { table })
-  }
-
-  // 使用提供的文档创建新表
-  console.log('Creating new LanceDB table with initial documents')
-  return await LanceDB.fromDocuments(docs, embeddings, {
+  // 总是使用 fromDocuments 创建新表，这样可以确保表结构正确
+  // 如果表已存在，LanceDB.fromDocuments 会添加到现有表
+  console.log('Creating/updating LanceDB table with documents')
+  const store = await LanceDB.fromDocuments(docs, embeddings, {
     uri: dbPath,
     tableName: TABLE_NAME
   })
+
+  // 更新缓存的 table 引用
+  const tableNames = await db.tableNames()
+  if (tableNames.includes(TABLE_NAME)) {
+    table = await db.openTable(TABLE_NAME)
+  }
+
+  return store
 }
 
 export async function getVectorStore(): Promise<LanceDB> {
@@ -119,9 +162,6 @@ export async function getVectorStore(): Promise<LanceDB> {
 /** 进度回调函数类型 */
 export type ProgressCallback = (current: number, total: number, stage: string) => void
 
-/** 批量添加文档的批次大小 */
-const BATCH_SIZE = 10
-
 export async function addDocumentsToStore(
   docs: Document[],
   onProgress?: ProgressCallback
@@ -130,24 +170,22 @@ export async function addDocumentsToStore(
 
   const total = docs.length
 
-  // 如果 vectorStore 不存在（表还没创建），使用文档来创建
-  if (!vectorStore) {
-    onProgress?.(0, total, '正在创建索引...')
-    vectorStore = await ensureTableWithDocuments(docs)
-    onProgress?.(total, total, '索引创建完成')
-    console.log(`Created LanceDB table and added ${docs.length} documents`)
-    return
-  }
+  // 总是使用 ensureTableWithDocuments，它会处理表的创建或更新
+  // 这样可以避免 vectorStore 指向无效表的问题
+  onProgress?.(0, total, '正在索引文档...')
 
-  // vectorStore 已存在，分批添加文档以报告进度
-  let processed = 0
-  for (let i = 0; i < docs.length; i += BATCH_SIZE) {
-    const batch = docs.slice(i, i + BATCH_SIZE)
-    await vectorStore.addDocuments(batch)
-    processed += batch.length
-    onProgress?.(processed, total, `正在索引文档 (${processed}/${total})`)
+  try {
+    vectorStore = await ensureTableWithDocuments(docs)
+    onProgress?.(total, total, '索引完成')
+    console.log(`Added ${docs.length} documents to LanceDB`)
+  } catch (error) {
+    console.error('Failed to add documents, trying to recreate table:', error)
+    // 如果失败，尝试重置并重新创建
+    await resetVectorStore()
+    vectorStore = await ensureTableWithDocuments(docs)
+    onProgress?.(total, total, '索引完成（已重建）')
+    console.log(`Recreated LanceDB table and added ${docs.length} documents`)
   }
-  console.log(`Added ${docs.length} documents to LanceDB`)
 }
 
 export interface SearchOptions {
@@ -213,4 +251,23 @@ export async function resetVectorStore(): Promise<void> {
   if (fs.existsSync(dbPath)) {
     await fsPromises.rm(dbPath, { recursive: true, force: true })
   }
+}
+
+/**
+ * 清除嵌入模型缓存（用于设置变更后）
+ * 注意：这会清除所有缓存，下次使用时会重新连接数据库
+ * 如果切换了嵌入模型，旧的向量数据将不兼容，需要重新索引文档
+ */
+export async function clearEmbeddingsCache(): Promise<void> {
+  // 清除嵌入实例缓存
+  cachedEmbeddings = null
+  cachedEmbeddingsConfig = null
+  // 清除所有缓存，包括数据库连接
+  vectorStore = null
+  table = null
+  db = null
+  // 同时清除本地模型缓存
+  const localEmbeddings = await import('./localEmbeddings')
+  localEmbeddings.clearModelCache()
+  console.log('Embeddings, vector store, and database connection cache cleared')
 }

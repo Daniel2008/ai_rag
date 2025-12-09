@@ -109,6 +109,21 @@ const api = {
   removeProcessProgressListener: (): void => {
     ipcRenderer.removeAllListeners('rag:process-progress')
   },
+  // 嵌入模型进度监听
+  onEmbeddingProgress: (
+    callback: (progress: {
+      status: 'downloading' | 'loading' | 'ready' | 'error'
+      progress?: number
+      file?: string
+      message?: string
+    }) => void
+  ): void => {
+    ipcRenderer.removeAllListeners('embedding:progress')
+    ipcRenderer.on('embedding:progress', (_, progress) => callback(progress))
+  },
+  removeEmbeddingProgressListener: (): void => {
+    ipcRenderer.removeAllListeners('embedding:progress')
+  },
   // Settings API
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: Partial<AppSettings>): Promise<{ success: boolean }> =>

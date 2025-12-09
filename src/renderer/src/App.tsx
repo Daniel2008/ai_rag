@@ -62,6 +62,48 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null)
   const [sidebarCollapsed] = useState(false)
 
+  // 监听嵌入模型下载进度
+  useEffect(() => {
+    const messageKey = 'embedding-progress'
+
+    window.api.onEmbeddingProgress((progress) => {
+      if (progress.status === 'downloading') {
+        const percent = progress.progress ? `${Math.round(progress.progress)}%` : ''
+        messageApi.open({
+          key: messageKey,
+          type: 'loading',
+          content: `正在下载嵌入模型... ${percent}`,
+          duration: 0
+        })
+      } else if (progress.status === 'loading') {
+        messageApi.open({
+          key: messageKey,
+          type: 'loading',
+          content: '正在加载嵌入模型...',
+          duration: 0
+        })
+      } else if (progress.status === 'ready') {
+        messageApi.open({
+          key: messageKey,
+          type: 'success',
+          content: '嵌入模型已就绪',
+          duration: 2
+        })
+      } else if (progress.status === 'error') {
+        messageApi.open({
+          key: messageKey,
+          type: 'error',
+          content: progress.message || '嵌入模型加载失败',
+          duration: 5
+        })
+      }
+    })
+
+    return () => {
+      window.api.removeEmbeddingProgressListener()
+    }
+  }, [messageApi])
+
   // Refs
   const bubbleListRef = useRef<BubbleListRef | null>(null)
 

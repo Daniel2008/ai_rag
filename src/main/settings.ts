@@ -9,6 +9,8 @@ export interface ProviderConfig {
   embeddingModel?: string
 }
 
+export type EmbeddingProvider = 'local' | 'ollama'
+
 export interface AppSettings {
   // 当前选择的供应商
   provider: ModelProvider
@@ -24,8 +26,8 @@ export interface AppSettings {
   zhipu: ProviderConfig
   // Moonshot (Kimi) 设置
   moonshot: ProviderConfig
-  // 向量模型设置（统一使用 Ollama 本地）
-  embeddingProvider: 'ollama'
+  // 向量模型设置
+  embeddingProvider: EmbeddingProvider
   embeddingModel: string
   ollamaUrl: string
 }
@@ -61,7 +63,7 @@ const defaults: AppSettings = {
     baseUrl: 'https://api.moonshot.cn/v1',
     chatModel: 'moonshot-v1-8k'
   },
-  embeddingProvider: 'ollama',
+  embeddingProvider: 'local',
   embeddingModel: 'nomic-embed-text',
   ollamaUrl: 'http://localhost:11434'
 }
