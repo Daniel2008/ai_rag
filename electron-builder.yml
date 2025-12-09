@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: ai-rag-app
+appId: com.zhihui.rag
+productName: 智汇
 directories:
   buildResources: build
   output: dist
@@ -45,7 +45,8 @@ compression: normal
 
 # Windows 配置
 win:
-  executableName: ai-rag-app
+  executableName: ZhiHui
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:

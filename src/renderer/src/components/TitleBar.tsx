@@ -11,7 +11,7 @@ interface TitleBarProps {
   title?: string
 }
 
-export function TitleBar({ title = 'AI RAG Assistant' }: TitleBarProps): ReactElement {
+export function TitleBar({ title = '智汇' }: TitleBarProps): ReactElement {
   const { token } = antdTheme.useToken()
   const [isMaximized, setIsMaximized] = useState(false)
   const isMac = window.api.platform === 'darwin'

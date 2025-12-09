@@ -409,7 +409,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: token.colorBgLayout }}>
       {/* 自定义标题栏 */}
       <Suspense fallback={<div className="h-10" style={{ background: token.colorBgElevated }} />}>
-        <TitleBar title="AI RAG Assistant" />
+        <TitleBar title="智汇" />
       </Suspense>
 
       {/* 主内容区域 */}

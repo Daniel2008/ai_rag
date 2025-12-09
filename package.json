@@ -1,10 +1,10 @@
 {
-  "name": "ai-rag-app",
+  "name": "zhihui-rag",
   "version": "1.0.0",
-  "description": "An Electron application with React and TypeScript",
+  "description": "智汇 - AI 智能知识库助手，支持文档问答、知识检索、文档生成",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "ZhiHui Team",
+  "homepage": "https://github.com/zhihui-rag",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -22,7 +22,8 @@
     "build:win:dir": "npm run build:fast && electron-builder --win --dir",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
-    "rebuild": "electron-builder install-app-deps"
+    "rebuild": "electron-builder install-app-deps",
+    "icon:generate": "npx electron-icon-builder --input=build/icon.png --output=build --flatten"
   },
   "dependencies": {
     "@ant-design/cssinjs": "^2.0.1",
