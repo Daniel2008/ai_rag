@@ -47,6 +47,7 @@ compression: store
 win:
   executableName: ZhiHui
   icon: build/icon.ico
+  requestedExecutionLevel: asInvoker
   target:
     - target: nsis
       arch:

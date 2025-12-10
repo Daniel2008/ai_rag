@@ -341,27 +341,74 @@ export async function searchSimilarDocumentsWithScores(
   console.log('[searchWithScores] Using native LanceDB search, fetchK:', fetchK)
 
   try {
-    // 生成查询向量
+    // 生成查询向量（支持跨语言检索）
     const embeddings = getEmbeddings()
-    const queryVector = await embeddings.embedQuery(query)
-    console.log('[searchWithScores] Query vector length:', queryVector.length)
+    
+    // 尝试跨语言查询：如果查询是中文，同时用英文翻译进行检索
+    let queryVector = await embeddings.embedQuery(query)
+    let allSearchResults: any[] = []
+    
+    // 检测查询语言，如果是中文，尝试用英文翻译进行额外检索
+    const { detectLanguage, generateCrossLanguageQueries } = await import('./queryTranslator')
+    const queryLang = detectLanguage(query)
+    
+    if (queryLang === 'zh') {
+      console.log('[searchWithScores] Detected Chinese query, attempting cross-language search')
+      try {
+        const { queries } = await generateCrossLanguageQueries(query)
+        
+        // 使用所有查询变体进行检索
+        const searchPromises = queries.map(async (q, index) => {
+          const vector = await embeddings.embedQuery(q)
+          const results = await table.search(vector).limit(fetchK).toArray()
+          console.log(`[searchWithScores] Query variant ${index + 1} (${q.slice(0, 30)}...) got ${results.length} results`)
+          return results.map((r: any) => ({ ...r, _queryIndex: index }))
+        })
+        
+        const allResults = await Promise.all(searchPromises)
+        allSearchResults = allResults.flat()
+        
+        // 去重：基于文档内容，保留距离最小的
+        const docMap = new Map<string, any>()
+        for (const result of allSearchResults) {
+          const docKey = result.text || result.pageContent || JSON.stringify(result.metadata?.source || '')
+          if (!docMap.has(docKey) || result._distance < docMap.get(docKey)._distance) {
+            docMap.set(docKey, result)
+          }
+        }
+        allSearchResults = Array.from(docMap.values())
+        
+        // 按距离排序
+        allSearchResults.sort((a, b) => (a._distance || 0) - (b._distance || 0))
+        allSearchResults = allSearchResults.slice(0, fetchK)
+        
+        console.log(`[searchWithScores] Cross-language search: ${allSearchResults.length} results after deduplication`)
+      } catch (error) {
+        console.warn('[searchWithScores] Cross-language search failed, using original query:', error)
+        // 回退到原始查询
+        const results = await table.search(queryVector).limit(fetchK).toArray()
+        allSearchResults = results
+      }
+    } else {
+      // 非中文查询，使用原始方法
+      const results = await table.search(queryVector).limit(fetchK).toArray()
+      allSearchResults = results
+    }
+    
+    console.log('[searchWithScores] Native search got', allSearchResults.length, 'results')
 
-    // 使用 LanceDB 表的原生 search 方法
-    const searchResults = await table.search(queryVector).limit(fetchK).toArray()
-    console.log('[searchWithScores] Native search got', searchResults.length, 'results')
-
-    if (searchResults.length === 0) {
+    if (allSearchResults.length === 0) {
       return []
     }
 
     // 打印第一个结果的结构以供调试
-    console.log('[searchWithScores] First result keys:', Object.keys(searchResults[0]))
-    if (searchResults[0]._distance !== undefined) {
-      console.log('[searchWithScores] First result distance:', searchResults[0]._distance)
+    console.log('[searchWithScores] First result keys:', Object.keys(allSearchResults[0]))
+    if (allSearchResults[0]._distance !== undefined) {
+      console.log('[searchWithScores] First result distance:', allSearchResults[0]._distance)
     }
 
     // 转换为 Document 格式
-    let results = searchResults.map((row) => {
+    let results = allSearchResults.map((row) => {
       // LanceDB 返回的结果包含 _distance 字段，距离越小越相似
       const distance = row._distance ?? 0
 

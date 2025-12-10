@@ -64,7 +64,7 @@ const defaults: AppSettings = {
     chatModel: 'moonshot-v1-8k'
   },
   embeddingProvider: 'local',
-  embeddingModel: 'nomic-embed-text',
+  embeddingModel: 'multilingual-e5-small', // 默认使用多语言模型以支持跨语言检索
   ollamaUrl: 'http://localhost:11434'
 }
 

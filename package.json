@@ -46,7 +46,7 @@
       "**/*.node"
     ],
     "asar": true,
-    "compression": "store",
+    "compression": "maximum",
     "extraResources": [
       {
         "from": "node_modules/@lancedb",
@@ -80,6 +80,7 @@
     "win": {
       "executableName": "ZhiHui",
       "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
       "target": [
         {
           "target": "nsis",
@@ -168,6 +169,7 @@
     "build:linux": "electron-vite build && electron-builder --linux",
     "rebuild": "electron-builder install-app-deps",
     "icon:generate": "node scripts/generate-icons.js",
+    "icon:fix-windows": "node scripts/fix-windows-icon.js",
     "package": "electron-forge package",
     "make": "electron-forge make"
   },
