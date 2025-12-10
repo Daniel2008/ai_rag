@@ -377,7 +377,11 @@ export async function generateDocument(
     const extension = type === 'word' ? 'docx' : 'pptx'
     const defaultFileName = `${title}.${extension}`
 
-    const { filePath, canceled } = await dialog.showSaveDialog({
+    // 获取主窗口
+    const windows = BrowserWindow.getAllWindows()
+    const mainWindow = windows[0] || null
+
+    const { filePath, canceled } = await dialog.showSaveDialog(mainWindow || undefined, {
       title: `保存${type === 'word' ? 'Word文档' : 'PPT演示文稿'}`,
       defaultPath: defaultFileName,
       filters: [

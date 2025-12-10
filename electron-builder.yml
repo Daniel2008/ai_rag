@@ -41,7 +41,7 @@ asarUnpack:
 
 # ASAR 压缩优化
 asar: true
-compression: normal
+compression: store
 
 # Windows 配置
 win:
@@ -63,6 +63,7 @@ nsis:
 
 # macOS 配置
 mac:
+  icon: build/icon.icns
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
@@ -80,6 +81,7 @@ dmg:
 
 # Linux 配置 - 只构建 AppImage（最快）
 linux:
+  icon: build/icon.png
   target:
     - AppImage
   maintainer: electronjs.org
@@ -88,8 +90,8 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 
-# 原生模块重建 - 按需启用
-npmRebuild: true
+# 原生模块重建 - 按需启用（已禁用以加速构建）
+npmRebuild: false
 
 # 发布配置
 publish:

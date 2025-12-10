@@ -46,7 +46,7 @@
       "**/*.node"
     ],
     "asar": true,
-    "compression": "normal",
+    "compression": "store",
     "extraResources": [
       {
         "from": "node_modules/@lancedb",
@@ -99,6 +99,7 @@
       "allowToChangeInstallationDirectory": true
     },
     "mac": {
+      "icon": "build/icon.icns",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": [
         {
@@ -128,6 +129,7 @@
       "artifactName": "${name}-${version}.${ext}"
     },
     "linux": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "AppImage"
@@ -139,7 +141,7 @@
     "appImage": {
       "artifactName": "${name}-${version}.${ext}"
     },
-    "npmRebuild": true,
+    "npmRebuild": false,
     "publish": {
       "provider": "generic",
       "url": "https://example.com/auto-updates"
@@ -160,10 +162,12 @@
     "build:win": "npm run build && electron-builder --win",
     "build:win:fast": "npm run build:fast && electron-builder --win",
     "build:win:dir": "npm run build:fast && electron-builder --win --dir",
+    "build:win:debug": "cross-env DEBUG=electron-builder npm run build:win:fast",
+    "build:with-logs": "node scripts/build-with-logs.js",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
     "rebuild": "electron-builder install-app-deps",
-    "icon:generate": "npx electron-icon-builder --input=build/icon.png --output=build --flatten",
+    "icon:generate": "node scripts/generate-icons.js",
     "package": "electron-forge package",
     "make": "electron-forge make"
   },
@@ -184,6 +188,7 @@
     "antd": "^6.0.1",
     "apache-arrow": "^18.1.0",
     "better-sqlite3": "11.10.0",
+    "canvas": "^3.2.0",
     "clsx": "^2.1.1",
     "docx": "^9.5.1",
     "electron-store": "^11.0.2",
@@ -193,11 +198,13 @@
     "ollama": "^0.6.3",
     "onnxruntime-node": "^1.23.2",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^5.4.449",
     "pnpm": "^10.25.0",
     "pptxgenjs": "^4.0.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.10.2",

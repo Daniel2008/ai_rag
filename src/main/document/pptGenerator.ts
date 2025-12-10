@@ -59,7 +59,7 @@ const FONTS = {
 }
 
 /**
- * 创建封面幻灯片
+ * 创建封面幻灯片（优化版：更现代的设计）
  */
 function createTitleSlide(
   pptx: PptxGenJS,
@@ -70,57 +70,73 @@ function createTitleSlide(
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
-  // 背景装饰
+  // 背景装饰（优化：渐变效果）
   slide.addShape('rect', {
     x: 0,
     y: 0,
     w: '100%',
-    h: '40%',
-    fill: { color: colors.primary }
+    h: '45%', // 稍微增加高度
+    fill: { 
+      color: colors.primary,
+      transparency: 0 // 不透明
+    },
+    line: { color: colors.primary, width: 0 }
   })
 
-  // 主标题
+  // 装饰性底部条（新增）
+  slide.addShape('rect', {
+    x: 0,
+    y: 4.5,
+    w: '100%',
+    h: 0.15,
+    fill: { color: colors.accent }
+  })
+
+  // 主标题（优化：更大的字体和更好的位置）
   slide.addText(title, {
     x: 0.5,
-    y: 1.5,
+    y: 1.3, // 稍微上移
     w: '90%',
-    h: 1.5,
-    fontSize: 44,
+    h: 1.8, // 增加高度
+    fontSize: 52, // 增大字体
     fontFace: FONTS.title,
     color: 'FFFFFF',
     bold: true,
     align: 'center',
-    valign: 'middle'
+    valign: 'middle',
+    lineSpacing: 1.2 // 行距
   })
 
-  // 副标题
+  // 副标题（优化：更好的视觉层次）
   if (subtitle) {
     slide.addText(subtitle, {
       x: 0.5,
-      y: 3.2,
+      y: 3.3, // 调整位置
       w: '90%',
-      h: 0.8,
-      fontSize: 24,
+      h: 0.9,
+      fontSize: 28, // 增大字体
       fontFace: FONTS.body,
       color: colors.lightText,
       align: 'center',
-      valign: 'middle'
+      valign: 'middle',
+      italic: true // 添加斜体
     })
   }
 
-  // 日期
+  // 日期（优化：更好的格式和位置）
   slide.addText(
     new Date().toLocaleDateString('zh-CN', {
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
+      weekday: 'long'
     }),
     {
       x: 0.5,
-      y: 4.5,
+      y: 4.8, // 调整位置
       w: '90%',
-      h: 0.5,
-      fontSize: 14,
+      h: 0.4,
+      fontSize: 16, // 稍微增大
       fontFace: FONTS.body,
       color: colors.lightText,
       align: 'center'
@@ -129,7 +145,7 @@ function createTitleSlide(
 }
 
 /**
- * 创建目录幻灯片
+ * 创建目录幻灯片（优化版：更好的视觉层次）
  */
 function createTOCSlide(
   pptx: PptxGenJS,
@@ -139,37 +155,49 @@ function createTOCSlide(
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
-  // 标题
-  slide.addText('目  录', {
-    x: 0.5,
-    y: 0.3,
-    w: '90%',
-    h: 0.8,
-    fontSize: 36,
-    fontFace: FONTS.title,
-    color: colors.primary,
-    bold: true
+  // 标题背景（新增：更专业的视觉设计）
+  slide.addShape('rect', {
+    x: 0,
+    y: 0,
+    w: '100%',
+    h: 1.0,
+    fill: { color: colors.primary }
   })
 
-  // 分隔线
+  // 标题（优化：白色文字在深色背景上）
+  slide.addText('目  录', {
+    x: 0.5,
+    y: 0.2,
+    w: '90%',
+    h: 0.8,
+    fontSize: 40, // 增大字体
+    fontFace: FONTS.title,
+    color: 'FFFFFF',
+    bold: true,
+    align: 'center',
+    valign: 'middle'
+  })
+
+  // 分隔线（优化：更明显）
   slide.addShape('rect', {
     x: 0.5,
-    y: 1.1,
-    w: 1.5,
-    h: 0.05,
+    y: 1.2,
+    w: '90%',
+    h: 0.06, // 稍微加粗
     fill: { color: colors.accent }
   })
 
-  // 目录项
+  // 目录项（优化：更好的间距和字体）
   const tocItems = sections.map((s, i) => ({
     text: `${i + 1}. ${s.title}`,
     options: {
-      fontSize: 20,
+      fontSize: 22, // 增大字体
       fontFace: FONTS.body,
       color: colors.text,
       bullet: false,
-      paraSpaceBefore: 15,
-      paraSpaceAfter: 15
+      paraSpaceBefore: i === 0 ? 20 : 18, // 优化间距
+      paraSpaceAfter: 12,
+      lineSpacing: 1.3 // 行距
     }
   }))
 
@@ -177,7 +205,7 @@ function createTOCSlide(
     x: 0.5,
     y: 1.5,
     w: '90%',
-    h: 3.5
+    h: 3.8 // 调整高度
   })
 }
 
@@ -193,42 +221,55 @@ function createSectionTitleSlide(
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
-  // 背景色块
+  // 背景色块（优化：更好的位置和大小）
   slide.addShape('rect', {
     x: 0,
-    y: 2,
+    y: 1.8,
     w: '100%',
-    h: 2,
+    h: 2.2,
     fill: { color: colors.primary }
   })
 
-  // 章节编号
-  slide.addText(`第 ${sectionNumber} 章`, {
-    x: 0.5,
-    y: 1.2,
-    w: '90%',
-    h: 0.6,
-    fontSize: 18,
-    fontFace: FONTS.body,
-    color: colors.accent
+  // 装饰性底部条（新增）
+  slide.addShape('rect', {
+    x: 0,
+    y: 4.0,
+    w: '100%',
+    h: 0.15,
+    fill: { color: colors.accent }
   })
 
-  // 章节标题
+  // 章节编号（优化：更大的字体和更好的位置）
+  slide.addText(`第 ${sectionNumber} 章`, {
+    x: 0.5,
+    y: 1.0,
+    w: '90%',
+    h: 0.7,
+    fontSize: 22,
+    fontFace: FONTS.body,
+    color: colors.accent,
+    bold: true,
+    align: 'center'
+  })
+
+  // 章节标题（优化：更大的字体和更好的位置）
   slide.addText(title, {
     x: 0.5,
-    y: 2.3,
+    y: 2.0,
     w: '90%',
-    h: 1.4,
-    fontSize: 40,
+    h: 1.6,
+    fontSize: 48,
     fontFace: FONTS.title,
     color: 'FFFFFF',
     bold: true,
-    valign: 'middle'
+    align: 'center',
+    valign: 'middle',
+    lineSpacing: 1.2
   })
 }
 
 /**
- * 创建内容幻灯片
+ * 创建内容幻灯片（优化版：更好的布局和可读性）
  */
 function createContentSlide(
   pptx: PptxGenJS,
@@ -240,40 +281,51 @@ function createContentSlide(
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
-  // 标题
-  slide.addText(title, {
-    x: 0.5,
-    y: 0.3,
-    w: '90%',
-    h: 0.8,
-    fontSize: 28,
-    fontFace: FONTS.title,
-    color: colors.primary,
-    bold: true
+  // 标题背景条（新增：更专业的视觉层次）
+  slide.addShape('rect', {
+    x: 0,
+    y: 0,
+    w: 0.2,
+    h: 0.9,
+    fill: { color: colors.primary }
   })
 
-  // 分隔线
+  // 标题（优化：更大的字体和更好的位置）
+  slide.addText(title, {
+    x: 0.3, // 从背景条后开始
+    y: 0.25,
+    w: '85%',
+    h: 0.8,
+    fontSize: 32, // 增大字体
+    fontFace: FONTS.title,
+    color: colors.primary,
+    bold: true,
+    valign: 'middle'
+  })
+
+  // 分隔线（优化：更粗更明显）
   slide.addShape('rect', {
-    x: 0.5,
-    y: 1.05,
-    w: 1,
-    h: 0.04,
+    x: 0.3,
+    y: 1.1,
+    w: '85%',
+    h: 0.05, // 稍微加粗
     fill: { color: colors.accent }
   })
 
-  let currentY = 1.3
+  let currentY = 1.4 // 调整起始位置
 
-  // 内容段落
+  // 内容段落（优化：更好的间距和字体）
   if (content.length > 0) {
-    const paragraphText = content.map((para) => ({
+    const paragraphText = content.map((para, index) => ({
       text: para,
       options: {
-        fontSize: 16,
+        fontSize: 18, // 增大字体
         fontFace: FONTS.body,
         color: colors.text,
-        paraSpaceBefore: 8,
-        paraSpaceAfter: 8,
-        bullet: false
+        paraSpaceBefore: index === 0 ? 12 : 16, // 第一段和后续段落的间距
+        paraSpaceAfter: 12,
+        bullet: false,
+        lineSpacing: 1.3 // 行距
       }
     }))
 
@@ -281,24 +333,29 @@ function createContentSlide(
       x: 0.5,
       y: currentY,
       w: '90%',
-      h: bullets && bullets.length > 0 ? 1.8 : 3.5
+      h: bullets && bullets.length > 0 ? 2.0 : 3.8 // 调整高度
     })
 
-    currentY += bullets && bullets.length > 0 ? 2 : 0
+    currentY += bullets && bullets.length > 0 ? 2.2 : 0 // 调整间距
   }
 
-  // 要点列表
+  // 要点列表（优化：更好的视觉设计）
   if (bullets && bullets.length > 0) {
-    const bulletItems = bullets.map((item) => ({
+    const bulletItems = bullets.map((item, index) => ({
       text: item,
       options: {
-        fontSize: 16,
+        fontSize: 18, // 增大字体
         fontFace: FONTS.body,
         color: colors.text,
-        bullet: { type: 'bullet' as const, color: colors.accent },
-        paraSpaceBefore: 10,
+        bullet: { 
+          type: 'bullet' as const, 
+          color: colors.accent,
+          size: 120 // 增大项目符号
+        },
+        paraSpaceBefore: index === 0 ? 12 : 14, // 优化间距
         paraSpaceAfter: 10,
-        indentLevel: 0
+        indentLevel: 0,
+        lineSpacing: 1.25 // 行距
       }
     }))
 
@@ -306,11 +363,11 @@ function createContentSlide(
       x: 0.5,
       y: currentY,
       w: '90%',
-      h: 2.5
+      h: 2.8 // 调整高度
     })
   }
 
-  // 页脚装饰线
+  // 页脚装饰线（优化：更精致的设计）
   slide.addShape('rect', {
     x: 0,
     y: 5.2,
@@ -529,27 +586,55 @@ export async function generatePPTDocument(
       const content = contents[contentIndex]
       contentIndex++
 
-      // 如果内容较多，分成多页
+      // 优化：智能分页，确保内容不会太拥挤
       const paragraphs = content.paragraphs || []
       const bullets = content.bulletPoints || []
 
       if (paragraphs.length > 0 || bullets.length > 0) {
+        // 计算每页最佳内容量
+        const maxParagraphsPerPage = 2
+        const maxBulletsPerPage = 5
+        
         // 主内容页
         createContentSlide(
           pptx,
           section.title,
-          paragraphs.slice(0, 2), // 最多显示2段
-          bullets.slice(0, 5), // 最多显示5个要点
+          paragraphs.slice(0, maxParagraphsPerPage),
+          bullets.slice(0, maxBulletsPerPage),
           theme
         )
 
-        // 如果有更多内容，创建额外的页面
-        if (paragraphs.length > 2 || bullets.length > 5) {
+        // 如果有更多段落，创建额外的段落页
+        if (paragraphs.length > maxParagraphsPerPage) {
+          const remainingParagraphs = paragraphs.slice(maxParagraphsPerPage)
+          const remainingBullets = bullets.slice(maxBulletsPerPage)
+          
+          // 如果还有要点，优先显示要点
+          if (remainingBullets.length > 0) {
+            createContentSlide(
+              pptx,
+              `${section.title}（续）`,
+              remainingParagraphs.slice(0, 1), // 最多1段，留空间给要点
+              remainingBullets,
+              theme
+            )
+          } else if (remainingParagraphs.length > 0) {
+            // 只有段落，可以多显示一些
+            createContentSlide(
+              pptx,
+              `${section.title}（续）`,
+              remainingParagraphs.slice(0, maxParagraphsPerPage),
+              [],
+              theme
+            )
+          }
+        } else if (bullets.length > maxBulletsPerPage) {
+          // 只有要点超出，创建额外的要点页
           createContentSlide(
             pptx,
-            `${section.title}（续）`,
-            paragraphs.slice(2, 4),
-            bullets.slice(5, 10),
+            `${section.title}（要点）`,
+            [],
+            bullets.slice(maxBulletsPerPage),
             theme
           )
         }

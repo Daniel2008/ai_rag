@@ -179,6 +179,8 @@ export async function* streamDocumentGeneration(
   const typeLabel = type === 'word' ? 'Word 文档' : 'PPT 演示文稿'
   const sectionLabel = type === 'word' ? '章节' : '幻灯片'
 
+  console.log('[DocumentChat] Starting document generation:', { type, title, requirements })
+
   try {
     // 开始思维链
     yield '<think>'
@@ -241,7 +243,16 @@ export async function* streamDocumentGeneration(
     yield stepMark('outline', '规划文档大纲', 'loading', '正在智能规划结构...', 'OrderedList')
 
     const settings = getSettings()
-    const model = createChatModel(settings.provider)
+    console.log('[DocumentChat] Using model provider:', settings.provider)
+    
+    let model: BaseChatModel
+    try {
+      model = createChatModel(settings.provider)
+      console.log('[DocumentChat] Model created successfully')
+    } catch (modelError) {
+      console.error('[DocumentChat] Failed to create model:', modelError)
+      throw new Error(`无法创建语言模型: ${modelError instanceof Error ? modelError.message : '未知错误'}`)
+    }
 
     const outlinePrompt = `你是一位专业的文档规划专家。请根据用户需求和参考资料，为${typeLabel}设计一个结构清晰、逻辑严谨的大纲。
 
@@ -270,7 +281,16 @@ ${ragContext.slice(0, 3000) || '（无参考资料，请基于通用知识规划
 
 仅返回 JSON，不要 markdown 代码块。`
 
-    const outlineResponse = await model.invoke(outlinePrompt)
+    let outlineResponse
+    try {
+      console.log('[DocumentChat] Invoking model for outline generation...')
+      outlineResponse = await model.invoke(outlinePrompt)
+      console.log('[DocumentChat] Model response received')
+    } catch (invokeError) {
+      console.error('[DocumentChat] Model invoke error:', invokeError)
+      throw new Error(`模型调用失败: ${invokeError instanceof Error ? invokeError.message : '未知错误'}`)
+    }
+    
     let outlineContent =
       typeof outlineResponse.content === 'string'
         ? outlineResponse.content
@@ -362,25 +382,28 @@ ${ragContext.slice(0, 3000) || '（无参考资料，请基于通用知识规划
       })
       const sectionContext = sectionDocs.map((d) => d.pageContent).join('\n\n') || ragContext
 
-      const contentPrompt = `请为${typeLabel}的「${section.title}」${sectionLabel}撰写内容。
+      // 优化的提示词：更清晰的结构和格式要求
+      const contentPrompt = `你是一位专业的内容撰写专家。请为${typeLabel}的「${section.title}」${sectionLabel}撰写专业内容。
 
-关键要点: ${section.keyPoints?.join('、') || '根据标题自行确定'}
+**章节标题**: ${section.title}
+**关键要点**: ${section.keyPoints?.join('、') || '根据标题和参考资料自行确定'}
 
-参考资料:
-${sectionContext.slice(0, 2000)}
+**参考资料**:
+${sectionContext.slice(0, 2000) || '（无参考资料，请基于通用知识撰写）'}
 
-要求:
-1. 写 2-3 段内容，每段 ${type === 'word' ? '100-200' : '50-100'} 字
-2. 提取 3-5 个核心要点作为列表
-3. 内容要专业、具体、有价值
+**撰写要求**:
+1. 撰写 2-3 段正文内容，每段 ${type === 'word' ? '100-200' : '50-100'} 字，内容要专业、具体、有价值
+2. 提取 3-5 个核心要点，每个要点要简洁明确（10-20字）
+3. 内容要紧密贴合章节标题和关键要点
+4. 段落之间要有逻辑连贯性
 
-请严格按照 JSON 格式返回:
+**输出格式**（严格遵循，仅返回 JSON）:
 {
-  "paragraphs": ["第一段...", "第二段..."],
-  "bulletPoints": ["要点1", "要点2", "要点3"]
+  "paragraphs": ["第一段内容...", "第二段内容...", "第三段内容..."],
+  "bulletPoints": ["要点1", "要点2", "要点3", "要点4"]
 }
 
-仅返回 JSON。`
+**重要**: 只返回 JSON 对象，不要包含任何 markdown 代码块标记、解释文字或其他内容。`
 
       const contentResponse = await model.invoke(contentPrompt)
       let contentText =
@@ -388,21 +411,41 @@ ${sectionContext.slice(0, 2000)}
           ? contentResponse.content
           : JSON.stringify(contentResponse.content)
 
-      // 清理 JSON
-      if (contentText.includes('```')) {
-        contentText = contentText.replace(/```json\s*/g, '').replace(/```\s*/g, '')
+      // 优化的 JSON 清理逻辑
+      contentText = contentText
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .replace(/^[^{]*/, '') // 移除 JSON 前的任何文本
+        .replace(/[^}]*$/, '') // 移除 JSON 后的任何文本
+        .trim()
+
+      // 尝试提取 JSON 对象
+      const jsonMatch = contentText.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        contentText = jsonMatch[0]
       }
-      contentText = contentText.trim()
 
       try {
         const parsed = JSON.parse(contentText)
-        const paragraphs = parsed.paragraphs || []
-        const bulletPoints = parsed.bulletPoints || section.keyPoints || []
+        
+        // 内容验证和清理
+        const paragraphs = (parsed.paragraphs || [])
+          .filter((p: string) => p && typeof p === 'string' && p.trim().length > 10)
+          .slice(0, 3) // 最多 3 段
+        
+        const bulletPoints = (parsed.bulletPoints || [])
+          .filter((p: string) => p && typeof p === 'string' && p.trim().length > 5)
+          .slice(0, 5) // 最多 5 个要点
+
+        // 如果没有有效内容，使用关键要点生成简单内容
+        if (paragraphs.length === 0 && bulletPoints.length === 0) {
+          throw new Error('生成的内容为空')
+        }
 
         contents.push({
           title: section.title,
-          paragraphs,
-          bulletPoints,
+          paragraphs: paragraphs.length > 0 ? paragraphs : [`关于${section.title}的详细内容，请参考相关资料。`],
+          bulletPoints: bulletPoints.length > 0 ? bulletPoints : section.keyPoints || [],
           sources: sectionDocs
             .slice(0, 2)
             .map((d) =>
@@ -424,25 +467,48 @@ ${sectionContext.slice(0, 2000)}
           `${preview}${pointsPreview}`,
           'Check'
         )
-      } catch {
-        // 内容解析失败，让模型直接生成文本
-        const plainPrompt = `为"${section.title}"写一段 100 字左右的介绍。`
-        const plainResponse = await model.invoke(plainPrompt)
-        const plainText =
-          typeof plainResponse.content === 'string'
-            ? plainResponse.content
-            : String(plainResponse.content)
+      } catch (parseError) {
+        console.warn(`[DocumentChat] Failed to parse content for section ${i}, using fallback:`, parseError)
+        
+        // 使用简化的重试逻辑
+        try {
+          const simplePrompt = `为"${section.title}"写2段内容（每段50-100字）和3个要点（每个10-20字）。只返回JSON：{"paragraphs":["段落1","段落2"],"bulletPoints":["要点1","要点2","要点3"]}`
+          const retryResponse = await model.invoke(simplePrompt)
+          let retryText =
+            typeof retryResponse.content === 'string'
+              ? retryResponse.content
+              : JSON.stringify(retryResponse.content)
 
-        contents.push({
-          title: section.title,
-          paragraphs: [plainText.trim()],
-          bulletPoints: section.keyPoints || [],
-          sources: []
-        })
+          retryText = retryText
+            .replace(/```\w*\n?/gi, '')
+            .replace(/```/g, '')
+            .trim()
+          
+          const jsonMatch = retryText.match(/\{[\s\S]*\}/)
+          if (jsonMatch) {
+            retryText = jsonMatch[0]
+          }
 
-        // 显示生成的内容预览
-        const preview = plainText.trim().slice(0, 80) + (plainText.length > 80 ? '...' : '')
-        yield stepMark(stepId, `撰写: ${section.title}`, 'success', preview, 'Check')
+          const parsed = JSON.parse(retryText)
+          contents.push({
+            title: section.title,
+            paragraphs: parsed.paragraphs || [`关于${section.title}的内容`],
+            bulletPoints: parsed.bulletPoints || section.keyPoints || [],
+            sources: []
+          })
+          yield stepMark(stepId, `撰写: ${section.title}`, 'success', '内容已生成', 'Check')
+        } catch {
+          // 最终兜底：使用关键要点生成简单内容
+          contents.push({
+            title: section.title,
+            paragraphs: section.keyPoints && section.keyPoints.length > 0
+              ? [`${section.title}涉及以下关键方面：${section.keyPoints.join('、')}。`]
+              : [`关于${section.title}的详细内容，请参考相关资料。`],
+            bulletPoints: section.keyPoints || [],
+            sources: []
+          })
+          yield stepMark(stepId, `撰写: ${section.title}`, 'success', '使用默认内容', 'Check')
+        }
       }
     }
 
@@ -520,11 +586,31 @@ ${sectionContext.slice(0, 2000)}
     yield `如需修改或重新生成，请告诉我具体要求。`
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '未知错误'
+    const errorStack = error instanceof Error ? error.stack : undefined
     console.error('[DocumentChat] Error:', error)
+    console.error('[DocumentChat] Error stack:', errorStack)
+    
     yield '<think>'
     yield stepMark('error', '生成失败', 'error', errorMsg, 'File')
     yield '</think>'
-    yield `\n❌ **生成失败**: ${errorMsg}\n\n请检查设置或稍后重试。`
+    
+    // 提供更详细的错误信息
+    let userFriendlyError = errorMsg
+    if (errorMsg.includes('API key') || errorMsg.includes('authentication')) {
+      userFriendlyError = 'API 密钥配置错误，请检查设置中的 API 密钥'
+    } else if (errorMsg.includes('network') || errorMsg.includes('timeout') || errorMsg.includes('fetch')) {
+      userFriendlyError = '网络连接失败，请检查网络设置或稍后重试'
+    } else if (errorMsg.includes('model') || errorMsg.includes('provider')) {
+      userFriendlyError = '模型配置错误，请检查设置中的模型配置'
+    }
+    
+    yield `\n❌ **生成失败**: ${userFriendlyError}\n\n`
+    yield `**错误详情**: ${errorMsg}\n\n`
+    yield `请检查：\n`
+    yield `1. 模型配置是否正确（设置 → 模型设置）\n`
+    yield `2. API 密钥是否有效（如使用 OpenAI/Anthropic）\n`
+    yield `3. 网络连接是否正常\n`
+    yield `4. 查看控制台日志获取更多信息\n`
   }
 }
 

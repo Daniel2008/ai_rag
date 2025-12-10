@@ -651,10 +651,16 @@ app.whenReady().then(async () => {
         console.log('Detected document generation intent')
         event.reply('rag:chat-sources', []) // 文档生成自己管理来源
 
-        for await (const chunk of docGenerator) {
-          event.reply('rag:chat-token', chunk)
+        try {
+          for await (const chunk of docGenerator) {
+            event.reply('rag:chat-token', chunk)
+          }
+          event.reply('rag:chat-done')
+        } catch (docError) {
+          console.error('Document generation error:', docError)
+          const errorMsg = docError instanceof Error ? docError.message : '文档生成失败'
+          event.reply('rag:chat-error', errorMsg)
         }
-        event.reply('rag:chat-done')
         return
       }
 

@@ -266,28 +266,24 @@ export async function chatWithRag(
 
   let effectiveDocs = retrievedDocs
 
-  // 全库检索时，如果检索分数很低，则认为无相关上下文，避免误引用当前选中文档
-  if ((!options.sources || options.sources.length === 0) && retrievedPairs.length > 0) {
-    // retrievedPairs 是归一化后的分数，1 是最好。
-    // 如果没有检索到任何有意义的结果（例如所有分数的原始差距极小），可能归一化后都是 1 或 0
-    // 这里我们假设归一化是正确的。如果最高分都很低，可能说明所有文档都很远？
-    // 但归一化是相对的，所以第一名总是 1.0 (如果 >1 个结果)。
-    // 所以单纯判断 score < 0.35 在相对归一化下其实没有意义，除非只有 1 个结果且我们能在那里判断绝对距离。
-    //
-    // 但因为我们无法知道绝对距离阈值（不同模型不同），相对分数是唯一可靠的。
-    // 如果第一名是 1.0，说明它是这批里最好的。
-    //
-    // 这里的逻辑此前是为了防止“只有微弱相关”的文档被当成强相关。
-    // 但因为归一化导致第一名总是 1.0，这个检查其实失效了（总是通过），或者误杀了（如果归一化逻辑有 bug）。
-    //
-    // 现阶段，既然用户反馈“基于上下文回答一直不正确”，说明可能取回了错误的文档。
-    // 我们先移除这个阈值过滤，依靠 LLM 自行判断“If context doesn't contain relevant info”。
-    //
-    // 移除阈值过滤，允许所有检索结果被使用
-    // const topScore = typeof retrievedPairs[0]?.score === 'number' ? retrievedPairs[0].score : 0
-    // if (topScore < 0.1) {
-    //   effectiveDocs = []
-    // }
+  // 全库检索时，使用绝对相似度阈值过滤不相关的文档
+  // 现在 score 是绝对相似度 (1/(1+distance))，可以用阈值判断
+  // score > 0.5 表示 distance < 1，相关性较高
+  // score > 0.4 表示 distance < 1.5，有一定相关性
+  // score < 0.4 表示 distance > 1.5，相关性较低
+  const RELEVANCE_THRESHOLD = 0.4
+
+  if (retrievedPairs.length > 0) {
+    const topScore = retrievedPairs[0]?.score ?? 0
+    console.log('[chatWithRag] Top score (absolute):', topScore)
+
+    if (topScore < RELEVANCE_THRESHOLD) {
+      console.log('[chatWithRag] Top score below threshold, documents may not be relevant')
+      // 过滤掉低相关度的文档
+      const relevantPairs = retrievedPairs.filter((p) => p.score >= RELEVANCE_THRESHOLD)
+      effectiveDocs = relevantPairs.map((p) => p.doc)
+      console.log('[chatWithRag] Filtered to', effectiveDocs.length, 'relevant docs')
+    }
   }
 
   if (effectiveDocs.length === 0 && options.sources && options.sources.length > 0) {

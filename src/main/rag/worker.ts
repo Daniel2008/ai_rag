@@ -522,6 +522,7 @@ parentPort.on('message', async (task) => {
     } else if (type === 'embed') {
       if (!embeddingPipeline) throw new Error('Embedding pipeline not initialized')
       const { texts } = payload
+      const totalTexts = Array.isArray(texts) ? texts.length : 1
 
       // Send embedding start progress
       parentPort?.postMessage({
@@ -530,81 +531,84 @@ parentPort.on('message', async (task) => {
         payload: {
           taskType: TaskType.EMBEDDING_GENERATION,
           status: ProgressStatus.PROCESSING,
-          message: `Starting text embedding, processing ${texts.length} segments`,
+          message: `开始向量化，共 ${totalTexts} 个文本`,
           progress: 0,
           processedCount: 0,
-          totalCount: texts.length
+          totalCount: totalTexts
         }
       })
 
       try {
-        // Run inference with retry
-        let output
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            // For multiple texts, we'll process them individually to show progress
-            if (Array.isArray(texts) && texts.length > 1) {
-              const embeddings: number[][] = []
-              for (let i = 0; i < texts.length; i++) {
-                const text = texts[i]
-                const result = await embeddingPipeline(text, { pooling: 'mean', normalize: true })
-                embeddings.push(result.tolist()[0])
-                
-                // Send progress update
-                const progress = Math.round(((i + 1) / texts.length) * 100)
-                if ((i + 1) % Math.max(1, Math.floor(texts.length / 10)) === 0 || (i + 1) === texts.length) {
-                  parentPort?.postMessage({
-                  id,
-                  type: 'progress',
-                  payload: {
-                    taskType: TaskType.EMBEDDING_GENERATION,
-                    status: ProgressStatus.PROCESSING,
-                      message: `Processing text segment ${i + 1}/${texts.length}`,
-                      progress,
-                      processedCount: i + 1,
-                      totalCount: texts.length,
-                      currentIndex: i
-                    }
-                  })
-                }
-              }
-              parentPort?.postMessage({ id, success: true, result: embeddings })
-              return
+        // 使用模型原生批处理能力进行优化
+        // 批处理大小：根据文本长度动态调整，避免内存溢出
+        const BATCH_SIZE = 8 // 每批处理 8 个文本（模型级别的批处理）
+        const PROGRESS_UPDATE_INTERVAL = Math.max(1, Math.floor(totalTexts / 20)) // 最多更新 20 次进度
+        
+        const allTexts = Array.isArray(texts) ? texts : [texts]
+        const embeddings: number[][] = []
+        
+        for (let batchStart = 0; batchStart < allTexts.length; batchStart += BATCH_SIZE) {
+          const batchEnd = Math.min(batchStart + BATCH_SIZE, allTexts.length)
+          const batch = allTexts.slice(batchStart, batchEnd)
+          
+          // 批量处理：一次性向模型发送多个文本
+          let batchOutput
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              // 使用模型的批处理能力
+              batchOutput = await embeddingPipeline(batch, { pooling: 'mean', normalize: true })
+              break
+            } catch (error) {
+              if (attempt === 2) throw error
+              await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)))
+            }
+          }
+          
+          if (batchOutput) {
+            // 获取批量结果
+            const batchEmbeddings = batchOutput.tolist()
+            // 如果是单个文本，tolist() 返回的是 [[...]]，需要处理
+            if (batch.length === 1 && batchEmbeddings.length === 1 && Array.isArray(batchEmbeddings[0])) {
+              embeddings.push(batchEmbeddings[0])
             } else {
-              // Single text or not array
-              output = await embeddingPipeline(texts, { pooling: 'mean', normalize: true })
+              embeddings.push(...batchEmbeddings)
             }
-            break // Success, exit retry loop
-          } catch (error) {
-            if (attempt === 2) {
-              // Last attempt
-              throw error
-            }
-            // Wait before retrying
-            await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)))
+          }
+          
+          // 控制进度更新频率
+          const processed = batchEnd
+          if (processed % PROGRESS_UPDATE_INTERVAL === 0 || processed === allTexts.length) {
+            const progress = Math.round((processed / allTexts.length) * 100)
+            parentPort?.postMessage({
+              id,
+              type: 'progress',
+              payload: {
+                taskType: TaskType.EMBEDDING_GENERATION,
+                status: ProgressStatus.PROCESSING,
+                message: `向量化进度 ${processed}/${allTexts.length}`,
+                progress,
+                processedCount: processed,
+                totalCount: allTexts.length
+              }
+            })
           }
         }
-
-        if (output) {
-          // Convert Tensor to array
-          const embeddings = output.tolist()
-          
-          // Send embedding completion progress
-          parentPort?.postMessage({
-            id,
-            type: 'progress',
-            payload: {
-              taskType: TaskType.EMBEDDING_GENERATION,
-              status: ProgressStatus.COMPLETED,
-              message: `Text embedding completed`,
-              progress: 100,
-              processedCount: Array.isArray(texts) ? texts.length : 1,
-              totalCount: Array.isArray(texts) ? texts.length : 1
-            }
-          })
-          
-          parentPort?.postMessage({ id, success: true, result: embeddings })
-        }
+        
+        // Send embedding completion progress
+        parentPort?.postMessage({
+          id,
+          type: 'progress',
+          payload: {
+            taskType: TaskType.EMBEDDING_GENERATION,
+            status: ProgressStatus.COMPLETED,
+            message: `向量化完成`,
+            progress: 100,
+            processedCount: totalTexts,
+            totalCount: totalTexts
+          }
+        })
+        
+        parentPort?.postMessage({ id, success: true, result: embeddings })
       } catch (error) {
         throw new Error(`Failed to generate embeddings: ${(error as Error).message}`)
       }

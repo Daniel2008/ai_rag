@@ -323,8 +323,8 @@ export async function searchSimilarDocumentsWithScores(
   console.log('[searchWithScores] vectorStore initialized:', !!vectorStore)
   console.log('[searchWithScores] table exists:', !!table)
 
-  if (!vectorStore) {
-    console.log('[searchWithScores] vectorStore is null, returning empty')
+  if (!vectorStore || !table) {
+    console.log('[searchWithScores] vectorStore or table is null, returning empty')
     return []
   }
 
@@ -415,8 +415,9 @@ export async function searchSimilarDocumentsWithScores(
       return []
     }
 
-    // 归一化距离到相似度分数 [0, 1]
-    // LanceDB 返回的是 L2 距离，越小越相似
+    // 将 L2 距离转换为绝对相似度分数 [0, 1]
+    // 使用 1 / (1 + distance) 公式，距离越小相似度越高
+    // 这样可以得到绝对的相似度，而不是相对排名
     const distances = results.map((r) => r.distance)
     console.log(
       '[searchWithScores] Distance range:',
@@ -425,32 +426,18 @@ export async function searchSimilarDocumentsWithScores(
       Math.max(...distances)
     )
 
-    const minDist = Math.min(...distances)
-    const maxDist = Math.max(...distances)
-    const distRange = maxDist - minDist
-
-    // 将距离转换为相似度分数
-    const finalResults = results.map((r, idx) => {
-      let normalizedScore: number
-      if (results.length === 1) {
-        // 只有一个结果，直接给高分
-        normalizedScore = 0.9
-      } else if (distRange === 0 || !Number.isFinite(distRange)) {
-        // 所有距离相同，默认最高分
-        normalizedScore = 1
-      } else {
-        // 距离越小，分数越高: (maxDist - dist) / distRange
-        normalizedScore = (maxDist - r.distance) / distRange
-      }
-
-      // 确保分数有效且合理
-      if (!Number.isFinite(normalizedScore)) {
-        normalizedScore = Math.max(0, 1 - idx * 0.1)
-      }
+    // 将距离转换为绝对相似度分数
+    const finalResults = results.map((r) => {
+      // 使用 1 / (1 + distance) 转换为相似度
+      // distance = 0 时，score = 1（完全匹配）
+      // distance = 1 时，score ≈ 0.5
+      // distance = 2 时，score ≈ 0.33
+      // distance 越大，score 越接近 0
+      const absoluteScore = 1 / (1 + r.distance)
 
       return {
         doc: r.doc,
-        score: Math.max(0, Math.min(1, normalizedScore))
+        score: Math.max(0, Math.min(1, absoluteScore))
       }
     })
 

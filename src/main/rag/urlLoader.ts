@@ -50,10 +50,56 @@ export interface UrlLoadResult {
   error?: string
 }
 
+// 需要使用 Jina Reader 的动态渲染站点（SPA/SSR）
+const DYNAMIC_RENDER_SITES = [
+  'toutiao.com',
+  'toutiaocdn.com',
+  'jinritoutiao.com',
+  'weixin.qq.com',
+  'mp.weixin.qq.com',
+  'zhihu.com',
+  'bilibili.com',
+  'douyin.com',
+  'xiaohongshu.com',
+  'juejin.cn',
+  'jianshu.com',
+  'csdn.net',
+  'segmentfault.com',
+  '36kr.com',
+  'huxiu.com',
+  'sspai.com',
+  'infoq.cn'
+]
+
 // 常见的内容区域选择器权重
 const CONTENT_SELECTORS = [
   { selector: /<article[^>]*>([\s\S]*?)<\/article>/gi, weight: 100 },
   { selector: /<main[^>]*>([\s\S]*?)<\/main>/gi, weight: 90 },
+  // 今日头条文章内容
+  {
+    selector: /<div[^>]*class="[^"]*article-content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    weight: 95
+  },
+  // 微信公众号文章
+  {
+    selector: /<div[^>]*id="js_content"[^>]*>([\s\S]*?)<\/div>/gi,
+    weight: 95
+  },
+  // 知乎回答/文章
+  {
+    selector: /<div[^>]*class="[^"]*RichContent-inner[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    weight: 95
+  },
+  // 掘金文章
+  {
+    selector: /<div[^>]*class="[^"]*article-viewer[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    weight: 95
+  },
+  // CSDN 文章
+  {
+    selector: /<div[^>]*id="article_content"[^>]*>([\s\S]*?)<\/div>/gi,
+    weight: 95
+  },
   {
     selector:
       /<div[^>]*class="[^"]*(?:post-content|article-content|entry-content|content-body|main-content)[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
@@ -403,6 +449,70 @@ function buildJinaReaderUrl(u: string): string {
   }
 }
 
+/**
+ * 检查是否是需要动态渲染的站点
+ */
+function isDynamicRenderSite(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    const hostname = parsed.hostname.toLowerCase()
+    return DYNAMIC_RENDER_SITES.some(site => hostname.includes(site))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 使用 Jina Reader 获取内容（适用于动态渲染站点）
+ */
+async function fetchWithJinaReader(
+  url: string,
+  userAgent: string,
+  timeout: number = 30000
+): Promise<{ success: boolean; content?: string; error?: string }> {
+  const jinaUrl = buildJinaReaderUrl(url)
+  
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
+    
+    const response = await fetch(jinaUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': userAgent,
+        'Accept': 'text/plain,text/markdown,*/*;q=0.1',
+        'X-Return-Format': 'markdown'
+      }
+    })
+    
+    clearTimeout(timeoutId)
+    
+    if (!response.ok) {
+      return { 
+        success: false, 
+        error: `Jina Reader 返回错误: ${response.status}` 
+      }
+    }
+    
+    const content = await response.text()
+    
+    // 检查是否是有效内容（Jina Reader 有时返回错误页面）
+    if (content.includes('Error') && content.length < 200) {
+      return { success: false, error: 'Jina Reader 无法解析该页面' }
+    }
+    
+    return { success: true, content }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { success: false, error: 'Jina Reader 请求超时' }
+    }
+    return { 
+      success: false, 
+      error: `Jina Reader 请求失败: ${error instanceof Error ? error.message : '未知错误'}` 
+    }
+  }
+}
+
 function isWikipediaUrl(u: string): boolean {
   try {
     const parsed = new URL(u)
@@ -486,8 +596,8 @@ export async function loadFromUrl(
       onProgress?.('URL格式验证失败', 100)
       return { success: false, url, error: '仅支持 HTTP/HTTPS 协议' }
     }
-    // 检查域名格式
-    if (!parsedUrl.hostname.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]?\.[a-zA-Z]{2,}$/)) {
+    // 检查域名格式（支持多级域名如 www.example.com、sub.domain.example.co.uk）
+    if (!parsedUrl.hostname.match(/^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/)) {
       // URL格式验证失败
       onProgress?.('URL格式验证失败', 100)
       return { success: false, url, error: '无效的域名格式' }
@@ -501,6 +611,78 @@ export async function loadFromUrl(
       success: false,
       url,
       error: `URL格式错误: ${e instanceof Error ? e.message : '未知错误'}`
+    }
+  }
+
+  // 检查是否是动态渲染站点，优先使用 Jina Reader
+  const useDynamicFetch = isDynamicRenderSite(url)
+  
+  if (useDynamicFetch) {
+    console.log(`[urlLoader] 检测到动态渲染站点: ${url}，使用 Jina Reader`)
+    onProgress?.('检测到动态站点，使用智能抓取', 15)
+    
+    const jinaResult = await fetchWithJinaReader(url, userAgent, timeout)
+    
+    if (jinaResult.success && jinaResult.content) {
+      onProgress?.('智能抓取完成', 50)
+      
+      const content = jinaResult.content
+      
+      // 从 Markdown 内容中提取标题
+      const titleMatch = content.match(/^#\s+(.+)$/m) || content.match(/^(.+)\n={3,}$/m)
+      const title = titleMatch ? titleMatch[1].trim() : url
+      
+      // 清理 Markdown 格式，转换为纯文本（可选）
+      const cleanContent = content
+        .replace(/^\s*[-*]\s+/gm, '• ') // 列表项
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 链接
+        .replace(/[*_]{1,2}([^*_]+)[*_]{1,2}/g, '$1') // 加粗/斜体
+        .replace(/^#+\s+/gm, '') // 标题标记
+        .replace(/`{1,3}[^`]*`{1,3}/g, (m) => m.replace(/`/g, '')) // 代码块
+        .trim()
+      
+      if (cleanContent.length < minContentLength) {
+        onProgress?.('内容过少', 100)
+        return {
+          success: false,
+          url,
+          error: `页面内容过少（${cleanContent.length} 字符），最小要求 ${minContentLength} 字符`
+        }
+      }
+      
+      onProgress?.('正在分割文档', 80)
+      const splitter = new RecursiveCharacterTextSplitter({
+        chunkSize: 1000,
+        chunkOverlap: 200,
+        separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+      })
+      
+      const docs = await splitter.createDocuments(
+        [cleanContent],
+        [
+          {
+            source: url,
+            title: title,
+            type: 'url',
+            fetchedAt: new Date().toISOString(),
+            siteName: new URL(url).hostname
+          }
+        ]
+      )
+      
+      onProgress?.('处理完成', 100)
+      return {
+        success: true,
+        url,
+        title,
+        content: cleanContent,
+        documents: docs,
+        meta: { title, siteName: new URL(url).hostname },
+        contentLength: cleanContent.length
+      }
+    } else {
+      console.log(`[urlLoader] Jina Reader 失败: ${jinaResult.error}，尝试直接抓取`)
+      lastError = jinaResult.error || '智能抓取失败'
     }
   }
 

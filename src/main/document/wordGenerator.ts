@@ -42,7 +42,7 @@ const FONTS = {
 }
 
 /**
- * 创建标题页
+ * 创建标题页（优化版：更专业的布局）
  */
 function createTitlePage(
   title: string,
@@ -52,26 +52,26 @@ function createTitlePage(
   const colors = THEME_COLORS[theme]
 
   const paragraphs: Paragraph[] = [
-    // 顶部空白
-    new Paragraph({ spacing: { before: 4000 } }),
+    // 顶部空白（优化：根据是否有副标题调整）
+    new Paragraph({ spacing: { before: subtitle ? 3500 : 4000 } }),
 
-    // 主标题
+    // 主标题（优化：更大的字体和更好的间距）
     new Paragraph({
       children: [
         new TextRun({
           text: title,
           font: FONTS.title,
-          size: 72, // 36pt
+          size: 80, // 40pt（增大）
           bold: true,
           color: colors.primary
         })
       ],
       alignment: AlignmentType.CENTER,
-      spacing: { after: 400 }
+      spacing: { after: 600 } // 增加间距
     })
   ]
 
-  // 副标题
+  // 副标题（优化：更好的视觉层次）
   if (subtitle) {
     paragraphs.push(
       new Paragraph({
@@ -79,17 +79,34 @@ function createTitlePage(
           new TextRun({
             text: subtitle,
             font: FONTS.heading,
-            size: 36, // 18pt
-            color: colors.secondary
+            size: 40, // 20pt（增大）
+            color: colors.secondary,
+            italics: true // 添加斜体
           })
         ],
         alignment: AlignmentType.CENTER,
-        spacing: { after: 800 }
+        spacing: { after: 1000, before: 200 } // 优化间距
       })
     )
   }
 
-  // 日期
+  // 装饰分隔线（新增）
+  paragraphs.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+          font: FONTS.body,
+          size: 20,
+          color: colors.accent
+        })
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 1200, before: 400 }
+    })
+  )
+
+  // 日期（优化：更好的格式和位置）
   paragraphs.push(
     new Paragraph({
       children: [
@@ -97,15 +114,16 @@ function createTitlePage(
           text: new Date().toLocaleDateString('zh-CN', {
             year: 'numeric',
             month: 'long',
-            day: 'numeric'
+            day: 'numeric',
+            weekday: 'long'
           }),
           font: FONTS.body,
-          size: 24, // 12pt
+          size: 26, // 13pt（稍微增大）
           color: colors.secondary
         })
       ],
       alignment: AlignmentType.CENTER,
-      spacing: { before: 2000 }
+      spacing: { before: 0, after: 3000 } // 优化底部间距
     }),
     // 分页符
     new Paragraph({
@@ -258,7 +276,7 @@ function createSectionHeading(
 }
 
 /**
- * 创建正文段落
+ * 创建正文段落（优化版：更好的可读性）
  */
 function createBodyParagraph(text: string, style?: WordParagraphStyle): Paragraph {
   return new Paragraph({
@@ -281,31 +299,32 @@ function createBodyParagraph(text: string, style?: WordParagraphStyle): Paragrap
             ? AlignmentType.JUSTIFIED
             : AlignmentType.LEFT,
     spacing: {
-      before: style?.spacing?.before ?? 100,
-      after: style?.spacing?.after ?? 100,
-      line: style?.spacing?.line ?? 360 // 1.5倍行距
+      before: style?.spacing?.before ?? 120, // 增加段前间距
+      after: style?.spacing?.after ?? 120, // 增加段后间距
+      line: style?.spacing?.line ?? 400 // 1.67倍行距（更舒适）
     },
     indent: {
-      firstLine: convertInchesToTwip(0.5) // 首行缩进
+      firstLine: convertInchesToTwip(0.5) // 首行缩进 2 字符
     }
   })
 }
 
 /**
- * 创建要点列表
+ * 创建要点列表（优化版：更好的视觉层次）
  */
 function createBulletList(items: string[], theme: DocumentTheme = 'professional'): Paragraph[] {
   const colors = THEME_COLORS[theme]
 
   return items.map(
-    (item) =>
+    (item, index) =>
       new Paragraph({
         children: [
           new TextRun({
-            text: '• ',
+            text: '▪ ', // 使用方形项目符号（更现代）
             font: FONTS.body,
-            size: 24,
-            color: colors.accent
+            size: 28, // 稍微增大
+            color: colors.accent,
+            bold: true
           }),
           new TextRun({
             text: item,
@@ -314,8 +333,14 @@ function createBulletList(items: string[], theme: DocumentTheme = 'professional'
             color: '333333'
           })
         ],
-        spacing: { before: 100, after: 100 },
-        indent: { left: convertInchesToTwip(0.5) }
+        spacing: { 
+          before: index === 0 ? 150 : 100, // 第一项额外间距
+          after: 100 
+        },
+        indent: { 
+          left: convertInchesToTwip(0.5),
+          hanging: convertInchesToTwip(0.3) // 悬挂缩进
+        }
       })
   )
 }
@@ -357,7 +382,7 @@ function createReferences(sources: string[], theme: DocumentTheme = 'professiona
 }
 
 /**
- * 创建页眉
+ * 创建页眉（优化版：更专业的设计）
  */
 function createHeader(title: string): Header {
   return new Header({
@@ -366,17 +391,20 @@ function createHeader(title: string): Header {
         children: [
           new TextRun({
             text: title,
-            font: FONTS.body,
-            size: 18,
-            color: '888888'
+            font: FONTS.heading,
+            size: 20, // 稍微增大
+            color: '666666',
+            bold: true // 加粗
           })
         ],
         alignment: AlignmentType.RIGHT,
+        spacing: { after: 120 },
         border: {
           bottom: {
             style: BorderStyle.SINGLE,
-            size: 6,
-            color: 'CCCCCC'
+            size: 8, // 稍微加粗
+            color: 'DDDDDD', // 更柔和的颜色
+            space: 60 // 增加间距
           }
         }
       })
@@ -448,9 +476,16 @@ export async function generateWordDocument(
       const content = contents[contentIndex]
       contentIndex++
 
-      // 正文段落
-      content.paragraphs.forEach((para) => {
-        children.push(createBodyParagraph(para))
+      // 正文段落（优化：添加段落间距和格式）
+      content.paragraphs.forEach((para, paraIndex) => {
+        // 第一段后添加额外间距
+        const paragraph = createBodyParagraph(para, {
+          spacing: {
+            before: paraIndex === 0 ? 100 : 100,
+            after: paraIndex === 0 ? 200 : 100 // 第一段后额外间距
+          }
+        })
+        children.push(paragraph)
       })
 
       // 要点列表

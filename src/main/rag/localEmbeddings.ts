@@ -279,8 +279,9 @@ export class LocalEmbeddings extends Embeddings {
   async embedDocuments(documents: string[]): Promise<number[][]> {
     await this.initialize()
 
-    // 分批处理以支持进度报告
-    const batchSize = 16
+    // 优化：增大批处理大小以提升吞吐量
+    // Worker 内部会进一步分批（每 8 个文本一批）给模型处理
+    const batchSize = 64 // 增大到 64，Worker 会再细分
     const total = documents.length
     const results: number[][] = []
 
@@ -298,15 +299,20 @@ export class LocalEmbeddings extends Embeddings {
       taskType: TaskType.EMBEDDING_GENERATION
     })
 
+    // 减少进度更新频率：最多更新 10 次
+    const progressUpdateInterval = Math.max(1, Math.floor(total / 10))
+    let lastProgressUpdate = 0
+
     // 分批处理
     for (let i = 0; i < total; i += batchSize) {
       const batch = documents.slice(i, i + batchSize)
       const batchResults = await getLocalEmbeddings(batch, this.modelName)
       results.push(...batchResults)
 
-      // 报告进度
-      if (callback) {
-        const processed = Math.min(i + batchSize, total)
+      // 控制进度更新频率
+      const processed = Math.min(i + batchSize, total)
+      if (callback && (processed - lastProgressUpdate >= progressUpdateInterval || processed === total)) {
+        lastProgressUpdate = processed
         const percent = Math.round((processed / total) * 100)
         callback({
           status: ProgressStatus.PROCESSING,

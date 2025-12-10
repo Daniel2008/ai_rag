@@ -4,3 +4,8 @@ out
 .DS_Store
 .eslintcache
 *.log*
+
+# 构建缓存
+.electron-builder-cache
+node_modules/.vite
+.cache
