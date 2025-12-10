@@ -171,7 +171,14 @@ export async function chatWithOllama(
 /**
  * 创建可中止的聊天控制器
  */
-export function createChatController() {
+export function createChatController(): {
+  chat: (
+    options: { baseUrl: string; model: string; messages: OllamaMessage[] },
+    callbacks: StreamCallbacks
+  ) => Promise<string>
+  abort: () => void
+  readonly isRequesting: boolean
+} {
   let abortController: AbortController | null = null
 
   return {

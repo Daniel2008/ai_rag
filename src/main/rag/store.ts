@@ -192,6 +192,20 @@ export async function addDocumentsToStore(
   // 这样可以避免 vectorStore 指向无效表的问题
   onProgress?.(0, total, '正在索引文档...')
 
+  // 尝试接管嵌入进度
+  const embeddings = getEmbeddings()
+  if (embeddings instanceof LocalEmbeddings) {
+    embeddings.setTempProgressCallback((progress) => {
+      if (progress.status === 'loading' && progress.progress !== undefined) {
+        onProgress?.(
+          Math.round((progress.progress / 100) * total),
+          total,
+          `正在生成向量 ${progress.progress}%`
+        )
+      }
+    })
+  }
+
   try {
     vectorStore = await ensureTableWithDocuments(docs)
     onProgress?.(total, total, '索引完成')
@@ -203,6 +217,11 @@ export async function addDocumentsToStore(
     vectorStore = await ensureTableWithDocuments(docs)
     onProgress?.(total, total, '索引完成（已重建）')
     console.log(`Recreated LanceDB table and added ${docs.length} documents`)
+  } finally {
+    // 清理临时回调
+    if (embeddings instanceof LocalEmbeddings) {
+      embeddings.setTempProgressCallback(undefined)
+    }
   }
 }
 
@@ -211,22 +230,228 @@ export interface SearchOptions {
   sources?: string[]
 }
 
+export async function getDocCount(): Promise<number> {
+  await initVectorStore()
+  if (!table) return 0
+  return await table.countRows()
+}
+
+export async function searchSimilarDocumentsWithScores(
+  query: string,
+  options: SearchOptions = {}
+): Promise<{ doc: Document; score: number }[]> {
+  const { k = 4, sources } = options
+
+  console.log('[searchWithScores] Starting search, query:', query.slice(0, 50))
+  console.log('[searchWithScores] Sources filter:', sources)
+
+  await initVectorStore()
+  console.log('[searchWithScores] vectorStore initialized:', !!vectorStore)
+  console.log('[searchWithScores] table exists:', !!table)
+  
+  if (!vectorStore || !table) {
+    console.log('[searchWithScores] vectorStore or table is null, returning empty')
+    return []
+  }
+  
+  // 检查数据库中的文档数量
+  try {
+    const count = await table.countRows()
+    console.log('[searchWithScores] Total docs in DB:', count)
+  } catch (e) {
+    console.log('[searchWithScores] Failed to count rows:', e)
+  }
+
+  // 使用 LanceDB 原生 API 获取带距离的搜索结果
+  const fetchK = Math.max(k * 20, 100)
+  console.log('[searchWithScores] Using native LanceDB search, fetchK:', fetchK)
+
+  try {
+    // 生成查询向量
+    const embeddings = getEmbeddings()
+    const queryVector = await embeddings.embedQuery(query)
+    console.log('[searchWithScores] Query vector length:', queryVector.length)
+
+    // 使用 LanceDB 表的原生 search 方法
+    const searchResults = await table.search(queryVector).limit(fetchK).toArray()
+    console.log('[searchWithScores] Native search got', searchResults.length, 'results')
+
+    if (searchResults.length === 0) {
+      return []
+    }
+
+    // 打印第一个结果的结构以供调试
+    console.log('[searchWithScores] First result keys:', Object.keys(searchResults[0]))
+    if (searchResults[0]._distance !== undefined) {
+      console.log('[searchWithScores] First result distance:', searchResults[0]._distance)
+    }
+
+    // 转换为 Document 格式
+    let results = searchResults.map((row) => {
+      // LanceDB 返回的结果包含 _distance 字段
+      const distance = row._distance ?? 0
+      
+      // 构造 Document 对象
+      const doc = new Document({
+        pageContent: row.text || row.pageContent || '',
+        metadata: {
+          source: row.source || row.metadata?.source,
+          pageNumber: row.pageNumber || row.metadata?.pageNumber,
+          ...row.metadata
+        }
+      })
+
+      return { doc, score: distance }
+    })
+
+    console.log('[searchWithScores] Before source filtering:', results.length)
+
+    // 过滤来源（如指定了 sources）
+    if (sources && sources.length > 0) {
+      const normalizePath = (p: string): string => p.toLowerCase().replace(/\\/g, '/').trim()
+      const sourceSet = new Set(sources.map((s) => normalizePath(s)))
+      console.log('[searchWithScores] Filtering by sources:', Array.from(sourceSet).slice(0, 3))
+      
+      if (results.length > 0) {
+        const firstDocSource = results[0].doc.metadata?.source
+          ? normalizePath(String(results[0].doc.metadata.source))
+          : '<no source>'
+        console.log('[searchWithScores] First doc source:', firstDocSource)
+      }
+
+      results = results.filter(({ doc }) => {
+        const docSource = doc.metadata?.source
+          ? normalizePath(String(doc.metadata.source))
+          : ''
+        if (sourceSet.has(docSource)) return true
+        if (sourceSet.size < 50) {
+          for (const s of sourceSet) {
+            if (docSource.endsWith(s) || s.endsWith(docSource)) return true
+          }
+        }
+        return false
+      })
+      console.log('[searchWithScores] After source filtering:', results.length)
+    }
+
+    // 如果没有结果，直接返回空数组
+    if (results.length === 0) {
+      console.log('[searchWithScores] No results after filtering')
+      return []
+    }
+
+    // 归一化距离到相似度分数 [0, 1]
+    // LanceDB 返回的是 L2 距离，越小越相似
+    const distances = results.map((r) => r.score)
+    console.log('[searchWithScores] Distance range:', Math.min(...distances), '-', Math.max(...distances))
+
+    const minDist = Math.min(...distances)
+    const maxDist = Math.max(...distances)
+    const distRange = maxDist - minDist
+
+    results = results.map((r, idx) => {
+      let normalizedScore: number
+      if (distRange === 0 || !Number.isFinite(distRange)) {
+        normalizedScore = 1 // 所有距离相同，默认最高分
+      } else {
+        // 距离越小，分数越高: (maxDist - dist) / distRange
+        normalizedScore = (maxDist - r.score) / distRange
+      }
+      
+      // 确保分数有效
+      if (!Number.isFinite(normalizedScore)) {
+        normalizedScore = 1 - idx * 0.1
+      }
+      
+      return {
+        doc: r.doc,
+        score: Math.max(0, Math.min(1, normalizedScore))
+      }
+    })
+
+    console.log('[searchWithScores] Normalized scores:', results.slice(0, 4).map(r => r.score.toFixed(3)))
+    console.log('[searchWithScores] Returning', Math.min(results.length, k), 'results')
+
+    return results.slice(0, k)
+  } catch (e) {
+    console.error('[searchWithScores] Native search failed:', e)
+    
+    // Fallback 到 LangChain 的 similaritySearch
+    console.log('[searchWithScores] Falling back to LangChain similaritySearch')
+    try {
+      const docs = await vectorStore.similaritySearch(query, fetchK)
+      console.log('[searchWithScores] Fallback got', docs.length, 'docs')
+      
+      // 过滤来源
+      let filteredDocs = docs
+      if (sources && sources.length > 0) {
+        const normalizePath = (p: string): string => p.toLowerCase().replace(/\\/g, '/').trim()
+        const sourceSet = new Set(sources.map((s) => normalizePath(s)))
+        filteredDocs = docs.filter((doc) => {
+          const docSource = doc.metadata?.source
+            ? normalizePath(String(doc.metadata.source))
+            : ''
+          if (sourceSet.has(docSource)) return true
+          if (sourceSet.size < 50) {
+            for (const s of sourceSet) {
+              if (docSource.endsWith(s) || s.endsWith(docSource)) return true
+            }
+          }
+          return false
+        })
+      }
+      
+      // 使用排名生成伪分数
+      return filteredDocs.slice(0, k).map((doc, i) => ({
+        doc,
+        score: 1 - i / Math.max(filteredDocs.length, 1)
+      }))
+    } catch (fallbackError) {
+      console.error('[searchWithScores] Fallback also failed:', fallbackError)
+      return []
+    }
+  }
+}
+
 export async function searchSimilarDocuments(
   query: string,
   options: SearchOptions = {}
 ): Promise<Document[]> {
   const { k = 4, sources } = options
 
+  console.log(`[Search] Query: "${query}", Sources: ${sources?.length ?? 0} files`)
+
+  const logDebug = async (msg: string): Promise<void> => {
+    try {
+      await fsPromises.appendFile('debug_search.log', `[${new Date().toISOString()}] ${msg}\n`)
+    } catch (error) {
+      // 忽略日志写入错误
+      console.error('Failed to write debug log:', error)
+    }
+  }
+
+  await logDebug(`Query: "${query}", Sources count: ${sources?.length ?? 0}`)
+
   // 如果 vectorStore 不存在，返回空结果
   if (!vectorStore) {
     await initVectorStore()
   }
   if (!vectorStore) {
-    console.log('No documents indexed yet, returning empty results')
+    const msg = '[Search] No documents indexed yet, returning empty results'
+    console.log(msg)
+    await logDebug(msg)
     return []
   }
 
   const store = vectorStore
+
+  // 记录一下数据库总行数
+  try {
+    const count = await table?.countRows()
+    await logDebug(`Total rows in DB: ${count}`)
+  } catch (e) {
+    await logDebug(`Failed to get row count: ${e}`)
+  }
 
   // 如果指定了 sources，先检索更多文档，然后过滤
   // 因为 LanceDB 的过滤可能不直接支持 metadata 字段
@@ -236,22 +461,82 @@ export async function searchSimilarDocuments(
       return p.toLowerCase().replace(/\\/g, '/').trim()
     }
     const sourceSet = new Set(sources.map((s) => normalizePath(s)))
+    console.log('[Search] Filtering by sources:', Array.from(sourceSet))
+    await logDebug(`Filtering by ${sourceSet.size} sources. Example: ${Array.from(sourceSet)[0]}`)
 
     // 检索更多文档以确保有足够的匹配
-    const allDocs = await store.similaritySearch(query, k * 10)
+    // 增加检索数量以提高召回率
+    const fetchK = Math.max(k * 20, 100)
+    let allDocs: Document[] = []
+    try {
+      allDocs = await store.similaritySearch(query, fetchK)
+    } catch (e) {
+      console.warn('Similarity search failed (filtered mode):', e)
+      await logDebug(`Similarity search failed (filtered): ${String(e)}`)
+      return []
+    }
+    
+    console.log(`[Search] Retrieved ${allDocs.length} candidates (before filtering)`)
+    await logDebug(`Retrieved ${allDocs.length} candidates.`)
+
+    if (allDocs.length > 0) {
+      const meta = JSON.stringify(allDocs[0].metadata)
+      console.log('[Search] First candidate metadata:', allDocs[0].metadata)
+      await logDebug(`First candidate metadata: ${meta}`)
+      const docSource =
+        typeof allDocs[0].metadata?.source === 'string'
+          ? normalizePath(allDocs[0].metadata.source)
+          : ''
+      await logDebug(`Normalized doc source: "${docSource}"`)
+      await logDebug(`Match check: ${sourceSet.has(docSource)}`)
+    }
 
     // 过滤匹配的文档
     const filteredDocs = allDocs.filter((doc) => {
       const docSource =
         typeof doc.metadata?.source === 'string' ? normalizePath(doc.metadata.source) : ''
-      return sourceSet.has(docSource)
+      
+      // 尝试精确匹配
+      if (sourceSet.has(docSource)) return true
+
+      // 尝试模糊匹配（解决可能的路径格式差异，如 file:// 前缀或相对路径）
+      // 只有当 sourceSet 比较小的时候才做这个昂贵的操作
+      if (sourceSet.size < 50) {
+        for (const s of sourceSet) {
+          if (docSource.endsWith(s) || s.endsWith(docSource)) {
+            return true
+          }
+        }
+      }
+
+      if (allDocs.length < 5) {
+        // 仅在结果很少时打印不匹配的原因
+        console.log(`[Search] Mismatch: doc "${docSource}" vs set`)
+      }
+      return false
     })
+
+    console.log(`[Search] Found ${filteredDocs.length} docs after filtering`)
+    await logDebug(`Found ${filteredDocs.length} docs after filtering`)
 
     // 返回前 k 个匹配的文档
     return filteredDocs.slice(0, k)
   }
 
-  return store.similaritySearch(query, k)
+  let results: Document[] = []
+  try {
+    results = await store.similaritySearch(query, k)
+  } catch (e) {
+    console.warn('Similarity search failed (global mode):', e)
+    await logDebug(`Similarity search failed (global): ${String(e)}`)
+    return []
+  }
+  console.log(`[Search] Global search found ${results.length} docs`)
+  await logDebug(`Global search found ${results.length} docs`)
+  if (results.length > 0) {
+    await logDebug(`First global result metadata: ${JSON.stringify(results[0].metadata)}`)
+  }
+  return results
 }
 
 // Clean up function

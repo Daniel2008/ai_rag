@@ -53,8 +53,32 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
       }
     })
 
+    // 监听嵌入模型进度
+    window.api.onEmbeddingProgress((progress) => {
+      let stage = progress.message || '正在处理模型...'
+      if (progress.status === 'downloading') {
+        stage = `下载模型: ${progress.file || ''} ${Math.round(progress.progress || 0)}%`
+      } else if (progress.status === 'loading') {
+        // 如果有消息则使用消息，否则显示默认提示
+        stage = progress.message || '正在加载模型...'
+      } else if (progress.status === 'ready') {
+        stage = '模型就绪'
+      }
+
+      setProcessProgress({
+        stage,
+        percent: progress.progress || 0,
+        error: progress.status === 'error' ? progress.message : undefined
+      })
+
+      if (progress.status === 'ready' || progress.status === 'error') {
+        setTimeout(() => setProcessProgress(null), 2000)
+      }
+    })
+
     return () => {
       window.api.removeProcessProgressListener()
+      window.api.removeEmbeddingProgressListener()
     }
   }, [])
 
@@ -93,9 +117,19 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
       setFiles((prev) => mergeRecordsWithTransient(snapshot.files, prev))
       setCollections(snapshot.collections)
 
+      // 获取所有就绪的文件用于回退选择
+      const readyFiles = snapshot.files.filter((f) => f.status === 'ready')
+
       setActiveCollectionId((currentActiveCollectionId) => {
         if (snapshot.collections.length === 0) {
-          setActiveDocumentState(undefined)
+          // 没有文档集时，保留 activeDocument（如果它在可用文件中）
+          // 否则回退到第一个就绪文件
+          setActiveDocumentState((currentActiveDocument) => {
+            if (currentActiveDocument && readyFiles.some((f) => f.path === currentActiveDocument)) {
+              return currentActiveDocument
+            }
+            return readyFiles[0]?.path
+          })
           return undefined
         }
 
@@ -104,7 +138,7 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
           !snapshot.collections.some((collection) => collection.id === currentActiveCollectionId)
         ) {
           const fallbackCollection = snapshot.collections[0]
-          setActiveDocumentState(fallbackCollection?.files[0])
+          setActiveDocumentState(fallbackCollection?.files[0] || readyFiles[0]?.path)
           return fallbackCollection?.id
         }
 
@@ -115,7 +149,8 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
           if (currentCollection) {
             setActiveDocumentState((currentActiveDocument) => {
               if (currentCollection.files.length === 0) {
-                return undefined
+                // 当前文档集为空，回退到所有就绪文件中的第一个
+                return readyFiles[0]?.path
               }
               if (
                 currentActiveDocument &&
@@ -140,74 +175,62 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
   const handleUpload = useCallback(
     async (targetCollectionId?: string): Promise<void> => {
       try {
-        const filePath = await window.api.selectFile()
-        if (!filePath) return
+        const filePaths = await window.api.selectFiles()
+        if (!filePaths || filePaths.length === 0) return
 
-        if (files.some((file) => file.path === filePath)) {
-          messageApi.info('该文件已经导入')
-          return
-        }
-
-        const nextFile: IndexedFile = {
-          path: filePath,
-          name: extractFileName(filePath),
+        // 添加占位符
+        const newFiles: IndexedFile[] = filePaths.map((path) => ({
+          path,
+          name: extractFileName(path),
           status: 'processing',
           updatedAt: Date.now()
+        }))
+
+        // 更新状态：移除旧的同名文件记录（如果有），添加新的
+        setFiles((prev) => {
+          const existingPaths = new Set(filePaths)
+          const filtered = prev.filter((f) => !existingPaths.has(f.path))
+          return [...filtered, ...newFiles]
+        })
+
+        if (filePaths.length === 1) {
+          setActiveDocumentState(filePaths[0])
         }
 
-        setFiles((prev) => [...prev, nextFile])
-        setActiveDocumentState(filePath)
+        const result = await window.api.processFile(filePaths)
+        
+        // 批量处理完后，重新拉取整个知识库状态以确保一致性
+        const snapshot = await window.api.getKnowledgeBase()
+        syncKnowledgeBase(snapshot)
 
-        const result = await window.api.processFile(filePath)
         if (result.success) {
-          setFiles((prev) =>
-            prev.map((file) =>
-              file.path === filePath
-                ? {
-                    ...file,
-                    status: 'ready',
-                    chunkCount: result.count,
-                    preview: result.preview,
-                    error: undefined,
-                    updatedAt: Date.now()
-                  }
-                : file
-            )
-          )
+          messageApi.success(`成功处理，共生成 ${result.count} 个片段`)
 
           if (targetCollectionId) {
             const targetCollection = collections.find((c) => c.id === targetCollectionId)
-            if (targetCollection && !targetCollection.files.includes(filePath)) {
-              const snapshot = await window.api.updateCollection({
-                id: targetCollectionId,
-                files: [...targetCollection.files, filePath]
-              })
-              syncKnowledgeBase(snapshot)
+            if (targetCollection) {
+              const uniqueFiles = Array.from(new Set([...targetCollection.files, ...filePaths]))
+              if (uniqueFiles.length !== targetCollection.files.length) {
+                const updatedSnapshot = await window.api.updateCollection({
+                  id: targetCollectionId,
+                  files: uniqueFiles
+                })
+                syncKnowledgeBase(updatedSnapshot)
+              }
             }
           }
-
-          messageApi.success('文档索引完成')
         } else {
-          setFiles((prev) =>
-            prev.map((file) =>
-              file.path === filePath
-                ? {
-                    ...file,
-                    status: 'error',
-                    error: result.error ?? '未知错误',
-                    updatedAt: Date.now()
-                  }
-                : file
-            )
-          )
           messageApi.error(result.error ?? '文档处理失败')
         }
       } catch (error) {
         console.error(error)
         messageApi.error('文档处理失败，请查看控制台日志')
+        // 发生错误也刷新一下，消除 processing 状态
+        const snapshot = await window.api.getKnowledgeBase()
+        syncKnowledgeBase(snapshot)
       }
     },
-    [files, collections, messageApi, syncKnowledgeBase]
+    [collections, messageApi, syncKnowledgeBase]
   )
 
   const handleReindexDocument = useCallback(

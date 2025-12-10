@@ -18,6 +18,8 @@ interface ChatInputProps {
   collections: DocumentCollection[]
   resolvedCollectionId: string | undefined
   showQuickQuestions: boolean
+  /** 是否有可用文件（用于启用"当前文档"选项） */
+  hasReadyFiles: boolean
   onInputChange: (value: string) => void
   onSubmit: (value: string) => void
   onQuestionScopeChange: (scope: QuestionScope) => void
@@ -37,6 +39,7 @@ export function ChatInput({
   collections,
   resolvedCollectionId,
   showQuickQuestions,
+  hasReadyFiles,
   onInputChange,
   onSubmit,
   onQuestionScopeChange,
@@ -55,9 +58,9 @@ export function ChatInput({
           value={questionScope}
           onChange={onQuestionScopeChange}
           options={[
-            { label: '🌐 全库检索', value: 'all' },
-            { label: '📄 当前文档', value: 'active', disabled: !activeDocument },
-            { label: '📁 文档集', value: 'collection', disabled: collections.length === 0 }
+            { label: '🌐 全库检索', value: 'all', disabled: !hasReadyFiles },
+            { label: '📄 当前文档', value: 'active', disabled: !hasReadyFiles || !activeDocument },
+            { label: '📁 文档集', value: 'collection', disabled: !hasReadyFiles || collections.length === 0 }
           ]}
           style={{ width: 130 }}
           variant="borderless"
@@ -93,6 +96,7 @@ export function ChatInput({
       resolvedCollectionId,
       activeFile,
       readyDocuments,
+      hasReadyFiles,
       onQuestionScopeChange,
       onCollectionChange
     ]

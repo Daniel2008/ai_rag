@@ -130,8 +130,8 @@ declare global {
       onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
       platform: string
       
-      selectFile: () => Promise<string | null>
-      processFile: (path: string) => Promise<ProcessFileResult>
+      selectFiles: () => Promise<string[]>
+      processFile: (path: string | string[]) => Promise<ProcessFileResult>
       processUrl: (url: string) => Promise<{
         success: boolean
         count?: number
@@ -141,6 +141,7 @@ declare global {
       }>
       chat: (payload: { question: string; sources?: string[] }) => void
       getKnowledgeBase: () => Promise<KnowledgeBaseSnapshot>
+      rebuildKnowledgeBase: () => Promise<KnowledgeBaseSnapshot>
       removeIndexedFile: (filePath: string) => Promise<KnowledgeBaseSnapshot>
       reindexIndexedFile: (filePath: string) => Promise<KnowledgeBaseSnapshot>
       createCollection: (payload: {
@@ -164,7 +165,7 @@ declare global {
       onEmbeddingProgress: (callback: (progress: EmbeddingProgress) => void) => void
       removeEmbeddingProgressListener: () => void
       getSettings: () => Promise<AppSettings>
-      saveSettings: (settings: Partial<AppSettings>) => Promise<{ success: boolean; embeddingChanged?: boolean }>
+      saveSettings: (settings: Partial<AppSettings>) => Promise<{ success: boolean; embeddingChanged?: boolean; reindexingStarted?: boolean }>
 
       // Database APIs
       getConversations: () => Promise<{ key: string; label: string; timestamp: number }[]>

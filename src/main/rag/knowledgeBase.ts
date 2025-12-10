@@ -1,8 +1,9 @@
 import ElectronStore from 'electron-store'
 import fs from 'fs/promises'
 import { randomUUID } from 'crypto'
-import { loadAndSplitFile } from './loader'
+import { loadAndSplitFileInWorker } from './workerManager'
 import { addDocumentsToStore, resetVectorStore, removeSourceFromStore } from './store'
+import type { Document } from '@langchain/core/documents'
 import type {
   DocumentCollection,
   IndexedFileRecord,
@@ -104,9 +105,11 @@ export async function removeIndexedFileRecord(path: string): Promise<KnowledgeBa
   return getSnapshot()
 }
 
-export async function refreshKnowledgeBase(): Promise<KnowledgeBaseSnapshot> {
+export async function refreshKnowledgeBase(
+  onProgress?: (stage: string, percent: number) => void
+): Promise<KnowledgeBaseSnapshot> {
   const records = getIndexedFileRecords()
-  const refreshed = await rebuildVectorStore(records)
+  const refreshed = await rebuildVectorStore(records, onProgress)
   saveIndexedFileRecords(refreshed)
   pruneCollectionsForMissingFiles()
   return getSnapshot()
@@ -118,7 +121,39 @@ export async function reindexSingleFile(path: string): Promise<KnowledgeBaseSnap
   if (!target) {
     throw new Error('找不到需要重新索引的文档')
   }
-  return refreshKnowledgeBase()
+  await removeSourceFromStore(path)
+
+  if (target.sourceType === 'url' || path.startsWith('http://') || path.startsWith('https://')) {
+    const { loadFromUrl } = await import('./urlLoader')
+    const result = await loadFromUrl(path)
+    if (result.success && result.documents) {
+      await addDocumentsToStore(result.documents)
+      upsertIndexedFileRecord({
+        ...target,
+        chunkCount: result.documents.length,
+        preview: result.content?.slice(0, 160) ?? target.preview,
+        updatedAt: Date.now(),
+        sourceType: 'url',
+        siteName: result.meta?.siteName || target.siteName
+      })
+    } else {
+      throw new Error(result.error || 'URL 内容获取失败')
+    }
+  } else {
+    await fs.access(path)
+    const docs = await loadAndSplitFileInWorker(path)
+    await addDocumentsToStore(docs)
+    upsertIndexedFileRecord({
+      ...target,
+      chunkCount: docs.length,
+      preview: docs[0]?.pageContent.slice(0, 160) ?? target.preview,
+      updatedAt: Date.now(),
+      sourceType: 'file'
+    })
+  }
+
+  pruneCollectionsForMissingFiles()
+  return getSnapshot()
 }
 
 export function createDocumentCollection(options: {
@@ -171,68 +206,117 @@ export function deleteDocumentCollection(id: string): KnowledgeBaseSnapshot {
   return getSnapshot()
 }
 
-async function rebuildVectorStore(records: IndexedFileRecord[]): Promise<IndexedFileRecord[]> {
+async function rebuildVectorStore(
+  records: IndexedFileRecord[],
+  onProgress?: (stage: string, percent: number) => void
+): Promise<IndexedFileRecord[]> {
   // 动态导入 URL 加载器（避免循环依赖）
   const { loadFromUrl } = await import('./urlLoader')
 
   await resetVectorStore()
-  const refreshed: IndexedFileRecord[] = []
+  
+  let processedCount = 0
+  const total = records.length
 
-  for (const record of records) {
-    // 处理 URL 类型的记录
-    if (
-      record.sourceType === 'url' ||
-      record.path.startsWith('http://') ||
-      record.path.startsWith('https://')
-    ) {
-      try {
-        console.log('重建 URL 索引:', record.path)
-        const result = await loadFromUrl(record.path)
-        if (result.success && result.documents) {
-          await addDocumentsToStore(result.documents)
-          refreshed.push({
-            ...record,
-            chunkCount: result.documents.length,
-            preview: result.content?.slice(0, 160) ?? record.preview,
-            updatedAt: Date.now(),
-            sourceType: 'url',
-            siteName: result.meta?.siteName || record.siteName
-          })
-        } else {
-          console.warn('URL 内容获取失败，保留原记录:', record.path, result.error)
-          // 保留原记录但标记为需要更新
-          refreshed.push(record)
+  // 并发处理所有记录
+  const results = await Promise.all(records.map(async (record) => {
+    try {
+      let resultItem: { record: IndexedFileRecord; docs: Document[] } | null = null
+
+      // 处理 URL 类型的记录
+      if (
+        record.sourceType === 'url' ||
+        record.path.startsWith('http://') ||
+        record.path.startsWith('https://')
+      ) {
+        try {
+          console.log('重建 URL 索引:', record.path)
+          const result = await loadFromUrl(record.path)
+          if (result.success && result.documents) {
+            resultItem = {
+              record: {
+                ...record,
+                chunkCount: result.documents.length,
+                preview: result.content?.slice(0, 160) ?? record.preview,
+                updatedAt: Date.now(),
+                sourceType: 'url' as const,
+                siteName: result.meta?.siteName || record.siteName
+              },
+              docs: result.documents
+            }
+          } else {
+            console.warn('URL 内容获取失败，保留原记录:', record.path, result.error)
+            resultItem = { record, docs: [] }
+          }
+        } catch (err) {
+          console.error('重建 URL 索引失败:', record.path, err)
+          resultItem = { record, docs: [] }
         }
-      } catch (err) {
-        console.error('重建 URL 索引失败:', record.path, err)
-        // 保留原记录
-        refreshed.push(record)
+      } else {
+        // 处理本地文件
+        try {
+          await fs.access(record.path)
+          const docs = await loadAndSplitFileInWorker(record.path)
+          resultItem = {
+            record: {
+              ...record,
+              chunkCount: docs.length,
+              preview: docs[0]?.pageContent.slice(0, 160) ?? record.preview,
+              updatedAt: Date.now(),
+              sourceType: 'file' as const
+            },
+            docs
+          }
+        } catch (error) {
+          // 文件不存在，跳过（移除）
+          if ((error as { code?: string }).code === 'ENOENT') {
+            console.warn('文件不存在，已从知识库移除:', record.path, error)
+            resultItem = null
+          } else {
+            console.error('重建知识库时处理文件失败:', record.path, error)
+            resultItem = null // 处理失败也移除，保持与原逻辑一致
+          }
+        }
       }
-      continue
-    }
 
-    // 处理本地文件
-    try {
-      await fs.access(record.path)
-    } catch (error) {
-      console.warn('文件不存在，已从知识库移除:', record.path, error)
-      continue
-    }
+      processedCount++
+      if (onProgress) {
+        // 阶段1：解析文档 (0-30%)
+        const percent = Math.round((processedCount / total) * 30)
+        onProgress(`正在解析文档 (${processedCount}/${total})`, percent)
+      }
 
-    try {
-      const docs = await loadAndSplitFile(record.path)
-      await addDocumentsToStore(docs)
-      refreshed.push({
-        ...record,
-        chunkCount: docs.length,
-        preview: docs[0]?.pageContent.slice(0, 160) ?? record.preview,
-        updatedAt: Date.now(),
-        sourceType: 'file'
-      })
-    } catch (err) {
-      console.error('重建知识库时处理文件失败:', record.path, err)
+      return resultItem
+    } catch (e) {
+      console.error('Unexpected error in rebuild task:', e)
+      processedCount++
+      return null
+    }
+  }))
+
+  const refreshed: IndexedFileRecord[] = []
+  const pendingDocs: { pageContent: string; metadata?: Record<string, unknown> }[] = []
+
+  for (const res of results) {
+    if (!res) continue
+    refreshed.push(res.record)
+    for (const d of res.docs) {
+      pendingDocs.push({ pageContent: d.pageContent, metadata: d.metadata })
     }
   }
 
+  if (pendingDocs.length > 0) {
+    const { Document } = await import('@langchain/core/documents')
+    const docs = pendingDocs.map((d) => new Document({ pageContent: d.pageContent, metadata: d.metadata }))
+    // 阶段2：建立索引 (30-100%)
+    await addDocumentsToStore(docs, (current, total, stage) => {
+      if (onProgress) {
+        const percent = 30 + Math.round((current / total) * 70)
+        onProgress(stage || '正在建立索引...', percent)
+      }
+    })
+  } else if (onProgress) {
+    onProgress('重建完成', 100)
+  }
   return refreshed
 }

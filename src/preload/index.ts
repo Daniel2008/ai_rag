@@ -54,8 +54,8 @@ const api = {
   // Platform info
   platform: process.platform,
 
-  selectFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFile'),
-  processFile: (path: string): Promise<ProcessFileResult> =>
+  selectFiles: (): Promise<string[]> => ipcRenderer.invoke('dialog:openFile'),
+  processFile: (path: string | string[]): Promise<ProcessFileResult> =>
     ipcRenderer.invoke('rag:processFile', path),
   processUrl: (
     url: string
@@ -64,6 +64,7 @@ const api = {
   chat: (payload: { question: string; sources?: string[] }): void =>
     ipcRenderer.send('rag:chat', payload),
   getKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:list'),
+  rebuildKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:rebuild'),
   removeIndexedFile: (filePath: string): Promise<KnowledgeBaseSnapshot> =>
     ipcRenderer.invoke('files:remove', filePath),
   reindexIndexedFile: (filePath: string): Promise<KnowledgeBaseSnapshot> =>

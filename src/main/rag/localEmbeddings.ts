@@ -1,16 +1,12 @@
 /**
  * 本地嵌入模型模块
- * 使用 @huggingface/transformers 实现不依赖 Ollama 的本地嵌入
+ * 使用 Worker 线程运行 @huggingface/transformers 实现不依赖 Ollama 的本地嵌入
  */
-import { pipeline, env, type FeatureExtractionPipeline } from '@huggingface/transformers'
 import { Embeddings, type EmbeddingsParams } from '@langchain/core/embeddings'
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
-
-// 使用 HF-Mirror 镜像站加速下载（国内访问）
-// 参考: https://hf-mirror.com/
-env.remoteHost = 'https://hf-mirror.com/'
+import { initEmbeddingInWorker, embedInWorker } from './workerManager'
 
 // 配置模型缓存路径到应用数据目录
 const getModelsPath = (): string => {
@@ -40,11 +36,9 @@ export type ModelProgressCallback = (progress: {
   message?: string
 }) => void
 
-// 缓存的 pipeline 实例
-let cachedPipeline: FeatureExtractionPipeline | null = null
 let cachedModelName: string | null = null
 let isInitializing = false
-let initPromise: Promise<FeatureExtractionPipeline> | null = null
+let initPromise: Promise<void> | null = null
 // 全局进度回调（用于在初始化期间更新进度）
 let globalProgressCallback: ModelProgressCallback | null = null
 
@@ -61,16 +55,16 @@ export function setProgressCallback(callback: ModelProgressCallback | null): voi
 export async function initLocalEmbeddings(
   modelName: LocalEmbeddingModelName = 'nomic-embed-text',
   onProgress?: ModelProgressCallback
-): Promise<FeatureExtractionPipeline> {
+): Promise<void> {
   const modelId = LOCAL_EMBEDDING_MODELS[modelName]
 
   // 合并进度回调：优先使用传入的，否则使用全局的
   const progressCallback = onProgress ?? globalProgressCallback
 
-  // 如果已经加载了相同的模型，直接返回
-  if (cachedPipeline && cachedModelName === modelId) {
-    progressCallback?.({ status: 'ready', message: '模型已就绪' })
-    return cachedPipeline
+  // 如果已经加载了相同的模型，直接返回，不再重复发送 ready 消息
+  if (cachedModelName === modelId) {
+    // progressCallback?.({ status: 'ready', message: '模型已就绪' })
+    return
   }
 
   // 如果正在初始化，等待完成
@@ -90,53 +84,42 @@ export async function initLocalEmbeddings(
 
   initPromise = (async () => {
     try {
-      // 设置缓存目录和模型下载配置
       const modelsPath = getModelsPath()
-      env.cacheDir = modelsPath
-      env.allowLocalModels = true
-      env.allowRemoteModels = true
-      // 设置使用 HF-Mirror 镜像站（已在模块顶部通过环境变量配置）
-
-      // 使用全局回调发送进度
+      
       globalProgressCallback?.({ status: 'downloading', message: `正在加载模型 ${modelName}...` })
 
-      // 创建 pipeline，会自动下载模型
-      const extractor = await pipeline('feature-extraction', modelId, {
-        progress_callback: (progressInfo: { status: string; progress?: number; file?: string }) => {
-          if (progressInfo.status === 'progress' && progressInfo.progress !== undefined) {
-            globalProgressCallback?.({
+      await initEmbeddingInWorker(modelId, modelsPath, (payload) => {
+        // Handle progress from worker
+        const { status, progress, file } = payload
+        if (status === 'progress' && progress !== undefined) {
+           globalProgressCallback?.({
               status: 'downloading',
-              progress: progressInfo.progress,
-              file: progressInfo.file,
-              message: `下载中: ${progressInfo.file} (${Math.round(progressInfo.progress)}%)`
+              progress: progress,
+              file: file,
+              message: `下载中: ${file} (${Math.round(progress)}%)`
             })
-          } else if (progressInfo.status === 'done') {
-            globalProgressCallback?.({
+        } else if (status === 'done') {
+           globalProgressCallback?.({
               status: 'loading',
-              message: `文件 ${progressInfo.file} 下载完成`
-            })
-          }
+              message: `文件 ${file} 下载完成`
+           })
         }
       })
 
-      cachedPipeline = extractor
       cachedModelName = modelId
       isInitializing = false
       initPromise = null
 
       globalProgressCallback?.({ status: 'ready', message: '模型加载完成' })
-      console.log(`Local embedding model ${modelName} initialized successfully`)
-
-      return extractor
+      console.log(`Local embedding model ${modelName} initialized successfully in worker`)
     } catch (error) {
       isInitializing = false
       initPromise = null
-      cachedPipeline = null
       cachedModelName = null
 
       const errorMessage = error instanceof Error ? error.message : '未知错误'
       globalProgressCallback?.({ status: 'error', message: `模型加载失败: ${errorMessage}` })
-      console.error('Failed to initialize local embedding model:', error)
+      console.error('Failed to initialize local embedding model in worker:', error)
       throw error
     }
   })()
@@ -151,16 +134,9 @@ export async function getLocalEmbedding(
   text: string,
   modelName: LocalEmbeddingModelName = 'nomic-embed-text'
 ): Promise<number[]> {
-  const extractor = await initLocalEmbeddings(modelName)
-
-  // 生成嵌入向量
-  const output = await extractor(text, {
-    pooling: 'mean',
-    normalize: true
-  })
-
-  // 转换为数组
-  return Array.from(output.data as Float32Array)
+  await initLocalEmbeddings(modelName)
+  const results = await embedInWorker([text])
+  return results[0]
 }
 
 /**
@@ -170,20 +146,8 @@ export async function getLocalEmbeddings(
   texts: string[],
   modelName: LocalEmbeddingModelName = 'nomic-embed-text'
 ): Promise<number[][]> {
-  const extractor = await initLocalEmbeddings(modelName)
-
-  const results: number[][] = []
-
-  // 逐个处理以避免内存问题
-  for (const text of texts) {
-    const output = await extractor(text, {
-      pooling: 'mean',
-      normalize: true
-    })
-    results.push(Array.from(output.data as Float32Array))
-  }
-
-  return results
+  await initLocalEmbeddings(modelName)
+  return embedInWorker(texts)
 }
 
 /**
@@ -209,8 +173,8 @@ export function getDownloadedModels(): LocalEmbeddingModelName[] {
  * 清理模型缓存
  */
 export function clearModelCache(): void {
-  cachedPipeline = null
   cachedModelName = null
+  // We might want to tell worker to clear cache or unload model, but currently not implemented in worker
 }
 
 /**
@@ -224,6 +188,7 @@ export interface LocalEmbeddingsParams extends EmbeddingsParams {
 export class LocalEmbeddings extends Embeddings {
   private modelName: LocalEmbeddingModelName
   private onProgress?: ModelProgressCallback
+  private tempProgressCallback?: ModelProgressCallback
   private initialized = false
 
   constructor(params: LocalEmbeddingsParams = {}) {
@@ -232,15 +197,52 @@ export class LocalEmbeddings extends Embeddings {
     this.onProgress = params.onProgress
   }
 
+  /**
+   * 设置临时进度回调（用于覆盖默认回调）
+   */
+  setTempProgressCallback(callback?: ModelProgressCallback): void {
+    this.tempProgressCallback = callback
+  }
+
   async initialize(): Promise<void> {
     if (this.initialized) return
-    await initLocalEmbeddings(this.modelName, this.onProgress)
+    await initLocalEmbeddings(this.modelName, this.tempProgressCallback ?? this.onProgress)
     this.initialized = true
   }
 
   async embedDocuments(documents: string[]): Promise<number[][]> {
     await this.initialize()
-    return getLocalEmbeddings(documents, this.modelName)
+    
+    // 分批处理以支持进度报告
+    const batchSize = 16
+    const total = documents.length
+    const results: number[][] = []
+    
+    // 如果文档数量少，直接处理
+    if (total <= batchSize) {
+      return getLocalEmbeddings(documents, this.modelName)
+    }
+
+    // 分批处理
+    for (let i = 0; i < total; i += batchSize) {
+      const batch = documents.slice(i, i + batchSize)
+      const batchResults = await getLocalEmbeddings(batch, this.modelName)
+      results.push(...batchResults)
+      
+      // 报告进度
+      const callback = this.tempProgressCallback ?? this.onProgress
+      if (callback) {
+        const processed = Math.min(i + batchSize, total)
+        const percent = Math.round((processed / total) * 100)
+        callback({
+          status: 'loading',
+          progress: percent,
+          message: `正在生成向量 (${processed}/${total})`
+        })
+      }
+    }
+    
+    return results
   }
 
   async embedQuery(document: string): Promise<number[]> {
@@ -248,4 +250,3 @@ export class LocalEmbeddings extends Embeddings {
     return getLocalEmbedding(document, this.modelName)
   }
 }
-

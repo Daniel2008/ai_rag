@@ -61,6 +61,7 @@ interface AppSidebarProps {
   onUpdateActiveDocument: (path?: string) => void
   onReindexDocument: (filePath: string) => void
   onRemoveDocument: (filePath: string) => void
+  onRebuildAllIndex?: () => void
 }
 
 const statusConfig: Record<
@@ -174,7 +175,8 @@ export function AppSidebar({
   onAddUrl,
   onUpdateActiveDocument,
   onReindexDocument,
-  onRemoveDocument
+  onRemoveDocument,
+  onRebuildAllIndex
 }: AppSidebarProps): ReactElement {
   const { token } = antdTheme.useToken()
   const panelActiveKey =
@@ -185,7 +187,6 @@ export function AppSidebar({
   // URL 输入模态框状态
   const [urlModalOpen, setUrlModalOpen] = useState(false)
   const [urlInput, setUrlInput] = useState('')
-  const [urlLoading, setUrlLoading] = useState(false)
   const [targetCollectionForUrl, setTargetCollectionForUrl] = useState<string>('')
 
   const handleOpenUrlModal = (collectionId: string): void => {
@@ -208,17 +209,22 @@ export function AppSidebar({
       return
     }
 
-    setUrlLoading(true)
-    try {
-      await onAddUrl(urlInput.trim(), targetCollectionForUrl)
-      setUrlModalOpen(false)
-      setUrlInput('')
-      message.success('URL 内容已添加到知识库')
-    } catch (error) {
-      message.error(`添加失败: ${error instanceof Error ? error.message : '未知错误'}`)
-    } finally {
-      setUrlLoading(false)
-    }
+    // 立即关闭模态框，以便在侧边栏显示进度
+    const url = urlInput.trim()
+    const targetId = targetCollectionForUrl
+
+    setUrlModalOpen(false)
+    setUrlInput('')
+
+    // 不要在模态框中等待，让进度条在侧边栏显示
+    // processProgress 会自动更新显示进度
+    onAddUrl(url, targetId)
+      .then(() => {
+        message.success('URL 内容已添加到知识库')
+      })
+      .catch((error) => {
+        message.error(`添加失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      })
   }
 
   // 稳定 activeKey 数组引用，避免 Collapse 无限循环
@@ -577,19 +583,32 @@ export function AppSidebar({
               </Typography.Text>
             </div>
           </Flex>
-          <Tooltip title="新建文档集">
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={onCreateCollection}
-              style={{
-                background: `linear-gradient(135deg, ${token.colorPrimary} 0%, #7c3aed 100%)`,
-                border: 'none',
-                borderRadius: 10,
-                boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
-              }}
-            />
-          </Tooltip>
+          <div className="flex items-center gap-1">
+            {files.length > 0 && onRebuildAllIndex && (
+              <Tooltip title="重建全部索引">
+                <Button
+                  type="text"
+                  icon={<ReloadOutlined />}
+                  onClick={onRebuildAllIndex}
+                  disabled={!!processProgress}
+                  style={{ color: token.colorTextSecondary }}
+                />
+              </Tooltip>
+            )}
+            <Tooltip title="新建文档集">
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={onCreateCollection}
+                style={{
+                  background: `linear-gradient(135deg, ${token.colorPrimary} 0%, #7c3aed 100%)`,
+                  border: 'none',
+                  borderRadius: 10,
+                  boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
+                }}
+              />
+            </Tooltip>
+          </div>
         </Flex>
 
         {/* 搜索框 */}
@@ -770,7 +789,6 @@ export function AppSidebar({
         onOk={handleAddUrl}
         okText="导入"
         cancelText="取消"
-        confirmLoading={urlLoading}
         destroyOnClose
       >
         <div className="py-4">

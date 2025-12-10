@@ -107,7 +107,7 @@ export class ElectronChatProvider extends AbstractChatProvider<
 
     // 收集 sources
     const sourcesChunk = chunks.find((c) => c.type === 'sources')
-    const sources = sourcesChunk?.sources ?? originMessage?.sources
+    const sources = sourcesChunk?.sources
 
     return {
       role: 'assistant',

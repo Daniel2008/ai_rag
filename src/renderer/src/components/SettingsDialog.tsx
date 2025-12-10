@@ -110,23 +110,27 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
       const result = await window.api.saveSettings(values)
       
       if (result.embeddingChanged) {
-        // 嵌入模型变更，显示警告提示
-        Modal.warning({
-          title: '嵌入模型已切换',
-          content: (
-            <div>
-              <p>
-                由于不同嵌入模型的向量维度不同，<strong>旧的索引数据将不兼容</strong>。
-              </p>
-              <p style={{ marginTop: 12 }}>请执行以下操作之一：</p>
-              <ul style={{ marginTop: 8, paddingLeft: 20 }}>
-                <li>删除知识库中的所有文档，然后重新导入</li>
-                <li>或在知识库面板中点击&ldquo;重建索引&rdquo;</li>
-              </ul>
-            </div>
-          ),
-          okText: '我知道了'
-        })
+        if (result.reindexingStarted) {
+          message.info('嵌入模型已切换，正在后台重建知识库索引...')
+        } else {
+          // 嵌入模型变更，显示警告提示
+          Modal.warning({
+            title: '嵌入模型已切换',
+            content: (
+              <div>
+                <p>
+                  由于不同嵌入模型的向量维度不同，<strong>旧的索引数据将不兼容</strong>。
+                </p>
+                <p style={{ marginTop: 12 }}>请执行以下操作之一：</p>
+                <ul style={{ marginTop: 8, paddingLeft: 20 }}>
+                  <li>删除知识库中的所有文档，然后重新导入</li>
+                  <li>或在知识库面板中点击&ldquo;重建索引&rdquo;</li>
+                </ul>
+              </div>
+            ),
+            okText: '我知道了'
+          })
+        }
       }
       message.success('设置已保存')
       onSaved?.(values)

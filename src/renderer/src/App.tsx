@@ -62,47 +62,13 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null)
   const [sidebarCollapsed] = useState(false)
 
-  // 监听嵌入模型下载进度
-  useEffect(() => {
-    const messageKey = 'embedding-progress'
-
-    window.api.onEmbeddingProgress((progress) => {
-      if (progress.status === 'downloading') {
-        const percent = progress.progress ? `${Math.round(progress.progress)}%` : ''
-        messageApi.open({
-          key: messageKey,
-          type: 'loading',
-          content: `正在下载嵌入模型... ${percent}`,
-          duration: 0
-        })
-      } else if (progress.status === 'loading') {
-        messageApi.open({
-          key: messageKey,
-          type: 'loading',
-          content: '正在加载嵌入模型...',
-          duration: 0
-        })
-      } else if (progress.status === 'ready') {
-        messageApi.open({
-          key: messageKey,
-          type: 'success',
-          content: '嵌入模型已就绪',
-          duration: 2
-        })
-      } else if (progress.status === 'error') {
-        messageApi.open({
-          key: messageKey,
-          type: 'error',
-          content: progress.message || '嵌入模型加载失败',
-          duration: 5
-        })
-      }
-    })
-
-    return () => {
-      window.api.removeEmbeddingProgressListener()
-    }
-  }, [messageApi])
+  // 监听嵌入模型下载进度 - 已统一合并到 AppSidebar 的进度条中显示
+  // useEffect(() => {
+  //   const messageKey = 'embedding-progress'
+  //   window.api.onEmbeddingProgress((progress) => {
+  //     ...
+  //   })
+  // }, [messageApi])
 
   // Refs
   const bubbleListRef = useRef<BubbleListRef | null>(null)
@@ -467,6 +433,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             collections={collections}
             resolvedCollectionId={resolvedCollectionId}
             showQuickQuestions={displayMessages.length <= 1}
+            hasReadyFiles={readyDocuments > 0}
             onInputChange={setInputValue}
             onSubmit={handleSend}
             onQuestionScopeChange={setQuestionScope}
@@ -514,6 +481,16 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             onUpdateActiveDocument={setActiveDocument}
             onReindexDocument={handleReindexDocument}
             onRemoveDocument={handleRemoveDocument}
+            onRebuildAllIndex={async () => {
+              try {
+                const snapshot = await window.api.rebuildKnowledgeBase()
+                syncKnowledgeBase(snapshot)
+                messageApi.success('知识库索引重建完成')
+              } catch (error) {
+                console.error('Failed to rebuild knowledge base:', error)
+                messageApi.error('重建索引失败，请查看日志')
+              }
+            }}
           />
         </Suspense>
 

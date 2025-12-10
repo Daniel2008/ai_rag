@@ -3,7 +3,7 @@ import { ChatOpenAI } from '@langchain/openai'
 import { ChatAnthropic } from '@langchain/anthropic'
 import { StringOutputParser } from '@langchain/core/output_parsers'
 import { PromptTemplate } from '@langchain/core/prompts'
-import { searchSimilarDocuments } from './store'
+import { searchSimilarDocumentsWithScores, getDocCount } from './store'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { Document } from '@langchain/core/documents'
 import { getSettings, type ModelProvider } from '../settings'
@@ -236,18 +236,88 @@ export async function chatWithRag(
 ): Promise<ChatResult> {
   const settings = getSettings()
 
-  // 1. Retrieve relevant documents - 直接在检索时传入 sources 过滤
-  const contextDocs = await searchSimilarDocuments(question, {
+  console.log('[chatWithRag] Question:', question)
+  console.log('[chatWithRag] Sources filter:', options.sources)
+
+  const retrievedPairs = await searchSimilarDocumentsWithScores(question, {
     k: 4,
     sources: options.sources
   })
+  console.log('[chatWithRag] Retrieved pairs count:', retrievedPairs.length)
+  if (retrievedPairs.length > 0) {
+    console.log('[chatWithRag] First pair source:', retrievedPairs[0].doc.metadata?.source)
+    console.log('[chatWithRag] First pair score:', retrievedPairs[0].score)
+  }
+  const retrievedDocs = retrievedPairs.map((p) => p.doc)
 
-  const context = contextDocs.map((doc) => doc.pageContent).join('\n\n')
+  if (retrievedDocs.length === 0) {
+    const docCount = await getDocCount()
+    if (docCount === 0) {
+      const msg = '知识库索引为空或已丢失。如果您刚刚切换了嵌入模型，请等待后台索引重建完成；否则请在侧边栏中点击“重建索引”。'
+      return {
+        stream: (async function* () {
+          yield msg
+        })(),
+        sources: []
+      }
+    }
+  }
 
-  console.log(`Retrieved ${contextDocs.length} docs for context`)
+  let effectiveDocs = retrievedDocs
+
+  // 全库检索时，如果检索分数很低，则认为无相关上下文，避免误引用当前选中文档
+  if ((!options.sources || options.sources.length === 0) && retrievedPairs.length > 0) {
+    // retrievedPairs 是归一化后的分数，1 是最好。
+    // 如果没有检索到任何有意义的结果（例如所有分数的原始差距极小），可能归一化后都是 1 或 0
+    // 这里我们假设归一化是正确的。如果最高分都很低，可能说明所有文档都很远？
+    // 但归一化是相对的，所以第一名总是 1.0 (如果 >1 个结果)。
+    // 所以单纯判断 score < 0.35 在相对归一化下其实没有意义，除非只有 1 个结果且我们能在那里判断绝对距离。
+    //
+    // 但因为我们无法知道绝对距离阈值（不同模型不同），相对分数是唯一可靠的。
+    // 如果第一名是 1.0，说明它是这批里最好的。
+    // 
+    // 这里的逻辑此前是为了防止“只有微弱相关”的文档被当成强相关。
+    // 但因为归一化导致第一名总是 1.0，这个检查其实失效了（总是通过），或者误杀了（如果归一化逻辑有 bug）。
+    // 
+    // 现阶段，既然用户反馈“基于上下文回答一直不正确”，说明可能取回了错误的文档。
+    // 我们先移除这个阈值过滤，依靠 LLM 自行判断“If context doesn't contain relevant info”。
+    // 
+    // const topScore = typeof retrievedPairs[0]?.score === 'number' ? retrievedPairs[0].score : 0
+    // if (topScore < 0.35) {
+    //   effectiveDocs = []
+    // }
+  }
+
+  if (effectiveDocs.length === 0 && options.sources && options.sources.length > 0) {
+    try {
+      const fallbackDocs: Document[] = []
+      for (const s of options.sources) {
+        if (s.startsWith('http://') || s.startsWith('https://')) {
+          const { loadFromUrl } = await import('./urlLoader')
+          const res = await loadFromUrl(s)
+          if (res.success && res.documents) {
+            fallbackDocs.push(...res.documents.slice(0, 2))
+          }
+        } else {
+          const { loadAndSplitFileInWorker } = await import('./workerManager')
+          const docs = await loadAndSplitFileInWorker(s)
+          fallbackDocs.push(...docs.slice(0, 2))
+        }
+      }
+      effectiveDocs = fallbackDocs.slice(0, 4)
+    } catch (e) {
+      console.warn('Fallback context load failed:', e)
+    }
+  }
+
+  // 全库检索不进行兜底上下文构建，避免误将某个最近文档当作来源
+
+  const context = effectiveDocs.map((doc) => doc.pageContent).join('\n\n')
+
+  console.log(`Retrieved ${effectiveDocs.length} docs for context`)
 
   // 2. Extract sources for citations with detailed metadata
-  const sources: ChatSource[] = contextDocs.map((doc: Document, index: number) => {
+  const sources: ChatSource[] = effectiveDocs.map((doc: Document, index: number) => {
     const metadata = doc.metadata || {}
 
     // 提取页码
@@ -278,8 +348,9 @@ export async function chatWithRag(
     // 提取文件类型
     const fileType = metadata.fileType || metadata.type || (isUrlSource ? 'url' : inferFileType(fileName))
 
-    // 计算相关度分数（基于检索顺序，越靠前越相关）
-    const score = 1 - index * 0.15 // 第一个 1.0，第二个 0.85，以此类推
+    // 计算相关度分数（优先使用检索分数归一化值）
+    const scoreFromSearch = retrievedPairs[index]?.score
+    const score = typeof scoreFromSearch === 'number' ? scoreFromSearch : 1 - index * 0.15
 
     // 构建详细的来源信息
     const source: ChatSource = {
@@ -288,7 +359,7 @@ export async function chatWithRag(
       pageNumber: rawPageNumber && rawPageNumber > 0 ? rawPageNumber : undefined,
       filePath,
       fileType: fileType as ChatSource['fileType'],
-      score: Math.max(0.4, score), // 最低 0.4
+      score: Math.max(0, score),
       position: typeof metadata.position === 'number' ? metadata.position : undefined,
       sourceType: metadata.sourceType || (isUrlSource || metadata.type === 'url' ? 'url' : 'file'),
       siteName: metadata.siteName,
