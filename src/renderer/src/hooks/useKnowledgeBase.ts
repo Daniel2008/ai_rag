@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { MessageInstance } from 'antd/es/message/interface'
 import type { DocumentCollection, IndexedFile, KnowledgeBaseSnapshot } from '../types/files'
 import type { QuestionScope } from '../types/chat'
@@ -6,13 +6,6 @@ import { extractFileName, mergeRecordsWithTransient } from '../utils/chat'
 
 export interface UseKnowledgeBaseOptions {
   messageApi: MessageInstance
-}
-
-/** 文档处理进度 */
-export interface ProcessProgress {
-  stage: string
-  percent: number
-  error?: string
 }
 
 export interface UseKnowledgeBaseReturn {
@@ -24,8 +17,6 @@ export interface UseKnowledgeBaseReturn {
   readyDocuments: number
   activeFile: IndexedFile | undefined
   resolvedCollectionId: string | undefined
-  /** 当前处理进度（null 表示没有正在处理的任务） */
-  processProgress: ProcessProgress | null
   setActiveDocument: (path: string | undefined) => void
   setActiveCollectionId: React.Dispatch<React.SetStateAction<string | undefined>>
   setQuestionScope: React.Dispatch<React.SetStateAction<QuestionScope>>
@@ -41,46 +32,6 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
   const [activeDocument, setActiveDocumentState] = useState<string | undefined>(undefined)
   const [activeCollectionId, setActiveCollectionId] = useState<string | undefined>(undefined)
   const [questionScope, setQuestionScope] = useState<QuestionScope>('all')
-  const [processProgress, setProcessProgress] = useState<ProcessProgress | null>(null)
-
-  // 监听文档处理进度
-  useEffect(() => {
-    window.api.onProcessProgress((progress) => {
-      setProcessProgress(progress)
-      // 处理完成后自动清除进度
-      if (progress.percent === 100 || progress.error) {
-        setTimeout(() => setProcessProgress(null), 2000)
-      }
-    })
-
-    // 监听嵌入模型进度
-    window.api.onEmbeddingProgress((progress) => {
-      let stage = progress.message || '正在处理模型...'
-      if (progress.status === 'downloading') {
-        stage = `下载模型: ${progress.file || ''} ${Math.round(progress.progress || 0)}%`
-      } else if (progress.status === 'loading') {
-        // 如果有消息则使用消息，否则显示默认提示
-        stage = progress.message || '正在加载模型...'
-      } else if (progress.status === 'ready') {
-        stage = '模型就绪'
-      }
-
-      setProcessProgress({
-        stage,
-        percent: progress.progress || 0,
-        error: progress.status === 'error' ? progress.message : undefined
-      })
-
-      if (progress.status === 'ready' || progress.status === 'error') {
-        setTimeout(() => setProcessProgress(null), 2000)
-      }
-    })
-
-    return () => {
-      window.api.removeProcessProgressListener()
-      window.api.removeEmbeddingProgressListener()
-    }
-  }, [])
 
   const readyDocuments = useMemo(
     () => files.filter((file) => file.status === 'ready').length,
@@ -198,7 +149,7 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
         }
 
         const result = await window.api.processFile(filePaths)
-        
+
         // 批量处理完后，重新拉取整个知识库状态以确保一致性
         const snapshot = await window.api.getKnowledgeBase()
         syncKnowledgeBase(snapshot)
@@ -274,7 +225,6 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
     readyDocuments,
     activeFile,
     resolvedCollectionId,
-    processProgress,
     setActiveDocument,
     setActiveCollectionId,
     setQuestionScope,

@@ -7,7 +7,8 @@ import { Form, FloatButton, message as antdMessage, theme as antdTheme, Spin } f
 import { getTheme } from './theme'
 import type { AppSettings } from './components/SettingsDialog'
 import { ChatSidebar, WelcomeScreen, ChatArea, ChatInput, CollectionModal } from './components/chat'
-import { useConversations, useChatWithXChat, useKnowledgeBase } from './hooks'
+import { GlobalProgress } from './components/GlobalProgress'
+import { useConversations, useChatWithXChat, useKnowledgeBase, useProgress } from './hooks'
 import type { DocumentCollection } from './types/files'
 
 // 性能优化：懒加载设置对话框和知识库面板
@@ -62,13 +63,8 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null)
   const [sidebarCollapsed] = useState(false)
 
-  // 监听嵌入模型下载进度 - 已统一合并到 AppSidebar 的进度条中显示
-  // useEffect(() => {
-  //   const messageKey = 'embedding-progress'
-  //   window.api.onEmbeddingProgress((progress) => {
-  //     ...
-  //   })
-  // }, [messageApi])
+  // 全局进度管理
+  const { progress } = useProgress()
 
   // Refs
   const bubbleListRef = useRef<BubbleListRef | null>(null)
@@ -97,7 +93,6 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     readyDocuments,
     activeFile,
     resolvedCollectionId,
-    processProgress,
     setActiveCollectionId,
     setQuestionScope,
     syncKnowledgeBase,
@@ -372,11 +367,17 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   )
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ background: token.colorBgLayout }}>
+    <div
+      className="flex flex-col h-screen overflow-hidden"
+      style={{ background: token.colorBgLayout }}
+    >
       {/* 自定义标题栏 */}
       <Suspense fallback={<div className="h-10" style={{ background: token.colorBgElevated }} />}>
         <TitleBar title="智汇" />
       </Suspense>
+
+      {/* 全局进度条 */}
+      <GlobalProgress progress={progress} />
 
       {/* 主内容区域 */}
       <div className="flex flex-1 overflow-hidden">
@@ -452,17 +453,16 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
           }
         >
           <AppSidebar
-            collections={collections}
-            activeCollectionId={activeCollectionId}
-            activeDocument={activeDocument}
-            files={files}
-            processProgress={processProgress}
-            onCollectionChange={(key) => setActiveCollectionId(key || undefined)}
-            onCreateCollection={openCreateCollection}
-            onEditCollection={openEditCollection}
-            onDeleteCollection={(id) => void handleDeleteCollection(id)}
-            onUpload={(targetCollectionId) => void handleUpload(targetCollectionId)}
-            onAddUrl={async (url, targetCollectionId) => {
+          collections={collections}
+          activeCollectionId={activeCollectionId}
+          activeDocument={activeDocument}
+          files={files}
+          onCollectionChange={(key) => setActiveCollectionId(key || undefined)}
+          onCreateCollection={openCreateCollection}
+          onEditCollection={openEditCollection}
+          onDeleteCollection={(id) => void handleDeleteCollection(id)}
+          onUpload={(targetCollectionId) => void handleUpload(targetCollectionId)}
+          onAddUrl={async (url, targetCollectionId) => {
               const result = await window.api.processUrl(url)
               if (result.success) {
                 // 将 URL 添加到文档集
@@ -478,10 +478,10 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
                 throw new Error(result.error || '导入失败')
               }
             }}
-            onUpdateActiveDocument={setActiveDocument}
-            onReindexDocument={handleReindexDocument}
-            onRemoveDocument={handleRemoveDocument}
-            onRebuildAllIndex={async () => {
+          onUpdateActiveDocument={setActiveDocument}
+          onReindexDocument={handleReindexDocument}
+          onRemoveDocument={handleRemoveDocument}
+          onRebuildAllIndex={async () => {
               try {
                 const snapshot = await window.api.rebuildKnowledgeBase()
                 syncKnowledgeBase(snapshot)
@@ -491,7 +491,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
                 messageApi.error('重建索引失败，请查看日志')
               }
             }}
-          />
+        />
         </Suspense>
 
         {/* 文档集编辑弹窗 */}

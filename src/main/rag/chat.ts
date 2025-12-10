@@ -253,7 +253,8 @@ export async function chatWithRag(
   if (retrievedDocs.length === 0) {
     const docCount = await getDocCount()
     if (docCount === 0) {
-      const msg = '知识库索引为空或已丢失。如果您刚刚切换了嵌入模型，请等待后台索引重建完成；否则请在侧边栏中点击“重建索引”。'
+      const msg =
+        '知识库索引为空或已丢失。如果您刚刚切换了嵌入模型，请等待后台索引重建完成；否则请在侧边栏中点击“重建索引”。'
       return {
         stream: (async function* () {
           yield msg
@@ -275,15 +276,16 @@ export async function chatWithRag(
     //
     // 但因为我们无法知道绝对距离阈值（不同模型不同），相对分数是唯一可靠的。
     // 如果第一名是 1.0，说明它是这批里最好的。
-    // 
+    //
     // 这里的逻辑此前是为了防止“只有微弱相关”的文档被当成强相关。
     // 但因为归一化导致第一名总是 1.0，这个检查其实失效了（总是通过），或者误杀了（如果归一化逻辑有 bug）。
-    // 
+    //
     // 现阶段，既然用户反馈“基于上下文回答一直不正确”，说明可能取回了错误的文档。
     // 我们先移除这个阈值过滤，依靠 LLM 自行判断“If context doesn't contain relevant info”。
-    // 
+    //
+    // 移除阈值过滤，允许所有检索结果被使用
     // const topScore = typeof retrievedPairs[0]?.score === 'number' ? retrievedPairs[0].score : 0
-    // if (topScore < 0.35) {
+    // if (topScore < 0.1) {
     //   effectiveDocs = []
     // }
   }
@@ -346,7 +348,8 @@ export async function chatWithRag(
     fileName = fileName || 'Unknown'
 
     // 提取文件类型
-    const fileType = metadata.fileType || metadata.type || (isUrlSource ? 'url' : inferFileType(fileName))
+    const fileType =
+      metadata.fileType || metadata.type || (isUrlSource ? 'url' : inferFileType(fileName))
 
     // 计算相关度分数（优先使用检索分数归一化值）
     const scoreFromSearch = retrievedPairs[index]?.score
@@ -374,15 +377,24 @@ export async function chatWithRag(
   const uniqueSources = deduplicateSources(sources)
 
   // 3. Construct Prompt
-  const promptText = `You are a helpful assistant. Answer the question based on the following context. 
-If the context doesn't contain relevant information, say so.
+  // 根据是否有来源过滤来调整提示词
+  const isGlobalSearch = !options.sources || options.sources.length === 0
+  const contextInfo = isGlobalSearch
+    ? '以下是从整个知识库中检索到的相关内容：'
+    : '以下是从指定文档中检索到的相关内容：'
 
-Context:
+  const promptText = context.trim()
+    ? `你是一个专业的知识助手。${contextInfo}
+
+上下文内容：
 ${context}
 
-Question: ${question}
+用户问题：${question}
 
-Answer:`
+请基于以上上下文内容回答用户的问题。如果上下文中没有相关信息，请如实告知用户"根据检索到的内容，未找到与您问题直接相关的信息"，并尝试基于你已有的知识给出帮助。`
+    : `你是一个专业的知识助手。用户的问题是：${question}
+
+当前知识库中未检索到与此问题直接相关的内容。请基于你已有的知识尽可能帮助用户回答这个问题，并友好地提示用户可以上传相关文档以获得更精准的回答。`
 
   // 4. 检查是否是 DeepSeek Reasoner 模型（需要特殊处理思维链）
   const isDeepSeekReasoner =
@@ -404,15 +416,22 @@ Answer:`
   }
 
   // 5. 其他模型使用 LangChain
-  const template = `You are a helpful assistant. Answer the question based on the following context. 
-If the context doesn't contain relevant information, say so.
+  const contextInfoTemplate = isGlobalSearch
+    ? '以下是从整个知识库中检索到的相关内容：'
+    : '以下是从指定文档中检索到的相关内容：'
 
-Context:
+  const template = context.trim()
+    ? `你是一个专业的知识助手。${contextInfoTemplate}
+
+上下文内容：
 {context}
 
-Question: {question}
+用户问题：{question}
 
-Answer:`
+请基于以上上下文内容回答用户的问题。如果上下文中没有相关信息，请如实告知用户"根据检索到的内容，未找到与您问题直接相关的信息"，并尝试基于你已有的知识给出帮助。`
+    : `你是一个专业的知识助手。用户的问题是：{question}
+
+当前知识库中未检索到与此问题直接相关的内容。请基于你已有的知识尽可能帮助用户回答这个问题，并友好地提示用户可以上传相关文档以获得更精准的回答。`
 
   const prompt = PromptTemplate.fromTemplate(template)
   const model = createChatModel(settings.provider)
