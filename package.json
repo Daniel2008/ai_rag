@@ -24,6 +24,13 @@
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/*.d.ts",
       "!**/node_modules/.bin",
+      "!**/node_modules/*/{.github,.vscode,.idea}",
+      "!**/node_modules/*/{docs,documentation,doc}",
+      "!**/node_modules/*/{*.md,*.txt,*.log}",
+      "!**/node_modules/*/{LICENSE,LICENSE.*,license,license.*}",
+      "!**/node_modules/*/{.npmignore,.gitignore,.eslintrc*,tsconfig.json}",
+      "!**/node_modules/*/{coverage,.nyc_output,.jest}",
+      "!**/node_modules/*/{*.map,*.min.map}",
       "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
       "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
       "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
@@ -52,28 +59,53 @@
         "from": "node_modules/@lancedb",
         "to": "node_modules/@lancedb",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/*.md",
+          "!**/*.txt",
+          "!**/test/**",
+          "!**/tests/**",
+          "!**/examples/**",
+          "!**/*.map"
         ]
       },
       {
         "from": "node_modules/apache-arrow",
         "to": "node_modules/apache-arrow",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/*.md",
+          "!**/*.txt",
+          "!**/test/**",
+          "!**/tests/**",
+          "!**/examples/**",
+          "!**/*.map"
         ]
       },
       {
         "from": "node_modules/@huggingface/transformers",
         "to": "node_modules/@huggingface/transformers",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/*.md",
+          "!**/*.txt",
+          "!**/test/**",
+          "!**/tests/**",
+          "!**/examples/**",
+          "!**/*.map",
+          "!**/dist/**/*.map"
         ]
       },
       {
         "from": "node_modules/onnxruntime-node",
         "to": "node_modules/onnxruntime-node",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/*.md",
+          "!**/*.txt",
+          "!**/test/**",
+          "!**/tests/**",
+          "!**/examples/**",
+          "!**/*.map"
         ]
       }
     ],

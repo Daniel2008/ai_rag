@@ -8,7 +8,7 @@ directories:
 buildDependenciesFromSource: false
 nodeGypRebuild: false
 
-# 文件过滤 - 排除不需要的文件
+# 文件过滤 - 排除不需要的文件（优化体积）
 files:
   - '!**/.vscode/*'
   - '!**/.kilocode/*'
@@ -19,6 +19,13 @@ files:
   - '!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}'
   - '!**/node_modules/*.d.ts'
   - '!**/node_modules/.bin'
+  - '!**/node_modules/*/{.github,.vscode,.idea}'
+  - '!**/node_modules/*/{docs,documentation,doc}'
+  - '!**/node_modules/*/{*.md,*.txt,*.log}'
+  - '!**/node_modules/*/{LICENSE,LICENSE.*,license,license.*}'
+  - '!**/node_modules/*/{.npmignore,.gitignore,.eslintrc*,tsconfig.json}'
+  - '!**/node_modules/*/{coverage,.nyc_output,.jest}'
+  - '!**/node_modules/*/{*.map,*.min.map}'
   - '!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}'
   - '!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}'
   - '!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}'
@@ -41,7 +48,7 @@ asarUnpack:
 
 # ASAR 压缩优化
 asar: true
-compression: store
+compression: maximum  # 最大压缩以减小体积
 
 # Windows 配置
 win:

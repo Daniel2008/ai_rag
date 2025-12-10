@@ -360,6 +360,9 @@ export async function searchSimilarDocumentsWithScores(
         // 使用所有查询变体进行检索
         const searchPromises = queries.map(async (q, index) => {
           const vector = await embeddings.embedQuery(q)
+          if (!table) {
+            throw new Error('Table is null')
+          }
           const results = await table.search(vector).limit(fetchK).toArray()
           console.log(`[searchWithScores] Query variant ${index + 1} (${q.slice(0, 30)}...) got ${results.length} results`)
           return results.map((r: any) => ({ ...r, _queryIndex: index }))
@@ -386,11 +389,19 @@ export async function searchSimilarDocumentsWithScores(
       } catch (error) {
         console.warn('[searchWithScores] Cross-language search failed, using original query:', error)
         // 回退到原始查询
+        if (!table) {
+          console.log('[searchWithScores] Table is null, returning empty')
+          return []
+        }
         const results = await table.search(queryVector).limit(fetchK).toArray()
         allSearchResults = results
       }
     } else {
       // 非中文查询，使用原始方法
+      if (!table) {
+        console.log('[searchWithScores] Table is null, returning empty')
+        return []
+      }
       const results = await table.search(queryVector).limit(fetchK).toArray()
       allSearchResults = results
     }
