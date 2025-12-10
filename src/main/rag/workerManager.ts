@@ -1,18 +1,40 @@
 import { Worker } from 'worker_threads'
-import { join } from 'path'
-import { app } from 'electron'
+import path from 'path'
+
+// 扩展Error类型，添加detailedError属性
+declare interface DetailedError extends Error {
+  detailedError?: {
+    type: string
+    message: string
+    stack?: string
+    cause?: unknown
+  }
+}
+
 import type { Document } from '@langchain/core/documents'
 
 let worker: Worker | null = null
 let taskIdCounter = 0
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const pendingTasks = new Map<number, { resolve: (res: any) => void, reject: (err: any) => void, onProgress?: (p: any) => void }>()
+
+// 定义任务类型
+interface Task<T = unknown> {
+  resolve: (res: T | PromiseLike<T>) => void
+  reject: (err: Error) => void
+  onProgress?: (p: unknown) => void
+}
+
+const pendingTasks = new Map<number, Task>()
 
 function getWorkerPath(): string {
-  // In production (bundled), __dirname is .../resources/app.asar/out/main
-  // In dev, it is .../out/main
-  // The worker file is generated at out/main/worker.js
-  return join(__dirname, 'worker.js')
+  // 根据当前环境选择worker文件路径
+  // 如果当前文件是.ts扩展名，说明在开发环境中运行TypeScript文件
+  if (__filename.endsWith('.ts')) {
+    // 在开发环境中直接使用worker.ts文件
+    return path.join(__dirname, 'worker.ts')
+  } else {
+    // 在生产环境中使用编译后的worker.js文件
+    return path.join(__dirname, 'worker.js')
+  }
 }
 
 export function initWorker(): Worker {
@@ -20,28 +42,33 @@ export function initWorker(): Worker {
 
   const workerPath = getWorkerPath()
   console.log('Initializing worker at:', workerPath)
-  
+
   worker = new Worker(workerPath)
-  
+
   worker.on('message', (msg) => {
-    const { id, success, result, error, type, payload } = msg
+    const { id, success, result, error, detailedError, type, payload } = msg
     const task = pendingTasks.get(id)
     if (!task) return
-    
+
     if (type === 'progress') {
       task.onProgress?.(payload)
       return
     }
-    
+
     if (success) {
       task.resolve(result)
       pendingTasks.delete(id)
     } else {
-      task.reject(new Error(error))
+      // Create a more informative error object
+      const errorObj = new Error(error) as DetailedError
+      if (detailedError) {
+        errorObj.detailedError = detailedError
+      }
+      task.reject(errorObj)
       pendingTasks.delete(id)
     }
   })
-  
+
   worker.on('error', (err) => {
     console.error('Worker error:', err)
   })
@@ -50,17 +77,17 @@ export function initWorker(): Worker {
     console.log(`Worker stopped with exit code ${code}`)
     worker = null
   })
-  
+
   return worker
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function runTask<T>(type: string, payload: any, onProgress?: (p: any) => void): Promise<T> {
+function runTask<T>(type: string, payload: unknown, onProgress?: (p: unknown) => void): Promise<T> {
   const w = initWorker()
   const id = taskIdCounter++
-  
+
   return new Promise((resolve, reject) => {
-    pendingTasks.set(id, { resolve, reject, onProgress })
+    // 使用类型断言解决类型不兼容问题
+    pendingTasks.set(id, { resolve: resolve as (res: unknown) => void, reject, onProgress })
     w.postMessage({ id, type, payload })
   })
 }
@@ -68,14 +95,17 @@ function runTask<T>(type: string, payload: any, onProgress?: (p: any) => void): 
 export async function loadAndSplitFileInWorker(filePath: string): Promise<Document[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = await runTask<any[]>('loadAndSplit', { filePath })
-  
+
   // Rehydrate Documents
   const { Document } = await import('@langchain/core/documents')
-  return result.map(d => new Document({ pageContent: d.pageContent, metadata: d.metadata }))
+  return result.map((d) => new Document({ pageContent: d.pageContent, metadata: d.metadata }))
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function initEmbeddingInWorker(modelName: string, cacheDir: string, onProgress?: (p: any) => void) {
+export async function initEmbeddingInWorker(
+  modelName: string,
+  cacheDir: string,
+  onProgress?: (p: unknown) => void
+): Promise<unknown> {
   return runTask('initEmbedding', { modelName, cacheDir }, onProgress)
 }
 

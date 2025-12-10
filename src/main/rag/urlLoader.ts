@@ -22,6 +22,8 @@ export interface UrlLoadOptions {
   minContentLength?: number
   /** 自定义 User-Agent */
   userAgent?: string
+  /** 进度回调函数 */
+  onProgress?: (stage: string, percent: number) => void
 }
 
 /** 页面元信息 */
@@ -469,11 +471,38 @@ export async function loadFromUrl(
     extractLinks = false,
     extractMeta = true,
     minContentLength = 50,
-    userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    onProgress
   } = options
   void _extractContent // 保留选项以便将来使用
 
   let lastError = ''
+
+  // 增强URL格式验证
+  try {
+    const parsedUrl = new URL(url)
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      // URL格式验证失败
+      onProgress?.('URL格式验证失败', 100)
+      return { success: false, url, error: '仅支持 HTTP/HTTPS 协议' }
+    }
+    // 检查域名格式
+    if (!parsedUrl.hostname.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]?\.[a-zA-Z]{2,}$/)) {
+      // URL格式验证失败
+      onProgress?.('URL格式验证失败', 100)
+      return { success: false, url, error: '无效的域名格式' }
+    }
+    // URL格式验证完成
+    onProgress?.('URL格式验证完成', 10)
+  } catch (e) {
+    // URL格式验证失败
+    onProgress?.('URL格式验证失败', 100)
+    return {
+      success: false,
+      url,
+      error: `URL格式错误: ${e instanceof Error ? e.message : '未知错误'}`
+    }
+  }
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -483,6 +512,9 @@ export async function loadFromUrl(
         return { success: false, url, error: '仅支持 HTTP/HTTPS 协议' }
       }
       const encodedUrl = parsedUrl.href
+
+      // 开始获取网页内容
+      onProgress?.('正在获取网页内容', 20)
 
       // 发起请求
       const controller = new AbortController()
@@ -504,12 +536,26 @@ export async function loadFromUrl(
 
       clearTimeout(timeoutId)
 
+      // 内容获取完成
+      onProgress?.('内容获取完成', 40)
+
       if (!response.ok) {
         lastError = `HTTP 错误: ${response.status} ${response.statusText}`
+        if (response.status === 429) {
+          lastError += ' (请求过于频繁，建议稍后重试)'
+        } else if (response.status === 403) {
+          lastError += ' (访问被拒绝)'
+        } else if (response.status === 404) {
+          lastError += ' (页面不存在)'
+        } else if (response.status >= 500) {
+          lastError += ' (服务器错误)'
+        }
+
         if (response.status === 429 || response.status >= 500) {
           // 可重试的错误
           if (attempt < maxRetries) {
-            await delay(1000 * (attempt + 1))
+            const retryDelay = 1000 * (attempt + 1)
+            await delay(retryDelay)
             continue
           }
         }
@@ -522,8 +568,12 @@ export async function loadFromUrl(
             }
           })
           if (jrResp.ok) {
+            // 备用方案内容获取完成
+            onProgress?.('备用方案内容获取完成', 50)
             const jrText = await jrResp.text()
             const contentType = 'text/plain'
+            // 处理备用方案内容
+            onProgress?.('正在处理内容', 60)
             const { title, content, meta } = processContent(jrText, contentType, url)
             if (!content || content.length < minContentLength) {
               return {
@@ -567,40 +617,48 @@ export async function loadFromUrl(
           lastError = e instanceof Error ? e.message : '代理抓取失败'
         }
         if (isWikipediaUrl(encodedUrl)) {
-          const wikiText = await fetchWikipediaPlain(encodedUrl, userAgent)
-          if (wikiText) {
-            const contentType = 'text/plain'
-            const { title, content, meta } = processContent(wikiText, contentType, url)
-            if (content && content.length >= minContentLength) {
-              const splitter = new RecursiveCharacterTextSplitter({
-                chunkSize: 1000,
-                chunkOverlap: 200,
-                separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
-              })
-              const docs = await splitter.createDocuments(
-                [content],
-                [
-                  {
-                    source: url,
-                    title: title || url,
-                    type: 'url',
-                    fetchedAt: new Date().toISOString(),
-                    ...(extractMeta && meta.description ? { description: meta.description } : {}),
-                    ...(extractMeta && meta.author ? { author: meta.author } : {}),
-                    ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
-                  }
-                ]
-              )
-              return {
-                success: true,
-                url,
-                title: title || url,
-                content,
-                documents: docs,
-                meta: extractMeta ? meta : undefined,
-                contentLength: content.length
+          try {
+            const wikiText = await fetchWikipediaPlain(encodedUrl, userAgent)
+            if (wikiText) {
+              const contentType = 'text/plain'
+              const { title, content, meta } = processContent(wikiText, contentType, url)
+              if (content && content.length >= minContentLength) {
+                const splitter = new RecursiveCharacterTextSplitter({
+                  chunkSize: 1000,
+                  chunkOverlap: 200,
+                  separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+                })
+                const docs = await splitter.createDocuments(
+                  [content],
+                  [
+                    {
+                      source: url,
+                      title: title || url,
+                      type: 'url',
+                      fetchedAt: new Date().toISOString(),
+                      ...(extractMeta && meta.description ? { description: meta.description } : {}),
+                      ...(extractMeta && meta.author ? { author: meta.author } : {}),
+                      ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
+                    }
+                  ]
+                )
+                return {
+                  success: true,
+                  url,
+                  title: title || url,
+                  content,
+                  documents: docs,
+                  meta: extractMeta ? meta : undefined,
+                  contentLength: content.length
+                }
+              } else {
+                lastError = `维基百科内容过少（${content?.length || 0} 字符），最小要求 ${minContentLength} 字符`
               }
+            } else {
+              lastError = `无法从维基百科获取内容，可能是API访问限制或页面不存在: ${url}`
             }
+          } catch (e) {
+            lastError = `维基百科内容处理失败: ${e instanceof Error ? e.message : '未知错误'}`
           }
         }
         const ghRaw = toGitHubRaw(encodedUrl)
@@ -645,12 +703,18 @@ export async function loadFromUrl(
                   meta: extractMeta ? meta : undefined,
                   contentLength: content.length
                 }
+              } else {
+                lastError = `GitHub 内容过少（${content?.length || 0} 字符），最小要求 ${minContentLength} 字符`
               }
+            } else {
+              lastError = `GitHub 原始内容获取失败，HTTP 状态码: ${ghResp.status}`
             }
           } catch (e) {
-            lastError = e instanceof Error ? e.message : 'GitHub 原始内容抓取失败'
+            lastError = `GitHub 原始内容抓取失败: ${e instanceof Error ? e.message : '未知错误'}`
           }
         }
+        // 重试次数耗尽
+        onProgress?.('重试次数耗尽', 100)
         return { success: false, url, error: lastError }
       }
 
@@ -668,6 +732,8 @@ export async function loadFromUrl(
       const isSupported = supportedTypes.some((t) => contentType.includes(t))
 
       if (!isSupported) {
+        // 内容处理失败
+        onProgress?.('内容处理失败', 100)
         return { success: false, url, error: `不支持的内容类型: ${contentType}` }
       }
 
@@ -675,9 +741,12 @@ export async function loadFromUrl(
       const rawContent = await response.text()
 
       // 处理内容
+      onProgress?.('正在处理内容', 60)
       const { title, content, meta } = processContent(rawContent, contentType, url)
 
       if (!content || content.length < minContentLength) {
+        // 内容处理失败
+        onProgress?.('内容处理失败', 100)
         return {
           success: false,
           url,
@@ -689,6 +758,7 @@ export async function loadFromUrl(
       const links = extractLinks ? extractPageLinks(rawContent, url) : undefined
 
       // 分割文档
+      onProgress?.('正在分割文档', 80)
       const splitter = new RecursiveCharacterTextSplitter({
         chunkSize: 1000,
         chunkOverlap: 200,
@@ -710,6 +780,8 @@ export async function loadFromUrl(
         ]
       )
 
+      // 处理完成
+      onProgress?.('处理完成', 100)
       return {
         success: true,
         url,
@@ -727,6 +799,8 @@ export async function loadFromUrl(
         } else if (error.message.includes('fetch')) {
           const jrUrl = buildJinaReaderUrl(url)
           try {
+            // 使用备用方案获取内容
+            onProgress?.('主请求失败，尝试备用方案', 30)
             const jrResp = await fetch(jrUrl, {
               headers: {
                 'User-Agent': userAgent,
@@ -738,9 +812,13 @@ export async function loadFromUrl(
               const contentType = 'text/plain'
               const { title, content, meta } = processContent(jrText, contentType, url)
               if (!content || content.length < minContentLength) {
+                // 内容处理失败
+                onProgress?.('内容处理失败', 100)
                 lastError = `页面内容过少（${content.length} 字符），最小要求 ${minContentLength} 字符`
               } else {
                 const links = extractLinks ? extractPageLinks(jrText, url) : undefined
+                // 分割文档
+                onProgress?.('正在分割文档', 80)
                 const splitter = new RecursiveCharacterTextSplitter({
                   chunkSize: 1000,
                   chunkOverlap: 200,
@@ -760,6 +838,8 @@ export async function loadFromUrl(
                     }
                   ]
                 )
+                // 处理完成
+                onProgress?.('处理完成', 100)
                 return {
                   success: true,
                   url,
@@ -776,40 +856,50 @@ export async function loadFromUrl(
             lastError = e instanceof Error ? e.message : '代理抓取失败'
           }
           if (isWikipediaUrl(url)) {
-            const wikiText = await fetchWikipediaPlain(url, userAgent)
-            if (wikiText) {
-              const contentType = 'text/plain'
-              const { title, content, meta } = processContent(wikiText, contentType, url)
-              if (content && content.length >= minContentLength) {
-                const splitter = new RecursiveCharacterTextSplitter({
-                  chunkSize: 1000,
-                  chunkOverlap: 200,
-                  separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
-                })
-                const docs = await splitter.createDocuments(
-                  [content],
-                  [
-                    {
-                      source: url,
-                      title: title || url,
-                      type: 'url',
-                      fetchedAt: new Date().toISOString(),
-                      ...(extractMeta && meta.description ? { description: meta.description } : {}),
-                      ...(extractMeta && meta.author ? { author: meta.author } : {}),
-                      ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
-                    }
-                  ]
-                )
-                return {
-                  success: true,
-                  url,
-                  title: title || url,
-                  content,
-                  documents: docs,
-                  meta: extractMeta ? meta : undefined,
-                  contentLength: content.length
+            try {
+              const wikiText = await fetchWikipediaPlain(url, userAgent)
+              if (wikiText) {
+                const contentType = 'text/plain'
+                const { title, content, meta } = processContent(wikiText, contentType, url)
+                if (content && content.length >= minContentLength) {
+                  const splitter = new RecursiveCharacterTextSplitter({
+                    chunkSize: 1000,
+                    chunkOverlap: 200,
+                    separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+                  })
+                  const docs = await splitter.createDocuments(
+                    [content],
+                    [
+                      {
+                        source: url,
+                        title: title || url,
+                        type: 'url',
+                        fetchedAt: new Date().toISOString(),
+                        ...(extractMeta && meta.description
+                          ? { description: meta.description }
+                          : {}),
+                        ...(extractMeta && meta.author ? { author: meta.author } : {}),
+                        ...(extractMeta && meta.siteName ? { siteName: meta.siteName } : {})
+                      }
+                    ]
+                  )
+                  return {
+                    success: true,
+                    url,
+                    title: title || url,
+                    content,
+                    documents: docs,
+                    meta: extractMeta ? meta : undefined,
+                    contentLength: content.length
+                  }
+                } else {
+                  lastError = `维基百科内容过少（${content?.length || 0} 字符），最小要求 ${minContentLength} 字符`
                 }
+              } else {
+                lastError = `无法从维基百科获取内容，可能是API访问限制或页面不存在: ${url}`
               }
+            } catch (e) {
+              lastError = `维基百科内容处理失败: ${e instanceof Error ? e.message : '未知错误'}`
             }
           }
           const ghRaw2 = toGitHubRaw(url)
@@ -856,10 +946,14 @@ export async function loadFromUrl(
                     meta: extractMeta ? meta : undefined,
                     contentLength: content.length
                   }
+                } else {
+                  lastError = `GitHub 内容过少（${content?.length || 0} 字符），最小要求 ${minContentLength} 字符`
                 }
+              } else {
+                lastError = `GitHub 原始内容获取失败，HTTP 状态码: ${ghResp.status}`
               }
             } catch (e) {
-              lastError = e instanceof Error ? e.message : 'GitHub 原始内容抓取失败'
+              lastError = `GitHub 原始内容抓取失败: ${e instanceof Error ? e.message : '未知错误'}`
             }
           }
           lastError = '网络连接失败'

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import type { ReactElement } from 'react'
 import {
   Drawer,
@@ -82,13 +82,7 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
   const [currentProvider, setCurrentProvider] = useState<ModelProvider>('ollama')
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>('local')
 
-  useEffect(() => {
-    if (isOpen) {
-      void loadSettings()
-    }
-  }, [isOpen])
-
-  const loadSettings = async (): Promise<void> => {
+  const loadSettings = useCallback(async (): Promise<void> => {
     setLoading(true)
     try {
       const current = await window.api.getSettings()
@@ -101,14 +95,20 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     } finally {
       setLoading(false)
     }
-  }
+  }, [form])
+
+  useEffect(() => {
+    if (isOpen) {
+      void loadSettings()
+    }
+  }, [isOpen, loadSettings])
 
   const handleSave = async (): Promise<void> => {
     try {
       const values = await form.validateFields()
       setSaving(true)
       const result = await window.api.saveSettings(values)
-      
+
       if (result.embeddingChanged) {
         if (result.reindexingStarted) {
           message.info('嵌入模型已切换，正在后台重建知识库索引...')
@@ -266,11 +266,7 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
           📊 向量模型设置
         </Typography.Text>
 
-        <Form.Item
-          label="嵌入模式"
-          name="embeddingProvider"
-          rules={[{ required: true }]}
-        >
+        <Form.Item label="嵌入模式" name="embeddingProvider" rules={[{ required: true }]}>
           <Select
             options={[
               { value: 'local', label: '🚀 本地内置 (推荐，首次使用自动下载)' },
@@ -279,7 +275,10 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
             onChange={(value: EmbeddingProvider) => {
               setEmbeddingProvider(value)
               // 切换时重置为默认模型
-              form.setFieldValue('embeddingModel', value === 'local' ? 'nomic-embed-text' : 'nomic-embed-text')
+              form.setFieldValue(
+                'embeddingModel',
+                value === 'local' ? 'nomic-embed-text' : 'nomic-embed-text'
+              )
             }}
           />
         </Form.Item>
@@ -296,10 +295,7 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
           rules={[{ required: true, message: '请选择向量模型' }]}
         >
           {embeddingProvider === 'local' ? (
-            <Select
-              options={LOCAL_EMBEDDING_MODELS}
-              placeholder="选择本地嵌入模型"
-            />
+            <Select options={LOCAL_EMBEDDING_MODELS} placeholder="选择本地嵌入模型" />
           ) : (
             <AutoComplete
               allowClear

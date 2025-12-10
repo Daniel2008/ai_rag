@@ -59,8 +59,13 @@ const api = {
     ipcRenderer.invoke('rag:processFile', path),
   processUrl: (
     url: string
-  ): Promise<{ success: boolean; count?: number; title?: string; preview?: string; error?: string }> =>
-    ipcRenderer.invoke('rag:processUrl', url),
+  ): Promise<{
+    success: boolean
+    count?: number
+    title?: string
+    preview?: string
+    error?: string
+  }> => ipcRenderer.invoke('rag:processUrl', url),
   chat: (payload: { question: string; sources?: string[] }): void =>
     ipcRenderer.send('rag:chat', payload),
   getKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:list'),
@@ -106,9 +111,15 @@ const api = {
   },
   // 文档处理进度监听
   onProcessProgress: (
-    callback: (progress: { stage: string; percent: number; error?: string }) => void
+    callback: (progress: {
+      stage: string
+      percent: number
+      error?: string
+      taskType?: string
+    }) => void
   ): void => {
     ipcRenderer.removeAllListeners('rag:process-progress')
+    // @ts-ignore
     ipcRenderer.on('rag:process-progress', (_, progress) => callback(progress))
   },
   removeProcessProgressListener: (): void => {
@@ -117,7 +128,7 @@ const api = {
   // 嵌入模型进度监听
   onEmbeddingProgress: (
     callback: (progress: {
-      status: 'downloading' | 'loading' | 'ready' | 'error'
+      status: 'downloading' | 'loading' | 'ready' | 'completed' | 'processing' | 'error'
       progress?: number
       file?: string
       message?: string

@@ -7,10 +7,12 @@ import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { initEmbeddingInWorker, embedInWorker } from './workerManager'
+import { ProgressCallback, ProgressStatus, TaskType, ProgressMessage } from './progressTypes'
 
 // 配置模型缓存路径到应用数据目录
 const getModelsPath = (): string => {
-  const userDataPath = app.getPath('userData')
+  // 兼容非Electron环境
+  const userDataPath = app?.getPath ? app.getPath('userData') : process.cwd()
   const modelsPath = path.join(userDataPath, 'models')
   if (!fs.existsSync(modelsPath)) {
     fs.mkdirSync(modelsPath, { recursive: true })
@@ -29,12 +31,7 @@ export const LOCAL_EMBEDDING_MODELS = {
 export type LocalEmbeddingModelName = keyof typeof LOCAL_EMBEDDING_MODELS
 
 // 模型下载进度回调
-export type ModelProgressCallback = (progress: {
-  status: 'downloading' | 'loading' | 'ready' | 'error'
-  progress?: number // 0-100
-  file?: string
-  message?: string
-}) => void
+export type ModelProgressCallback = ProgressCallback
 
 let cachedModelName: string | null = null
 let isInitializing = false
@@ -83,44 +80,113 @@ export async function initLocalEmbeddings(
   }
 
   initPromise = (async () => {
-    try {
-      const modelsPath = getModelsPath()
-      
-      globalProgressCallback?.({ status: 'downloading', message: `正在加载模型 ${modelName}...` })
+    // 保存当前的进度回调，确保在Worker返回消息时使用正确的回调
+    const currentProgressCallback = progressCallback
+    let retryCount = 0
+    const maxRetries = 2
 
-      await initEmbeddingInWorker(modelId, modelsPath, (payload) => {
-        // Handle progress from worker
-        const { status, progress, file } = payload
-        if (status === 'progress' && progress !== undefined) {
-           globalProgressCallback?.({
-              status: 'downloading',
-              progress: progress,
-              file: file,
-              message: `下载中: ${file} (${Math.round(progress)}%)`
-            })
-        } else if (status === 'done') {
-           globalProgressCallback?.({
-              status: 'loading',
-              message: `文件 ${file} 下载完成`
-           })
+    // 重试机制：当模型加载失败时，尝试重新下载
+    while (retryCount <= maxRetries) {
+      try {
+        const modelsPath = getModelsPath()
+
+        currentProgressCallback?.({
+          status: ProgressStatus.DOWNLOADING,
+          progress: 20,
+          message: `正在加载模型 ${modelName}...`,
+          taskType: TaskType.MODEL_DOWNLOAD
+        })
+
+        await initEmbeddingInWorker(modelId, modelsPath, (payload) => {
+          // Handle progress from worker
+          const payloadObj = payload as Record<string, unknown>
+          let progressMessage: ProgressMessage
+
+          // Check if it's already a standard ProgressMessage
+          if (typeof payloadObj.status === 'string' && typeof payloadObj.taskType === 'string') {
+            progressMessage = payload as ProgressMessage
+          } else {
+            // Convert old format to standard ProgressMessage
+            if (typeof payloadObj.progress === 'number' && typeof payloadObj.file === 'string') {
+              // 处理模型文件下载进度
+              progressMessage = {
+                status: ProgressStatus.DOWNLOADING,
+                progress: payloadObj.progress,
+                fileName: payloadObj.file,
+                message: `下载中: ${payloadObj.file} (${Math.round(payloadObj.progress)}%)`,
+                taskType: TaskType.MODEL_DOWNLOAD
+              }
+            } else if (payloadObj.step === 'downloading' && typeof payloadObj.message === 'string') {
+              // 处理镜像切换等进度消息
+              progressMessage = {
+                status: ProgressStatus.DOWNLOADING,
+                message: payloadObj.message,
+                taskType: TaskType.MODEL_DOWNLOAD,
+                progress: payloadObj.progress as number || undefined
+              }
+            } else {
+              // Default case: handle unexpected payloads
+              progressMessage = {
+                status: ProgressStatus.DOWNLOADING,
+                message: payloadObj.message as string || '处理中...',
+                taskType: TaskType.MODEL_DOWNLOAD,
+                progress: payloadObj.progress as number || undefined
+              }
+            }
+          }
+
+          // Forward the unified progress message using the current callback
+          currentProgressCallback?.(progressMessage)
+        })
+
+        cachedModelName = modelId
+        isInitializing = false
+        initPromise = null
+
+        // 使用当前回调发送完成消息
+        currentProgressCallback?.({
+          status: ProgressStatus.READY,
+          progress: 100,
+          message: '模型加载完成',
+          taskType: TaskType.MODEL_DOWNLOAD
+        })
+        console.log(`Local embedding model ${modelName} initialized successfully in worker`)
+        return
+      } catch (error) {
+        retryCount++
+        const errorMessage = error instanceof Error ? error.message : '未知错误'
+        
+        // 检查是否是Protobuf解析错误，如果是，且重试次数未用尽，则尝试重新初始化
+        const isProtobufError = errorMessage.includes('Protobuf parsing failed')
+        
+        if (isProtobufError && retryCount <= maxRetries) {
+          console.warn(`模型文件可能已损坏 (${errorMessage}), 正在尝试第 ${retryCount} 次重新下载...`)
+          currentProgressCallback?.({
+            status: ProgressStatus.DOWNLOADING,
+            message: `模型文件可能已损坏，正在尝试重新下载 (${retryCount}/${maxRetries})...`,
+            taskType: TaskType.MODEL_DOWNLOAD
+          })
+          
+          // 清理缓存，强制重新下载
+          cachedModelName = null
+          
+          // 等待1秒后重试
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        } else {
+          // 非Protobuf错误或重试次数已用尽，报告错误
+          isInitializing = false
+          initPromise = null
+          cachedModelName = null
+
+          currentProgressCallback?.({
+            status: ProgressStatus.ERROR,
+            message: `模型加载失败: ${errorMessage}`,
+            taskType: TaskType.MODEL_DOWNLOAD
+          })
+          console.error('Failed to initialize local embedding model in worker:', error)
+          throw error
         }
-      })
-
-      cachedModelName = modelId
-      isInitializing = false
-      initPromise = null
-
-      globalProgressCallback?.({ status: 'ready', message: '模型加载完成' })
-      console.log(`Local embedding model ${modelName} initialized successfully in worker`)
-    } catch (error) {
-      isInitializing = false
-      initPromise = null
-      cachedModelName = null
-
-      const errorMessage = error instanceof Error ? error.message : '未知错误'
-      globalProgressCallback?.({ status: 'error', message: `模型加载失败: ${errorMessage}` })
-      console.error('Failed to initialize local embedding model in worker:', error)
-      throw error
+      }
     }
   })()
 
@@ -212,36 +278,53 @@ export class LocalEmbeddings extends Embeddings {
 
   async embedDocuments(documents: string[]): Promise<number[][]> {
     await this.initialize()
-    
+
     // 分批处理以支持进度报告
     const batchSize = 16
     const total = documents.length
     const results: number[][] = []
-    
+
     // 如果文档数量少，直接处理
     if (total <= batchSize) {
       return getLocalEmbeddings(documents, this.modelName)
     }
+
+    // 报告开始向量化
+    const callback = this.tempProgressCallback ?? this.onProgress
+    callback?.({
+      status: ProgressStatus.PROCESSING,
+      progress: 0,
+      message: `开始生成向量 (0/${total})`,
+      taskType: TaskType.EMBEDDING_GENERATION
+    })
 
     // 分批处理
     for (let i = 0; i < total; i += batchSize) {
       const batch = documents.slice(i, i + batchSize)
       const batchResults = await getLocalEmbeddings(batch, this.modelName)
       results.push(...batchResults)
-      
+
       // 报告进度
-      const callback = this.tempProgressCallback ?? this.onProgress
       if (callback) {
         const processed = Math.min(i + batchSize, total)
         const percent = Math.round((processed / total) * 100)
         callback({
-          status: 'loading',
+          status: ProgressStatus.PROCESSING,
           progress: percent,
-          message: `正在生成向量 (${processed}/${total})`
+          message: `正在生成向量 (${processed}/${total})`,
+          taskType: TaskType.EMBEDDING_GENERATION
         })
       }
     }
-    
+
+    // 报告完成
+    callback?.({
+      status: ProgressStatus.COMPLETED,
+      progress: 100,
+      message: `向量生成完成 (${total}/${total})`,
+      taskType: TaskType.EMBEDDING_GENERATION
+    })
+
     return results
   }
 

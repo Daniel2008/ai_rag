@@ -113,7 +113,9 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
             percent={Math.round(source.score * 100)}
             size="small"
             style={{ width: 60 }}
-            strokeColor={source.score > 0.7 ? '#52c41a' : source.score > 0.5 ? '#faad14' : '#ff4d4f'}
+            strokeColor={
+              source.score > 0.7 ? '#52c41a' : source.score > 0.5 ? '#faad14' : '#ff4d4f'
+            }
             format={(percent): string => `${percent}%`}
           />
         )}
@@ -154,10 +156,7 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
         </div>
 
         {/* 底部信息 */}
-        <div
-          className="flex items-center gap-3 text-xs"
-          style={{ color: token.colorTextTertiary }}
-        >
+        <div className="flex items-center gap-3 text-xs" style={{ color: token.colorTextTertiary }}>
           {source.sourceType === 'url' && source.url && (
             <Tooltip title={source.url}>
               <span className="flex items-center gap-1 cursor-pointer hover:text-blue-500">
@@ -420,9 +419,7 @@ const MessageContent = memo(
 
     return (
       <div className="flex flex-col gap-3">
-        {think && thoughtItems.length > 0 && (
-          <ThoughtChain items={thoughtItems} />
-        )}
+        {think && thoughtItems.length > 0 && <ThoughtChain items={thoughtItems} />}
         {hasContent ? (
           <div className="markdown-content">
             <XMarkdown>{realContent}</XMarkdown>
@@ -552,7 +549,13 @@ export function ChatArea({
     }
 
     // 正在输入时持续滚动（仅当用户在底部附近时）
-    if (isTyping && currentMessages.length > 0 && !loadingMore && !needsInitialScrollRef.current && isNearBottomRef.current) {
+    if (
+      isTyping &&
+      currentMessages.length > 0 &&
+      !loadingMore &&
+      !needsInitialScrollRef.current &&
+      isNearBottomRef.current
+    ) {
       requestAnimationFrame(() => {
         if (bubbleListRef.current && lastKey) {
           bubbleListRef.current.scrollTo({ key: lastKey, block: 'end', behavior: 'smooth' })
@@ -757,12 +760,7 @@ export function ChatArea({
             仅显示最近 {MAX_RENDERED_MESSAGES} 条消息
           </div>
         )}
-        <Bubble.List
-          ref={bubbleListRef}
-          role={roles}
-          autoScroll={false}
-          items={bubbleItems}
-        />
+        <Bubble.List ref={bubbleListRef} role={roles} autoScroll={false} items={bubbleItems} />
       </div>
     </div>
   )

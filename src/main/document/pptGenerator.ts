@@ -423,10 +423,7 @@ function createReferencesSlide(
 /**
  * 创建结尾幻灯片
  */
-function createEndSlide(
-  pptx: PptxGenJS,
-  theme: DocumentTheme = 'professional'
-): void {
+function createEndSlide(pptx: PptxGenJS, theme: DocumentTheme = 'professional'): void {
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
@@ -599,4 +596,3 @@ export async function generatePPTDocument(
 }
 
 export default generatePPTDocument
-

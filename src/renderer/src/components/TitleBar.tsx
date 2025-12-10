@@ -90,19 +90,13 @@ export function TitleBar({ title = '智汇' }: TitleBarProps): ReactElement {
             <path d="M2 12l10 5 10-5" />
           </svg>
         </div>
-        <span
-          className="text-sm font-semibold tracking-wide"
-          style={{ color: token.colorText }}
-        >
+        <span className="text-sm font-semibold tracking-wide" style={{ color: token.colorText }}>
           {title}
         </span>
       </div>
 
       {/* 右侧：窗口控制按钮 */}
-      <div
-        className="flex h-full"
-        style={noDragStyle}
-      >
+      <div className="flex h-full" style={noDragStyle}>
         {/* 最小化按钮 */}
         <button
           onClick={handleMinimize}
@@ -142,4 +136,3 @@ export function TitleBar({ title = '智汇' }: TitleBarProps): ReactElement {
 }
 
 export default TitleBar
-

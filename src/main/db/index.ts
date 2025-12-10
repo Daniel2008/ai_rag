@@ -7,7 +7,7 @@ const dbPath = join(app.getPath('userData'), 'chat_history.db')
 // Initialize DB
 let db: Database.Database | null = null
 
-export function getDB() {
+export function getDB(): Database.Database {
   if (!db) {
     db = new Database(dbPath)
     db.pragma('journal_mode = WAL') // Better performance
@@ -16,7 +16,7 @@ export function getDB() {
   return db
 }
 
-function initSchema() {
+function initSchema(): void {
   if (!db) return
 
   db.exec(`

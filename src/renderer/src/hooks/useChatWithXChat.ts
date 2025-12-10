@@ -341,4 +341,3 @@ export function useChatWithXChat({
     stopGeneration
   }
 }
-

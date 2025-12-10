@@ -1,17 +1,13 @@
 import { getDB } from './index'
-import type { ChatMessage } from '../../renderer/src/types/chat'
-
-// Since we can't import types from renderer in main directly if paths are not configured,
-// we'll redefine or just use 'any' for simplicity, but better to share types.
-// For now, I will assume the structure matches.
+import type { ChatMessage } from '../../../src/types/chat'
 
 export function getAllConversations(): { key: string; label: string; timestamp: number }[] {
   const db = getDB()
   const stmt = db.prepare('SELECT key, label, timestamp FROM conversations ORDER BY timestamp DESC')
-  return stmt.all() as any
+  return stmt.all() as { key: string; label: string; timestamp: number }[]
 }
 
-export function createConversation(key: string, label: string) {
+export function createConversation(key: string, label: string): void {
   const db = getDB()
   const now = Date.now()
   // 使用 INSERT OR IGNORE 避免重复 key 导致的错误
@@ -21,14 +17,14 @@ export function createConversation(key: string, label: string) {
   stmt.run(key, label, now, now)
 }
 
-export function updateConversationTimestamp(key: string, label: string) {
+export function updateConversationTimestamp(key: string, label: string): void {
   const db = getDB()
   const now = Date.now()
   const stmt = db.prepare('UPDATE conversations SET timestamp = ?, label = ? WHERE key = ?')
   stmt.run(now, label, key)
 }
 
-export function deleteConversation(key: string) {
+export function deleteConversation(key: string): void {
   const db = getDB()
   const stmt = db.prepare('DELETE FROM conversations WHERE key = ?')
   stmt.run(key)
@@ -53,21 +49,28 @@ export function getMessages(
     ) ORDER BY timestamp ASC
   `)
 
-  const rows = stmt.all(conversationKey, limit, offset) as any[]
+  const rows = stmt.all(conversationKey, limit, offset) as Array<{
+    key: string
+    role: 'user' | 'ai' | 'system'
+    content: string
+    timestamp: number
+    status: 'success' | 'error' | 'pending'
+    sources: string | null
+  }>
 
   return rows.map((row) => ({
     key: row.key,
-    role: row.role as any,
+    role: row.role,
     content: row.content,
     timestamp: row.timestamp,
-    status: row.status as any,
+    status: row.status,
     sources: row.sources ? JSON.parse(row.sources) : undefined,
     typing: false // Stored messages are never typing
   }))
 }
 
 // 性能优化：使用事务合并多次数据库操作
-export function saveMessage(conversationKey: string, message: ChatMessage) {
+export function saveMessage(conversationKey: string, message: ChatMessage): void {
   const db = getDB()
 
   const insertMsg = db.prepare(`
@@ -94,7 +97,7 @@ export function saveMessage(conversationKey: string, message: ChatMessage) {
 }
 
 // 性能优化：批量保存消息
-export function saveMessages(conversationKey: string, messages: ChatMessage[]) {
+export function saveMessages(conversationKey: string, messages: ChatMessage[]): void {
   if (messages.length === 0) return
 
   const db = getDB()
@@ -124,7 +127,7 @@ export function saveMessages(conversationKey: string, messages: ChatMessage[]) {
   batchInsert(messages)
 }
 
-export function updateMessage(messageKey: string, updates: Partial<ChatMessage>) {
+export function updateMessage(messageKey: string, updates: Partial<ChatMessage>): void {
   const db = getDB()
   const keys = Object.keys(updates).filter((k) => k !== 'key' && k !== 'typing')
   if (keys.length === 0) return

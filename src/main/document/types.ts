@@ -112,4 +112,3 @@ export interface SlideData {
   /** 备注 */
   notes?: string
 }
-

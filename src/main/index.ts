@@ -31,7 +31,7 @@ if (app.isPackaged) {
   ;(Module as any)._initPaths()
 }
 import icon from '../../resources/icon.png?asset'
-import type { ChatMessage } from '../renderer/src/types/chat'
+import type { ChatMessage } from '../types/chat'
 import {
   getAllConversations,
   createConversation,
@@ -224,7 +224,8 @@ app.whenReady().then(async () => {
         // 发送进度：开始解析文档
         event.sender.send('rag:process-progress', {
           stage: `正在解析文档 (${processedCount + 1}/${totalFiles})...`,
-          percent: basePercent + 5
+          percent: basePercent + 5,
+          taskType: 'DOCUMENT_PARSE'
         })
 
         // 1. 先清理旧索引（如果存在），避免重复
@@ -240,7 +241,8 @@ app.whenReady().then(async () => {
         // 发送进度：文档解析完成
         event.sender.send('rag:process-progress', {
           stage: `文档解析完成，共 ${docs.length} 个片段`,
-          percent: basePercent + 10
+          percent: basePercent + 10,
+          taskType: 'DOCUMENT_PARSE'
         })
 
         const preview = docs[0]?.pageContent.slice(0, 160)
@@ -254,13 +256,14 @@ app.whenReady().then(async () => {
 
         try {
           // 添加进度回调
-          await addDocumentsToStore(docs, (current, total, stage) => {
+          await addDocumentsToStore(docs, (progress) => {
             // 计算当前文件内的进度
-            const fileProgress = (current / total) * (100 / totalFiles) * 0.8 // 80% 权重给索引过程
+            const fileProgress = (progress.progress || 0) / 100 * (100 / totalFiles) * 0.8 // 80% 权重给索引过程
             const currentPercent = basePercent + 10 + Math.round(fileProgress)
             event.sender.send('rag:process-progress', {
-              stage: `${stage} (${processedCount + 1}/${totalFiles})`,
-              percent: Math.min(currentPercent, 99)
+              stage: `${progress.message} (${processedCount + 1}/${totalFiles})`,
+              percent: Math.min(currentPercent, 99),
+              taskType: progress.taskType
             })
           })
           upsertIndexedFileRecord(record)
@@ -270,11 +273,16 @@ app.whenReady().then(async () => {
             console.warn('Detected LanceDB schema mismatch, rebuilding knowledge base...')
             event.sender.send('rag:process-progress', {
               stage: '正在重建索引...',
-              percent: 80
+              percent: 80,
+              taskType: 'INDEX_REBUILD'
             })
             upsertIndexedFileRecord(record)
-            await refreshKnowledgeBase((stage, percent) => {
-              event.sender.send('rag:process-progress', { stage, percent })
+            await refreshKnowledgeBase((progress) => {
+              event.sender.send('rag:process-progress', {
+                stage: progress.message,
+                percent: progress.progress || 0,
+                taskType: progress.taskType
+              })
             })
             results.push({ success: true, count: docs.length, preview })
           } else {
@@ -287,7 +295,8 @@ app.whenReady().then(async () => {
         event.sender.send('rag:process-progress', {
           stage: `处理失败: ${basename(filePath)}`,
           percent: basePercent,
-          error: String(error)
+          error: String(error),
+          taskType: 'ERROR'
         })
         results.push({ success: false, error: String(error) })
       }
@@ -298,7 +307,8 @@ app.whenReady().then(async () => {
     // 发送进度：完成
     event.sender.send('rag:process-progress', {
       stage: '所有文档索引完成',
-      percent: 100
+      percent: 100,
+      taskType: 'COMPLETED'
     })
 
     // 如果只有一个文件，返回单个结果（保持兼容），否则返回最后一个成功的结果或合并结果？
@@ -309,7 +319,7 @@ app.whenReady().then(async () => {
     return {
       success: successCount > 0,
       count: results.reduce((acc, r) => acc + (r.count || 0), 0),
-      preview: results.find(r => r.preview)?.preview,
+      preview: results.find((r) => r.preview)?.preview,
       error: successCount === 0 ? results[0]?.error : undefined
     }
   })
@@ -322,10 +332,19 @@ app.whenReady().then(async () => {
       // 发送进度：开始抓取
       event.sender.send('rag:process-progress', {
         stage: '正在获取网页内容...',
-        percent: 10
+        percent: 10,
+        taskType: 'DOCUMENT_PARSE'
       })
 
-      const result = await loadFromUrl(url)
+      const result = await loadFromUrl(url, {
+        onProgress: (stage, percent) => {
+          event.sender.send('rag:process-progress', {
+            stage,
+            percent,
+            taskType: 'DOCUMENT_PARSE'
+          })
+        }
+      })
 
       if (!result.success || !result.documents) {
         throw new Error(result.error || '无法获取网页内容')
@@ -336,7 +355,8 @@ app.whenReady().then(async () => {
       // 发送进度：内容获取完成
       event.sender.send('rag:process-progress', {
         stage: `内容获取完成，共 ${result.documents.length} 个片段`,
-        percent: 30
+        percent: 30,
+        taskType: 'DOCUMENT_PARSE'
       })
 
       const preview = result.content?.slice(0, 160) || ''
@@ -353,21 +373,29 @@ app.whenReady().then(async () => {
 
       try {
         // 添加进度回调
-        await addDocumentsToStore(result.documents, (current, total, stage) => {
-          const percent = 30 + Math.round((current / total) * 60)
-          event.sender.send('rag:process-progress', { stage, percent })
+        await addDocumentsToStore(result.documents, (progress) => {
+          event.sender.send('rag:process-progress', {
+            stage: progress.message,
+            percent: progress.progress || 0,
+            taskType: progress.taskType
+          })
         })
         upsertIndexedFileRecord(record)
       } catch (error) {
         if (isSchemaMismatchError(error)) {
           console.warn('Detected LanceDB schema mismatch, rebuilding knowledge base...')
           event.sender.send('rag:process-progress', {
+            taskType: 'INDEX_REBUILD',
             stage: '正在重建索引...',
             percent: 80
           })
           upsertIndexedFileRecord(record)
-          await refreshKnowledgeBase((stage, percent) => {
-            event.sender.send('rag:process-progress', { stage, percent })
+          await refreshKnowledgeBase((progress) => {
+            event.sender.send('rag:process-progress', {
+              stage: progress.message,
+              percent: progress.progress || 0,
+              taskType: progress.taskType
+            })
           })
         } else {
           throw error
@@ -377,7 +405,8 @@ app.whenReady().then(async () => {
       // 发送进度：完成
       event.sender.send('rag:process-progress', {
         stage: '索引完成',
-        percent: 100
+        percent: 100,
+        taskType: 'COMPLETED'
       })
 
       return {
@@ -391,7 +420,8 @@ app.whenReady().then(async () => {
       event.sender.send('rag:process-progress', {
         stage: '处理失败',
         percent: 0,
-        error: String(error)
+        error: String(error),
+        taskType: 'ERROR'
       })
       return { success: false, error: String(error) }
     }
@@ -406,16 +436,24 @@ app.whenReady().then(async () => {
     try {
       event.sender.send('rag:process-progress', {
         stage: '正在重建知识库索引...',
-        percent: 5
+        percent: 5,
+        taskType: 'INDEX_REBUILD'
       })
 
-      const snapshot = await refreshKnowledgeBase((stage, percent) => {
-        event.sender.send('rag:process-progress', { stage, percent })
+      const snapshot = await refreshKnowledgeBase((progress) => {
+        // 转换 ProgressMessage 到前端期望的格式
+        event.sender.send('rag:process-progress', {
+          stage: progress.message,
+          percent: progress.progress || 0,
+          error: progress.status === 'error' ? progress.message : undefined,
+          taskType: progress.taskType
+        })
       })
 
       event.sender.send('rag:process-progress', {
         stage: '重建完成',
-        percent: 100
+        percent: 100,
+        taskType: 'INDEX_REBUILD'
       })
 
       return snapshot
@@ -442,7 +480,8 @@ app.whenReady().then(async () => {
     try {
       event.sender.send('rag:process-progress', {
         stage: '正在清理旧索引...',
-        percent: 10
+        percent: 10,
+        taskType: 'INDEX_REBUILD'
       })
 
       await removeSourceFromStore(filePath)
@@ -450,7 +489,8 @@ app.whenReady().then(async () => {
       if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
         event.sender.send('rag:process-progress', {
           stage: '正在获取页面内容...',
-          percent: 20
+          percent: 20,
+          taskType: 'DOCUMENT_PARSE'
         })
 
         const result = await loadFromUrl(filePath)
@@ -460,7 +500,8 @@ app.whenReady().then(async () => {
 
         event.sender.send('rag:process-progress', {
           stage: `内容获取完成，共 ${result.documents.length} 个片段`,
-          percent: 30
+          percent: 30,
+          taskType: 'DOCUMENT_PARSE'
         })
 
         const preview = result.content?.slice(0, 160) || ''
@@ -476,20 +517,21 @@ app.whenReady().then(async () => {
         }
 
         try {
-          await addDocumentsToStore(result.documents, (current, total, stage) => {
-            const percent = 30 + Math.round((current / total) * 60)
-            event.sender.send('rag:process-progress', { stage, percent })
+          await addDocumentsToStore(result.documents, (progress) => {
+            event.sender.send('rag:process-progress', progress)
           })
           upsertIndexedFileRecord(record)
         } catch (error) {
           if (isSchemaMismatchError(error)) {
             event.sender.send('rag:process-progress', {
-              stage: '正在重建索引...',
-              percent: 80
+              taskType: 'index_rebuild',
+              status: 'processing',
+              progress: 80,
+              message: '正在重建索引...'
             })
             upsertIndexedFileRecord(record)
-            await refreshKnowledgeBase((stage, percent) => {
-              event.sender.send('rag:process-progress', { stage, percent })
+            await refreshKnowledgeBase((progress) => {
+              event.sender.send('rag:process-progress', progress)
             })
           } else {
             throw error
@@ -498,7 +540,8 @@ app.whenReady().then(async () => {
 
         event.sender.send('rag:process-progress', {
           stage: '索引完成',
-          percent: 100
+          percent: 100,
+          taskType: 'COMPLETED'
         })
 
         return getKnowledgeBaseSnapshot()
@@ -506,14 +549,16 @@ app.whenReady().then(async () => {
 
       event.sender.send('rag:process-progress', {
         stage: '正在解析文档...',
-        percent: 20
+        percent: 20,
+        taskType: 'DOCUMENT_PARSE'
       })
 
       const docs = await loadAndSplitFileInWorker(filePath)
 
       event.sender.send('rag:process-progress', {
         stage: `文档解析完成，共 ${docs.length} 个片段`,
-        percent: 30
+        percent: 30,
+        taskType: 'DOCUMENT_PARSE'
       })
 
       const preview = docs[0]?.pageContent.slice(0, 160)
@@ -526,20 +571,21 @@ app.whenReady().then(async () => {
       }
 
       try {
-        await addDocumentsToStore(docs, (current, total, stage) => {
-          const percent = 30 + Math.round((current / total) * 60)
-          event.sender.send('rag:process-progress', { stage, percent })
+        await addDocumentsToStore(docs, (progress) => {
+          event.sender.send('rag:process-progress', progress)
         })
         upsertIndexedFileRecord(record)
       } catch (error) {
         if (isSchemaMismatchError(error)) {
           event.sender.send('rag:process-progress', {
-            stage: '正在重建索引...',
-            percent: 80
+            taskType: 'index_rebuild',
+            status: 'processing',
+            progress: 80,
+            message: '正在重建索引...'
           })
           upsertIndexedFileRecord(record)
-          await refreshKnowledgeBase((stage, percent) => {
-            event.sender.send('rag:process-progress', { stage, percent })
+          await refreshKnowledgeBase((progress) => {
+            event.sender.send('rag:process-progress', progress)
           })
         } else {
           throw error
@@ -548,7 +594,8 @@ app.whenReady().then(async () => {
 
       event.sender.send('rag:process-progress', {
         stage: '索引完成',
-        percent: 100
+        percent: 100,
+        taskType: 'COMPLETED'
       })
 
       return getKnowledgeBaseSnapshot()
@@ -556,7 +603,8 @@ app.whenReady().then(async () => {
       event.sender.send('rag:process-progress', {
         stage: '处理失败',
         percent: 0,
-        error: String(error)
+        error: String(error),
+        taskType: 'ERROR'
       })
       throw error
     }
@@ -596,10 +644,7 @@ app.whenReady().then(async () => {
       console.log('Chat question:', normalized.question)
 
       // 检查是否是文档生成意图
-      const docGenerator = handleDocumentGenerationIfNeeded(
-        normalized.question,
-        normalized.sources
-      )
+      const docGenerator = handleDocumentGenerationIfNeeded(normalized.question, normalized.sources)
 
       if (docGenerator) {
         // 使用文档生成流程
@@ -630,15 +675,12 @@ app.whenReady().then(async () => {
     }
   })
 
-  ipcMain.handle(
-    'rag:generateTitle',
-    async (_, conversationKey: string, question: string) => {
-      // 直接使用用户第一个问题作为会话标题（截取前20个字符）
-      const title = question.trim().slice(0, 20) + (question.length > 20 ? '...' : '')
-      updateConversationTimestamp(conversationKey, title)
-      return title
-    }
-  )
+  ipcMain.handle('rag:generateTitle', async (_, conversationKey: string, question: string) => {
+    // 直接使用用户第一个问题作为会话标题（截取前20个字符）
+    const title = question.trim().slice(0, 20) + (question.length > 20 ? '...' : '')
+    updateConversationTimestamp(conversationKey, title)
+    return title
+  })
 
   // Document Generation IPC
   ipcMain.handle('document:generate', async (_, request: DocumentGenerateRequest) => {
@@ -663,37 +705,38 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:save', async (event, settings: Partial<AppSettings>) => {
     const oldSettings = getSettings()
     saveSettings(settings)
-    
+
     // 如果嵌入模型设置变化，清除缓存并通知用户
-    if (
-      settings.embeddingProvider !== undefined ||
-      settings.embeddingModel !== undefined
-    ) {
+    if (settings.embeddingProvider !== undefined || settings.embeddingModel !== undefined) {
       const newSettings = getSettings()
       const embeddingChanged =
         oldSettings.embeddingProvider !== newSettings.embeddingProvider ||
         oldSettings.embeddingModel !== newSettings.embeddingModel
-      
+
       if (embeddingChanged) {
         await clearEmbeddingsCache()
         console.log('Embedding settings changed, cache cleared')
-        
+
         // 自动触发重建索引
-        refreshKnowledgeBase((stage, percent) => {
-          event.sender.send('rag:process-progress', { stage, percent })
+        refreshKnowledgeBase((progress) => {
+          event.sender.send('rag:process-progress', {
+            stage: progress.message,
+            percent: progress.progress || 0,
+            taskType: progress.taskType
+          })
         }).catch((error) => {
           console.error('Auto reindex failed:', error)
-          event.sender.send('rag:process-progress', { 
-            stage: '索引重建失败', 
-            percent: 0, 
-            error: error instanceof Error ? error.message : String(error) 
+          event.sender.send('rag:process-progress', {
+            stage: '索引重建失败',
+            percent: 0,
+            error: error instanceof Error ? error.message : String(error)
           })
         })
 
         return { success: true, embeddingChanged: true, reindexingStarted: true }
       }
     }
-    
+
     return { success: true }
   })
 

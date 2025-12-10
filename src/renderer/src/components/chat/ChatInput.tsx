@@ -60,7 +60,11 @@ export function ChatInput({
           options={[
             { label: '🌐 全库检索', value: 'all', disabled: !hasReadyFiles },
             { label: '📄 当前文档', value: 'active', disabled: !hasReadyFiles || !activeDocument },
-            { label: '📁 文档集', value: 'collection', disabled: !hasReadyFiles || collections.length === 0 }
+            {
+              label: '📁 文档集',
+              value: 'collection',
+              disabled: !hasReadyFiles || collections.length === 0
+            }
           ]}
           style={{ width: 130 }}
           variant="borderless"

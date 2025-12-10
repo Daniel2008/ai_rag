@@ -11,4 +11,3 @@ export {
   handleDocumentGenerationIfNeeded
 } from './documentChatService'
 export type { DocumentChatRequest } from './documentChatService'
-

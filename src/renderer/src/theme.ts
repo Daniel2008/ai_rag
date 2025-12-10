@@ -1,4 +1,4 @@
-import { theme as antdTheme } from 'antd'
+import { theme as antdTheme, ThemeConfig } from 'antd'
 
 export type ThemeMode = 'light' | 'dark'
 
@@ -37,7 +37,7 @@ const darkColors = {
   colorTextTertiary: '#64748b'
 }
 
-export function getTheme(mode: ThemeMode) {
+export function getTheme(mode: ThemeMode): ThemeConfig {
   const algorithm = mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm
   const colors = mode === 'dark' ? darkColors : lightColors
 

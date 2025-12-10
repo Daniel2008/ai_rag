@@ -32,6 +32,6 @@ export interface DocumentCollection {
 }
 
 export interface KnowledgeBaseSnapshot {
-  files: IndexedFileRecord[]
+  files: IndexedFile[]
   collections: DocumentCollection[]
 }

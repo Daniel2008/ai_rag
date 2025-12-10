@@ -1,62 +1,14 @@
 import type { KnowledgeBaseSnapshot } from '../types/files'
-
-export interface ChatSource {
-  /** 引用内容片段 */
-  content: string
-  /** 文件名 */
-  fileName: string
-  /** 页码 */
-  pageNumber?: number
-  /** 完整文件路径 */
-  filePath?: string
-  /** 文件类型 */
-  fileType?: 'pdf' | 'word' | 'text' | 'markdown' | 'url' | 'unknown'
-  /** 相关度分数 (0-1) */
-  score?: number
-  /** 内容在文档中的位置（字符偏移） */
-  position?: number
-  /** 来源类型 */
-  sourceType?: 'file' | 'url'
-  /** URL 来源的站点名称 */
-  siteName?: string
-  /** URL 来源的原始链接 */
-  url?: string
-  /** 抓取/导入时间 */
-  fetchedAt?: string
-}
-
-export type ModelProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek' | 'zhipu' | 'moonshot'
-
-export interface ProviderConfig {
-  apiKey?: string
-  baseUrl?: string
-  chatModel: string
-  embeddingModel?: string
-}
-
-export type EmbeddingProvider = 'local' | 'ollama'
-
-export interface AppSettings {
-  provider: ModelProvider
-  ollama: ProviderConfig
-  openai: ProviderConfig
-  anthropic: ProviderConfig
-  deepseek: ProviderConfig
-  zhipu: ProviderConfig
-  moonshot: ProviderConfig
-  embeddingProvider: EmbeddingProvider
-  embeddingModel: string
-  ollamaUrl: string
-}
-
-export interface EmbeddingProgress {
-  status: 'downloading' | 'loading' | 'ready' | 'error'
-  progress?: number
-  file?: string
-  message?: string
-}
-
-export interface ProcessFileResult {
+import type {
+  ChatSource,
+  AppSettings,
+  EmbeddingProgress,
+  ProcessFileResult,
+  DocumentGenerateResult,
+  ChatMessage
+} from '../types/chat'
+/** 处理URL结果 */
+export interface ProcessUrlResult {
   success: boolean
   count?: number
   preview?: string
@@ -93,16 +45,6 @@ export interface DocumentGenerateResult {
   error?: string
 }
 
-export interface ChatMessage {
-  key: string
-  role: 'user' | 'ai' | 'system'
-  content: string
-  sources?: ChatSource[]
-  timestamp?: number
-  status?: string
-  typing?: boolean
-}
-
 // 自定义 ElectronAPI 类型
 export interface ElectronAPI {
   ipcRenderer: {
@@ -129,7 +71,7 @@ declare global {
       isWindowMaximized: () => Promise<boolean>
       onMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void
       platform: string
-      
+
       selectFiles: () => Promise<string[]>
       processFile: (path: string | string[]) => Promise<ProcessFileResult>
       processUrl: (url: string) => Promise<{
@@ -165,7 +107,9 @@ declare global {
       onEmbeddingProgress: (callback: (progress: EmbeddingProgress) => void) => void
       removeEmbeddingProgressListener: () => void
       getSettings: () => Promise<AppSettings>
-      saveSettings: (settings: Partial<AppSettings>) => Promise<{ success: boolean; embeddingChanged?: boolean; reindexingStarted?: boolean }>
+      saveSettings: (
+        settings: Partial<AppSettings>
+      ) => Promise<{ success: boolean; embeddingChanged?: boolean; reindexingStarted?: boolean }>
 
       // Database APIs
       getConversations: () => Promise<{ key: string; label: string; timestamp: number }[]>
@@ -185,7 +129,14 @@ declare global {
       onDocumentProgress: (callback: (progress: DocumentProgress) => void) => void
       removeDocumentProgressListener: () => void
       // 文档处理进度
-      onProcessProgress: (callback: (progress: { stage: string; percent: number; error?: string }) => void) => void
+      onProcessProgress: (
+        callback: (progress: {
+          stage: string
+          percent: number
+          error?: string
+          taskType?: string
+        }) => void
+      ) => void
       removeProcessProgressListener: () => void
     }
   }

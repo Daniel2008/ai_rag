@@ -14,6 +14,7 @@ import {
   type LocalEmbeddingModelName,
   type ModelProgressCallback
 } from './localEmbeddings'
+import { ProgressStatus, ProgressMessage, TaskType } from './progressTypes'
 
 // Singleton instances
 let db: Connection | null = null
@@ -40,16 +41,27 @@ let cachedEmbeddingsConfig: { provider: string; model: string; baseUrl?: string 
 const TABLE_NAME = 'documents'
 
 function getDbPath(): string {
-  const userDataPath = app.getPath('userData')
-  return path.join(userDataPath, 'lancedb')
+  // 兼容非Electron环境
+  if (app?.getPath) {
+    return path.join(app.getPath('userData'), 'lancedb')
+  } else {
+    // 在非Electron环境下使用当前目录
+    return path.join(process.cwd(), '.lancedb')
+  }
 }
 
 // 发送嵌入模型进度到渲染进程
 function sendEmbeddingProgress(progress: Parameters<ModelProgressCallback>[0]): void {
-  const windows = BrowserWindow.getAllWindows()
-  windows.forEach((win) => {
-    win.webContents.send('embedding:progress', progress)
-  })
+  // 兼容非Electron环境
+  if (BrowserWindow?.getAllWindows) {
+    const windows = BrowserWindow.getAllWindows()
+    windows.forEach((win) => {
+      win.webContents.send('embedding:progress', progress)
+    })
+  } else {
+    // 在非Electron环境下打印进度
+    console.log('Embedding progress:', progress)
+  }
 }
 
 // 性能优化：缓存 Embeddings 实例，只在配置变化时重新创建
@@ -90,6 +102,39 @@ function getEmbeddings(): Embeddings {
 
   cachedEmbeddingsConfig = currentConfig
   return cachedEmbeddings
+}
+
+/**
+ * 确保嵌入模型已初始化（如果需要下载模型，将触发进度回调）
+ */
+export async function ensureEmbeddingsInitialized(
+  onProgress?: ProgressCallback
+): Promise<void> {
+  const embeddings = getEmbeddings()
+  
+  if (embeddings instanceof LocalEmbeddings) {
+    if (onProgress) {
+      // 临时接管进度回调
+      embeddings.setTempProgressCallback((progress) => {
+        // 只转发模型下载相关的进度，或者初始化过程中的信息
+        if (progress.taskType === TaskType.MODEL_DOWNLOAD || progress.status === ProgressStatus.DOWNLOADING) {
+          onProgress(progress)
+        } else if (progress.status === ProgressStatus.PROCESSING) {
+          // 初始化时的处理状态
+          onProgress(progress)
+        }
+      })
+    }
+    
+    try {
+      await embeddings.initialize()
+    } finally {
+      // 清理临时回调
+      if (onProgress) {
+        embeddings.setTempProgressCallback(undefined)
+      }
+    }
+  }
 }
 
 export async function initVectorStore(): Promise<void> {
@@ -177,45 +222,74 @@ export async function getVectorStore(): Promise<LanceDB> {
   return vectorStore
 }
 
-/** 进度回调函数类型 */
-export type ProgressCallback = (current: number, total: number, stage: string) => void
+/** 进度回调函数类型，使用统一的ProgressMessage格式 */
+export type ProgressCallback = (message: ProgressMessage) => void
 
 export async function addDocumentsToStore(
   docs: Document[],
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  startProgress: number = 0
 ): Promise<void> {
   if (docs.length === 0) return
 
-  const total = docs.length
+  // 计算进度范围（默认0-100，接收起始进度后调整为startProgress-100）
+  const progressRange = 100 - startProgress
 
   // 总是使用 ensureTableWithDocuments，它会处理表的创建或更新
   // 这样可以避免 vectorStore 指向无效表的问题
-  onProgress?.(0, total, '正在索引文档...')
+  onProgress?.({
+    status: ProgressStatus.PROCESSING,
+    progress: startProgress,
+    message: '正在索引文档...',
+    taskType: TaskType.INDEX_REBUILD
+  })
 
   // 尝试接管嵌入进度
   const embeddings = getEmbeddings()
   if (embeddings instanceof LocalEmbeddings) {
     embeddings.setTempProgressCallback((progress) => {
-      if (progress.status === 'loading' && progress.progress !== undefined) {
-        onProgress?.(
-          Math.round((progress.progress / 100) * total),
-          total,
-          `正在生成向量 ${progress.progress}%`
-        )
+      if (progress.status === ProgressStatus.DOWNLOADING) {
+        // 模型下载进度，保持原有消息格式，添加taskType
+        onProgress?.({
+          ...progress,
+          taskType: progress.taskType || TaskType.MODEL_DOWNLOAD
+        })
+      } else if (progress.status === ProgressStatus.PROCESSING && progress.progress !== undefined) {
+        // 向量生成进度，转换为相对于起始进度的百分比
+        const adjustedProgress = Math.round(startProgress + (progress.progress / 100) * progressRange)
+        onProgress?.({
+          status: ProgressStatus.PROCESSING,
+          progress: adjustedProgress,
+          message: `正在生成向量 ${adjustedProgress}%`,
+          taskType: TaskType.EMBEDDING_GENERATION
+        })
+      } else {
+        // 其他进度类型直接传递
+        onProgress?.(progress)
       }
     })
   }
 
   try {
     vectorStore = await ensureTableWithDocuments(docs)
-    onProgress?.(total, total, '索引完成')
+    onProgress?.({
+      status: ProgressStatus.COMPLETED,
+      progress: 100,
+      message: '索引完成',
+      taskType: TaskType.INDEX_REBUILD
+    })
     console.log(`Added ${docs.length} documents to LanceDB`)
   } catch (error) {
     console.error('Failed to add documents, trying to recreate table:', error)
     // 如果失败，尝试重置并重新创建
     await resetVectorStore()
     vectorStore = await ensureTableWithDocuments(docs)
-    onProgress?.(total, total, '索引完成（已重建）')
+    onProgress?.({
+      status: ProgressStatus.COMPLETED,
+      progress: 100,
+      message: '索引完成（已重建）',
+      taskType: TaskType.INDEX_REBUILD
+    })
     console.log(`Recreated LanceDB table and added ${docs.length} documents`)
   } finally {
     // 清理临时回调
@@ -248,12 +322,12 @@ export async function searchSimilarDocumentsWithScores(
   await initVectorStore()
   console.log('[searchWithScores] vectorStore initialized:', !!vectorStore)
   console.log('[searchWithScores] table exists:', !!table)
-  
-  if (!vectorStore || !table) {
-    console.log('[searchWithScores] vectorStore or table is null, returning empty')
+
+  if (!vectorStore) {
+    console.log('[searchWithScores] vectorStore is null, returning empty')
     return []
   }
-  
+
   // 检查数据库中的文档数量
   try {
     const count = await table.countRows()
@@ -288,9 +362,9 @@ export async function searchSimilarDocumentsWithScores(
 
     // 转换为 Document 格式
     let results = searchResults.map((row) => {
-      // LanceDB 返回的结果包含 _distance 字段
+      // LanceDB 返回的结果包含 _distance 字段，距离越小越相似
       const distance = row._distance ?? 0
-      
+
       // 构造 Document 对象
       const doc = new Document({
         pageContent: row.text || row.pageContent || '',
@@ -301,8 +375,11 @@ export async function searchSimilarDocumentsWithScores(
         }
       })
 
-      return { doc, score: distance }
+      return { doc, distance }
     })
+
+    // 确保结果按距离排序（距离越小越相似）
+    results = results.sort((a, b) => a.distance - b.distance)
 
     console.log('[searchWithScores] Before source filtering:', results.length)
 
@@ -311,7 +388,7 @@ export async function searchSimilarDocumentsWithScores(
       const normalizePath = (p: string): string => p.toLowerCase().replace(/\\/g, '/').trim()
       const sourceSet = new Set(sources.map((s) => normalizePath(s)))
       console.log('[searchWithScores] Filtering by sources:', Array.from(sourceSet).slice(0, 3))
-      
+
       if (results.length > 0) {
         const firstDocSource = results[0].doc.metadata?.source
           ? normalizePath(String(results[0].doc.metadata.source))
@@ -320,9 +397,7 @@ export async function searchSimilarDocumentsWithScores(
       }
 
       results = results.filter(({ doc }) => {
-        const docSource = doc.metadata?.source
-          ? normalizePath(String(doc.metadata.source))
-          : ''
+        const docSource = doc.metadata?.source ? normalizePath(String(doc.metadata.source)) : ''
         if (sourceSet.has(docSource)) return true
         if (sourceSet.size < 50) {
           for (const s of sourceSet) {
@@ -342,55 +417,66 @@ export async function searchSimilarDocumentsWithScores(
 
     // 归一化距离到相似度分数 [0, 1]
     // LanceDB 返回的是 L2 距离，越小越相似
-    const distances = results.map((r) => r.score)
-    console.log('[searchWithScores] Distance range:', Math.min(...distances), '-', Math.max(...distances))
+    const distances = results.map((r) => r.distance)
+    console.log(
+      '[searchWithScores] Distance range:',
+      Math.min(...distances),
+      '-',
+      Math.max(...distances)
+    )
 
     const minDist = Math.min(...distances)
     const maxDist = Math.max(...distances)
     const distRange = maxDist - minDist
 
-    results = results.map((r, idx) => {
+    // 将距离转换为相似度分数
+    const finalResults = results.map((r, idx) => {
       let normalizedScore: number
-      if (distRange === 0 || !Number.isFinite(distRange)) {
-        normalizedScore = 1 // 所有距离相同，默认最高分
+      if (results.length === 1) {
+        // 只有一个结果，直接给高分
+        normalizedScore = 0.9
+      } else if (distRange === 0 || !Number.isFinite(distRange)) {
+        // 所有距离相同，默认最高分
+        normalizedScore = 1
       } else {
         // 距离越小，分数越高: (maxDist - dist) / distRange
-        normalizedScore = (maxDist - r.score) / distRange
+        normalizedScore = (maxDist - r.distance) / distRange
       }
-      
-      // 确保分数有效
+
+      // 确保分数有效且合理
       if (!Number.isFinite(normalizedScore)) {
-        normalizedScore = 1 - idx * 0.1
+        normalizedScore = Math.max(0, 1 - idx * 0.1)
       }
-      
+
       return {
         doc: r.doc,
         score: Math.max(0, Math.min(1, normalizedScore))
       }
     })
 
-    console.log('[searchWithScores] Normalized scores:', results.slice(0, 4).map(r => r.score.toFixed(3)))
-    console.log('[searchWithScores] Returning', Math.min(results.length, k), 'results')
+    console.log(
+      '[searchWithScores] Normalized scores:',
+      finalResults.slice(0, 4).map((r) => r.score.toFixed(3))
+    )
+    console.log('[searchWithScores] Returning', Math.min(finalResults.length, k), 'results')
 
-    return results.slice(0, k)
+    return finalResults.slice(0, k)
   } catch (e) {
     console.error('[searchWithScores] Native search failed:', e)
-    
+
     // Fallback 到 LangChain 的 similaritySearch
     console.log('[searchWithScores] Falling back to LangChain similaritySearch')
     try {
       const docs = await vectorStore.similaritySearch(query, fetchK)
       console.log('[searchWithScores] Fallback got', docs.length, 'docs')
-      
+
       // 过滤来源
       let filteredDocs = docs
       if (sources && sources.length > 0) {
         const normalizePath = (p: string): string => p.toLowerCase().replace(/\\/g, '/').trim()
         const sourceSet = new Set(sources.map((s) => normalizePath(s)))
         filteredDocs = docs.filter((doc) => {
-          const docSource = doc.metadata?.source
-            ? normalizePath(String(doc.metadata.source))
-            : ''
+          const docSource = doc.metadata?.source ? normalizePath(String(doc.metadata.source)) : ''
           if (sourceSet.has(docSource)) return true
           if (sourceSet.size < 50) {
             for (const s of sourceSet) {
@@ -400,7 +486,7 @@ export async function searchSimilarDocumentsWithScores(
           return false
         })
       }
-      
+
       // 使用排名生成伪分数
       return filteredDocs.slice(0, k).map((doc, i) => ({
         doc,
@@ -475,7 +561,7 @@ export async function searchSimilarDocuments(
       await logDebug(`Similarity search failed (filtered): ${String(e)}`)
       return []
     }
-    
+
     console.log(`[Search] Retrieved ${allDocs.length} candidates (before filtering)`)
     await logDebug(`Retrieved ${allDocs.length} candidates.`)
 
@@ -495,7 +581,7 @@ export async function searchSimilarDocuments(
     const filteredDocs = allDocs.filter((doc) => {
       const docSource =
         typeof doc.metadata?.source === 'string' ? normalizePath(doc.metadata.source) : ''
-      
+
       // 尝试精确匹配
       if (sourceSet.has(docSource)) return true
 

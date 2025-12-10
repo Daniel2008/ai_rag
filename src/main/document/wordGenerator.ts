@@ -25,12 +25,13 @@ import { writeFile } from 'fs/promises'
 import type { DocumentOutline, SectionContent, DocumentTheme, WordParagraphStyle } from './types'
 
 /** 主题配色方案 */
-const THEME_COLORS: Record<DocumentTheme, { primary: string; secondary: string; accent: string }> = {
-  professional: { primary: '2B579A', secondary: '4472C4', accent: '5B9BD5' },
-  modern: { primary: '1A1A2E', secondary: '16213E', accent: '0F3460' },
-  simple: { primary: '333333', secondary: '666666', accent: '999999' },
-  creative: { primary: '6C5CE7', secondary: 'A29BFE', accent: 'FD79A8' }
-}
+const THEME_COLORS: Record<DocumentTheme, { primary: string; secondary: string; accent: string }> =
+  {
+    professional: { primary: '2B579A', secondary: '4472C4', accent: '5B9BD5' },
+    modern: { primary: '1A1A2E', secondary: '16213E', accent: '0F3460' },
+    simple: { primary: '333333', secondary: '666666', accent: '999999' },
+    creative: { primary: '6C5CE7', secondary: 'A29BFE', accent: 'FD79A8' }
+  }
 
 /** 字体配置 */
 const FONTS = {
@@ -230,7 +231,11 @@ function createSectionHeading(
 ): Paragraph {
   const colors = THEME_COLORS[theme]
   const headingLevel =
-    level === 1 ? HeadingLevel.HEADING_1 : level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3
+    level === 1
+      ? HeadingLevel.HEADING_1
+      : level === 2
+        ? HeadingLevel.HEADING_2
+        : HeadingLevel.HEADING_3
 
   const fontSize = level === 1 ? 36 : level === 2 ? 28 : 24 // 18pt, 14pt, 12pt
 
@@ -255,10 +260,7 @@ function createSectionHeading(
 /**
  * 创建正文段落
  */
-function createBodyParagraph(
-  text: string,
-  style?: WordParagraphStyle
-): Paragraph {
+function createBodyParagraph(text: string, style?: WordParagraphStyle): Paragraph {
   return new Paragraph({
     children: [
       new TextRun({
@@ -270,10 +272,14 @@ function createBodyParagraph(
         color: style?.color ?? '333333'
       })
     ],
-    alignment: style?.alignment === 'center' ? AlignmentType.CENTER :
-               style?.alignment === 'right' ? AlignmentType.RIGHT :
-               style?.alignment === 'justified' ? AlignmentType.JUSTIFIED :
-               AlignmentType.LEFT,
+    alignment:
+      style?.alignment === 'center'
+        ? AlignmentType.CENTER
+        : style?.alignment === 'right'
+          ? AlignmentType.RIGHT
+          : style?.alignment === 'justified'
+            ? AlignmentType.JUSTIFIED
+            : AlignmentType.LEFT,
     spacing: {
       before: style?.spacing?.before ?? 100,
       after: style?.spacing?.after ?? 100,
@@ -288,10 +294,7 @@ function createBodyParagraph(
 /**
  * 创建要点列表
  */
-function createBulletList(
-  items: string[],
-  theme: DocumentTheme = 'professional'
-): Paragraph[] {
+function createBulletList(items: string[], theme: DocumentTheme = 'professional'): Paragraph[] {
   const colors = THEME_COLORS[theme]
 
   return items.map(
@@ -432,7 +435,11 @@ export async function generateWordDocument(
 
   // 3. 正文内容
   let contentIndex = 0
-  const processSection = (section: { title: string; level: number; children?: typeof outline.sections }): void => {
+  const processSection = (section: {
+    title: string
+    level: number
+    children?: typeof outline.sections
+  }): void => {
     // 章节标题
     children.push(createSectionHeading(section.title, section.level, theme))
 
@@ -577,4 +584,3 @@ export async function generateWordDocument(
 }
 
 export default generateWordDocument
-
