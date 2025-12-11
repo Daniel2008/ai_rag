@@ -16,7 +16,7 @@ import {
 } from './localEmbeddings'
 import { ProgressStatus, ProgressMessage, TaskType } from './progressTypes'
 import { RAG_CONFIG } from '../utils/config'
-import { logDebug, logInfo, logWarn, logError } from '../utils/logger'
+import { logDebug, logInfo, logWarn, logError } from '../utils.logger'
 import { memoryMonitor } from '../utils/memoryMonitor'
 import { createProcessingProgress, createCompletedMessage } from '../utils/progressHelper'
 
@@ -89,6 +89,29 @@ function calculateFetchK(k: number, docCount: number, isGlobalSearch: boolean): 
       )
     : Math.max(k * SEARCH.FILTERED_SEARCH_MULTIPLIER, SEARCH.MIN_FETCH_K)
   return Math.max(baseFetchK, k * 10)
+}
+
+function estimateQueryComplexity(query: string): number {
+  const lengthScore = Math.min(1, query.length / 200)
+  const tokenScore = Math.min(1, (query.split(/\s+/).filter(Boolean).length) / 30)
+  const punctuationScore = Math.min(1, (query.match(/[，。？！?,.!;:]/g)?.length || 0) / 10)
+  const distinctScore = Math.min(
+    1,
+    (new Set(query.toLowerCase().split(/\s+/).filter(Boolean))).size / 30
+  )
+  return Math.min(1, 0.4 * lengthScore + 0.3 * tokenScore + 0.2 * distinctScore + 0.1 * punctuationScore)
+}
+
+type QueryIntent = 'definition' | 'summary' | 'comparison' | 'other'
+function classifyQueryIntent(query: string): QueryIntent {
+  const q = query.toLowerCase()
+  const defKw = ['是什么', '定义', '解释', 'meaning', 'definition', 'explain']
+  const sumKw = ['总结', '概括', '汇总', 'overview', 'summary']
+  const cmpKw = ['比较', '对比', '差异', 'vs', 'difference', 'compare']
+  if (defKw.some(k => q.includes(k))) return 'definition'
+  if (sumKw.some(k => q.includes(k))) return 'summary'
+  if (cmpKw.some(k => q.includes(k))) return 'comparison'
+  return 'other'
 }
 
 /**
@@ -811,9 +834,19 @@ export async function searchSimilarDocumentsWithScores(
 
   const docCount = await getDocCountCached()
   const isGlobalSearch = !sources || sources.length === 0
-  const fetchK = calculateFetchK(k, docCount, isGlobalSearch)
+  const complexity = estimateQueryComplexity(query)
+  const intent = classifyQueryIntent(query)
+  let baseK = k
+  if (intent === 'definition') baseK = Math.max(3, Math.round(k * 0.8))
+  if (intent === 'summary') baseK = Math.round(k * 1.5)
+  if (intent === 'comparison') baseK = Math.round(k * 1.6)
+  const adaptiveK = Math.min(
+    RAG_CONFIG.SEARCH.MAX_K,
+    Math.max(baseK, Math.round(baseK + complexity * (RAG_CONFIG.SEARCH.DEFAULT_K)))
+  )
+  const fetchK = Math.round(calculateFetchK(adaptiveK, docCount, isGlobalSearch) * (1 + complexity * 0.5))
 
-  logDebug('Search parameters', 'Search', { fetchK, docCount, isGlobalSearch, query })
+  logDebug('Search parameters', 'Search', { fetchK, docCount, isGlobalSearch, query, complexity, adaptiveK, intent })
 
   try {
     // 构建 where 子句
@@ -898,11 +931,36 @@ export async function searchSimilarDocumentsWithScores(
       return []
     }
 
-    // 转换为最终分数格式
-    const finalResults = scoredDocs.map((r) => ({
+    const finalResultsRaw = scoredDocs.map((r) => ({
       doc: r.doc,
       score: distanceToScore(r.distance)
     }))
+    let finalResults = finalResultsRaw
+    if (intent === 'summary' || intent === 'comparison') {
+      const bySource = new Map<string, Array<{ doc: Document; score: number }>>()
+      for (const r of finalResultsRaw) {
+        const s = String(r.doc.metadata?.source || '')
+        const arr = bySource.get(s) || []
+        arr.push(r)
+        bySource.set(s, arr)
+      }
+      const groups = Array.from(bySource.values()).map(arr => arr.sort((a, b) => b.score - a.score))
+      const diversified: Array<{ doc: Document; score: number }> = []
+      let idx = 0
+      while (diversified.length < adaptiveK) {
+        let added = false
+        for (const g of groups) {
+          if (idx < g.length) {
+            diversified.push(g[idx])
+            added = true
+            if (diversified.length >= adaptiveK) break
+          }
+        }
+        if (!added) break
+        idx++
+      }
+      finalResults = diversified
+    }
 
     const elapsed = Date.now() - searchStart
     logDebug('Search completed', 'Search', {
@@ -915,6 +973,15 @@ export async function searchSimilarDocumentsWithScores(
     // 慢查询警告
     if (RAG_CONFIG.METRICS.ENABLED && elapsed > RAG_CONFIG.METRICS.LOG_SLOW_QUERY_MS) {
       logWarn('Slow search detected', 'Search', { query: query.slice(0, 30), latencyMs: elapsed })
+    }
+
+    if (RAG_CONFIG.METRICS.ENABLED) {
+      const scores = finalResults.slice(0, Math.min(finalResults.length, RAG_CONFIG.METRICS.LOG_TOP_K)).map(r => r.score)
+      const avgTopScore = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+      logDebug('Search metrics', 'Search', {
+        avgTopScore: Number(avgTopScore.toFixed(3)),
+        topK: scores.map(s => Number(s.toFixed(3)))
+      })
     }
 
     return finalResults.slice(0, k)

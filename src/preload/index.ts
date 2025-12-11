@@ -182,6 +182,15 @@ const api = {
     ipcRenderer.invoke('db:updateMessage', messageKey, updates),
   generateTitle: (conversationKey: string, question: string, answer: string) =>
     ipcRenderer.invoke('rag:generateTitle', conversationKey, question, answer)
+  ,
+  getMetricsRecent: (count?: number): Promise<
+    Array<{
+      message: string
+      timestamp: number
+      context?: string
+      metadata?: Record<string, unknown>
+    }>
+  > => ipcRenderer.invoke('metrics:getRecent', count)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

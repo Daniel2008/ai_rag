@@ -51,6 +51,7 @@ import {
   removeSourceFromStore
 } from './rag/store'
 import { chatWithRag } from './rag/chat'
+import { logger, LogLevel } from './utils/logger'
 import { runLangGraphChat } from './rag/langgraphChat'
 import { getSettings, saveSettings, AppSettings } from './settings'
 import {
@@ -88,7 +89,9 @@ function createWindow(): BrowserWindow {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false
     }
   })
 
@@ -903,6 +906,16 @@ app.whenReady().then(async () => {
     }
 
     return { success: true }
+  })
+  
+  ipcMain.handle('metrics:getRecent', (_, count?: number) => {
+    const entries = logger.getRecentEntries(typeof count === 'number' ? count : 100)
+    return entries.map((e) => ({
+      message: e.message,
+      timestamp: e.timestamp,
+      context: e.context,
+      metadata: e.metadata
+    }))
   })
 
   mainWindow = createWindow()

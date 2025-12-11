@@ -5,130 +5,6 @@
   "main": "./out/main/index.js",
   "author": "ZhiHui Team",
   "homepage": "https://github.com/zhihui-rag",
-  "build": {
-    "appId": "com.zhihui.rag",
-    "productName": "智汇",
-    "directories": {
-      "buildResources": "build",
-      "output": "dist"
-    },
-    "buildDependenciesFromSource": false,
-    "nodeGypRebuild": false,
-    "files": [
-      "!**/.vscode/*",
-      "!**/.kilocode/*",
-      "!**/.cursor/*",
-      "!**/.trae/*",
-      "!**/.git/*",
-      "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,README,readme}",
-      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
-      "!**/node_modules/*.d.ts",
-      "!**/node_modules/.bin",
-      "!**/node_modules/*/{.github,.vscode,.idea}",
-      "!**/node_modules/*/{docs,documentation,doc}",
-      "!**/node_modules/*/{*.md,*.txt,*.log}",
-      "!**/node_modules/*/{LICENSE,LICENSE.*,license,license.*}",
-      "!**/node_modules/*/{.npmignore,.gitignore,.eslintrc*,tsconfig.json}",
-      "!**/node_modules/*/{coverage,.nyc_output,.jest}",
-      "!**/node_modules/*/{*.map,*.min.map}",
-      "!**/node_modules/pnpm/**",
-      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
-      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
-      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
-      "!**/{appveyor.yml,.travis.yml,circle.yml}",
-      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
-      "!models/**",
-      "!.lancedb/**",
-      "!debug_search.log",
-      "!src/*",
-      "!electron.vite.config.{js,ts,mjs,cjs}",
-      "!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}",
-      "!{.env,.env.*,.npmrc,pnpm-lock.yaml}",
-      "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
-    ],
-    "asarUnpack": [
-      "resources/**",
-      "**/@lancedb/**",
-      "**/apache-arrow/**",
-      "**/better-sqlite3/**",
-      "**/canvas/**",
-      "**/@img/**",
-      "**/@napi-rs/**",
-      "**/*.node"
-    ],
-    "asar": true,
-    "compression": "maximum",
-    "win": {
-      "executableName": "ZhiHui",
-      "icon": "build/icon.ico",
-      "requestedExecutionLevel": "asInvoker",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "artifactName": "${name}-${version}-setup.${ext}",
-      "shortcutName": "${productName}",
-      "uninstallDisplayName": "${productName}",
-      "createDesktopShortcut": "always",
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "mac": {
-      "icon": "build/icon.icns",
-      "entitlementsInherit": "build/entitlements.mac.plist",
-      "extendInfo": [
-        {
-          "NSCameraUsageDescription": "Application requests access to the device's camera."
-        },
-        {
-          "NSMicrophoneUsageDescription": "Application requests access to the device's microphone."
-        },
-        {
-          "NSDocumentsFolderUsageDescription": "Application requests access to the user's Documents folder."
-        },
-        {
-          "NSDownloadsFolderUsageDescription": "Application requests access to the user's Downloads folder."
-        }
-      ],
-      "notarize": false,
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "dmg": {
-      "artifactName": "${name}-${version}.${ext}"
-    },
-    "linux": {
-      "icon": "build/icon.png",
-      "target": [
-        {
-          "target": "AppImage"
-        }
-      ],
-      "maintainer": "electronjs.org",
-      "category": "Utility"
-    },
-    "appImage": {
-      "artifactName": "${name}-${version}.${ext}"
-    },
-    "npmRebuild": false,
-    "publish": {
-      "provider": "generic",
-      "url": "https://example.com/auto-updates"
-    }
-  },
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -153,7 +29,10 @@
     "icon:generate": "node scripts/generate-icons.js",
     "icon:fix-windows": "node scripts/fix-windows-icon.js",
     "package": "electron-forge package",
-    "make": "electron-forge make"
+    "make": "electron-forge make",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "@ant-design/cssinjs": "^2.0.1",
@@ -215,6 +94,7 @@
     "react-dom": "^19.2.1",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6"
+    "vite": "^7.2.6",
+    "vitest": "^2.0.0"
   }
 }

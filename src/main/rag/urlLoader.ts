@@ -24,6 +24,8 @@ export interface UrlLoadOptions {
   userAgent?: string
   /** 进度回调函数 */
   onProgress?: (stage: string, percent: number) => void
+  allowedHosts?: string[]
+  maxTotalChars?: number
 }
 
 /** 页面元信息 */
@@ -602,6 +604,14 @@ export async function loadFromUrl(
       onProgress?.('URL格式验证失败', 100)
       return { success: false, url, error: '无效的域名格式' }
     }
+    if (options.allowedHosts && options.allowedHosts.length > 0) {
+      const host = parsedUrl.hostname.toLowerCase()
+      const allowed = options.allowedHosts.some((h) => host.endsWith(h.toLowerCase()) || host === h.toLowerCase())
+      if (!allowed) {
+        onProgress?.('域名未授权', 100)
+        return { success: false, url, error: '域名未在允许列表中' }
+      }
+    }
     // URL格式验证完成
     onProgress?.('URL格式验证完成', 10)
   } catch (e) {
@@ -1174,12 +1184,17 @@ export async function loadFromUrls(
   const allDocuments: Document[] = []
   let successCount = 0
   let failCount = 0
+  let totalChars = 0
 
   // 去重
   const uniqueUrls = [...new Set(urls)]
 
   for (let i = 0; i < uniqueUrls.length; i++) {
     const url = uniqueUrls[i]
+    if (options.maxTotalChars && totalChars >= options.maxTotalChars) {
+      onProgress?.(i, uniqueUrls.length, url, { success: false, url, error: '已达到内容总量上限' })
+      break
+    }
     onProgress?.(i + 1, uniqueUrls.length, url)
 
     const result = await loadFromUrl(url, options)
@@ -1188,6 +1203,9 @@ export async function loadFromUrls(
     if (result.success && result.documents) {
       allDocuments.push(...result.documents)
       successCount++
+      if (typeof result.contentLength === 'number') {
+        totalChars += result.contentLength
+      }
     } else {
       failCount++
     }

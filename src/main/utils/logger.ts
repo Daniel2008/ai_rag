@@ -2,6 +2,10 @@
  * 结构化日志系统
  */
 
+import fs from 'fs'
+import path from 'path'
+import { app } from 'electron'
+
 export enum LogLevel {
   DEBUG = 0,
   INFO = 1,
@@ -22,6 +26,10 @@ class Logger {
   private level: LogLevel = LogLevel.INFO
   private entries: LogEntry[] = []
   private maxEntries = 1000 // 最多保留1000条日志
+  private fileSinkEnabled = true
+  private lastFlushedIndex = 0
+  private flushTimer: NodeJS.Timeout | null = null
+  private filePath: string | null = null
 
   constructor() {
     // 根据环境设置日志级别
@@ -30,6 +38,13 @@ class Logger {
     } else {
       this.level = LogLevel.INFO
     }
+    try {
+      const base = app?.getPath ? app.getPath('userData') : process.cwd()
+      this.filePath = path.join(base, 'metrics.log')
+    } catch {
+      this.filePath = path.join(process.cwd(), 'metrics.log')
+    }
+    this.flushTimer = setInterval(() => this.flushToFile(), 5000)
   }
 
   private shouldLog(level: LogLevel): boolean {
@@ -74,6 +89,7 @@ class Logger {
         if (error) console.error(error)
         break
     }
+    this.flushToFile()
   }
 
   debug(message: string, context?: string, metadata?: Record<string, unknown>): void {
@@ -122,6 +138,33 @@ class Logger {
    */
   getLevel(): LogLevel {
     return this.level
+  }
+
+  setFileSinkEnabled(enabled: boolean): void {
+    this.fileSinkEnabled = enabled
+  }
+
+  private flushToFile(): void {
+    if (!this.fileSinkEnabled || !this.filePath) return
+    if (this.lastFlushedIndex >= this.entries.length) return
+    const slice = this.entries.slice(this.lastFlushedIndex)
+    if (slice.length === 0) return
+    const lines = slice.map((e) =>
+      JSON.stringify({
+        level: LogLevel[e.level],
+        message: e.message,
+        timestamp: e.timestamp,
+        context: e.context,
+        metadata: e.metadata,
+        error: e.error ? { message: e.error.message, stack: e.error.stack } : undefined
+      })
+    ).join('\n') + '\n'
+    try {
+      fs.appendFile(this.filePath, lines, () => {})
+      this.lastFlushedIndex = this.entries.length
+    } catch {
+      // ignore
+    }
   }
 }
 

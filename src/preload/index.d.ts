@@ -138,6 +138,18 @@ declare global {
         }) => void
       ) => void
       removeProcessProgressListener: () => void
+      
+      // 指标读取
+      getMetricsRecent: (
+        count?: number
+      ) => Promise<
+        Array<{
+          message: string
+          timestamp: number
+          context?: string
+          metadata?: Record<string, unknown>
+        }>
+      >
     }
   }
 }

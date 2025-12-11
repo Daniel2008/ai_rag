@@ -28,6 +28,9 @@ import {
   LinkOutlined,
   ClockCircleOutlined
 } from '@ant-design/icons'
+import { Drawer, List } from 'antd'
+import { BarChartOutlined } from '@ant-design/icons'
+import { useMemo as useMemoReact } from 'react'
 import type { ChatMessage, ChatSource } from '../../types/chat'
 
 interface ChatAreaProps {
@@ -397,6 +400,8 @@ const MessageContent = memo(
     const { think, realContent } = useMemo(() => parseContent(message.content), [message.content])
     const hasContent = realContent.trim().length > 0
     const isThinking = message.typing && !hasContent && !!think
+    const [expanded, setExpanded] = useState(false)
+    const MAX_MD_CHARS = 3000
 
     // 解析结构化的思维链步骤
     const thoughtItems = useMemo(() => {
@@ -417,22 +422,29 @@ const MessageContent = memo(
       }
 
       // 否则使用旧的方式（纯文本）
-      return [
-        {
-          key: 'thought',
-          title: '思考过程',
-          content: <XMarkdown>{think}</XMarkdown>,
-          status: isThinking ? ('loading' as const) : ('success' as const)
-        }
-      ]
-    }, [think, isThinking, message.typing])
+          return [
+            {
+              key: 'thought',
+              title: '思考过程',
+              content: <XMarkdown>{think}</XMarkdown>,
+              status: isThinking ? ('loading' as const) : ('success' as const)
+            }
+          ]
+        }, [think, isThinking, message.typing])
 
     return (
       <div className="flex flex-col gap-3">
         {think && thoughtItems.length > 0 && <ThoughtChain items={thoughtItems} />}
         {hasContent ? (
           <div className="markdown-content">
-            <XMarkdown>{realContent}</XMarkdown>
+            <XMarkdown>
+              {expanded || realContent.length <= MAX_MD_CHARS ? realContent : realContent.slice(0, MAX_MD_CHARS)}
+            </XMarkdown>
+            {!expanded && realContent.length > MAX_MD_CHARS && (
+              <div className="mt-2">
+                <Button size="small" onClick={() => setExpanded(true)}>展开完整内容</Button>
+              </div>
+            )}
           </div>
         ) : message.typing && !think ? (
           <div className="typing-indicator">
@@ -768,6 +780,132 @@ export function ChatArea({
     return filteredCount > MAX_RENDERED_MESSAGES
   }, [currentMessages])
 
+  const EST_ITEM_HEIGHT = 140
+  const VIRTUAL_THRESHOLD = 200
+  const OVERSCAN = 10
+  const [visibleRange, setVisibleRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
+  const heightMapRef = useRef<Map<string, number>>(new Map())
+  const roMapRef = useRef<WeakMap<HTMLElement, ResizeObserver>>(new WeakMap())
+  const heightKeysRef = useRef<string[]>([])
+  const lastVisibleKeysRef = useRef<string[]>([])
+  const MAX_HEIGHT_CACHE = 2000
+  const setItemHeight = useCallback((key: string, el: HTMLElement | null) => {
+    if (!el) return
+    const h = el.offsetHeight
+    if (h && h !== heightMapRef.current.get(key)) {
+      heightMapRef.current.set(key, h)
+      if (!heightKeysRef.current.includes(key)) {
+        heightKeysRef.current.push(key)
+      }
+      const visibleSet = new Set(lastVisibleKeysRef.current)
+      while (heightMapRef.current.size > MAX_HEIGHT_CACHE) {
+        const oldest = heightKeysRef.current.shift()
+        if (!oldest) break
+        if (!visibleSet.has(oldest)) {
+          heightMapRef.current.delete(oldest)
+        } else {
+          heightKeysRef.current.push(oldest)
+          break
+        }
+      }
+    }
+    if (!roMapRef.current.has(el)) {
+      const ro = new ResizeObserver(() => {
+        const nh = el.offsetHeight
+        if (nh && nh !== heightMapRef.current.get(key)) {
+          heightMapRef.current.set(key, nh)
+          setVisibleRange((r) => ({ ...r }))
+        }
+      })
+      ro.observe(el)
+      roMapRef.current.set(el, ro)
+    }
+  }, [])
+  const computeCumulative = useCallback((keys: string[]) => {
+    const cum: number[] = new Array(keys.length + 1)
+    cum[0] = 0
+    for (let i = 0; i < keys.length; i++) {
+      const h = heightMapRef.current.get(keys[i]) || EST_ITEM_HEIGHT
+      cum[i + 1] = cum[i] + h
+    }
+    return cum
+  }, [])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const onScroll = (): void => {
+      const filteredCount = currentMessages.filter(
+        (m) => m.role !== 'system' || m.content.trim().length > 0
+      ).length
+      if (filteredCount < VIRTUAL_THRESHOLD) return
+      const { scrollTop, clientHeight } = container
+      const filteredKeys = currentMessages
+        .filter((m) => m.role !== 'system' || m.content.trim().length > 0)
+        .map((m) => m.key)
+      const cum = computeCumulative(filteredKeys)
+      const findIndex = (pos: number): number => {
+        let lo = 0, hi = filteredKeys.length
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1
+          if (cum[mid] <= pos) lo = mid + 1
+          else hi = mid
+        }
+        return Math.max(0, lo - 1)
+      }
+      const start = Math.max(0, findIndex(scrollTop) - OVERSCAN)
+      const end = Math.min(filteredKeys.length, findIndex(scrollTop + clientHeight) + OVERSCAN)
+      setVisibleRange({ start, end })
+    }
+    onScroll()
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [currentMessages])
+
+  const filteredMessagesForRender = useMemo(() => {
+    const filtered = currentMessages.filter(
+      (m) => m.role !== 'system' || m.content.trim().length > 0
+    )
+    if (filtered.length > VIRTUAL_THRESHOLD) {
+      const start = visibleRange.start
+      const end = visibleRange.end || Math.min(filtered.length, start + MAX_RENDERED_MESSAGES)
+      const slice = filtered.slice(start, end)
+      lastVisibleKeysRef.current = slice.map(m => m.key)
+      return slice
+    }
+    const fin = filtered.length > MAX_RENDERED_MESSAGES
+      ? filtered.slice(-MAX_RENDERED_MESSAGES)
+      : filtered
+    lastVisibleKeysRef.current = fin.map(m => m.key)
+    return fin
+  }, [currentMessages, visibleRange])
+
+  const topSpacerHeight = useMemo(() => {
+    const filtered = currentMessages.filter(
+      (m) => m.role !== 'system' || m.content.trim().length > 0
+    )
+    if (filtered.length > VIRTUAL_THRESHOLD) {
+      const keys = filtered.map((m) => m.key)
+      const cum = computeCumulative(keys)
+      return cum[visibleRange.start] || 0
+    }
+    return 0
+  }, [currentMessages, visibleRange, computeCumulative])
+
+  const bottomSpacerHeight = useMemo(() => {
+    const filtered = currentMessages.filter(
+      (m) => m.role !== 'system' || m.content.trim().length > 0
+    )
+    if (filtered.length > VIRTUAL_THRESHOLD) {
+      const keys = filtered.map((m) => m.key)
+      const cum = computeCumulative(keys)
+      const total = cum[cum.length - 1] || 0
+      const used = cum[visibleRange.end || 0] || 0
+      return Math.max(0, total - used)
+    }
+    return 0
+  }, [currentMessages, visibleRange, computeCumulative])
+
   return (
     <div
       ref={containerRef}
@@ -784,7 +922,48 @@ export function ChatArea({
             仅显示最近 {MAX_RENDERED_MESSAGES} 条消息
           </div>
         )}
-        <Bubble.List ref={bubbleListRef} role={roles} autoScroll={false} items={bubbleItems} />
+        {topSpacerHeight > 0 && <div style={{ height: topSpacerHeight }} />}
+        <Bubble.List
+          ref={bubbleListRef}
+          role={roles}
+          autoScroll={false}
+          items={useMemo(() => {
+            const messagesToRender = filteredMessagesForRender
+            return messagesToRender.map((message) => {
+              const { think, realContent } = parseContent(message.content)
+              const hasContent = realContent.trim().length > 0
+              const typing = message.typing && hasContent
+              const loading = message.typing && !hasContent && !think
+              const footer = (
+                <div className="flex flex-col w-full">
+                  {message.role === 'ai' && message.sources && message.sources.length > 0 && (
+                    <SourcesDisplay sources={message.sources} />
+                  )}
+                  <MessageActions
+                    message={message}
+                    copiedMessageKey={copiedMessageKey}
+                    onCopyMessage={onCopyMessage}
+                    onRetryMessage={onRetryMessage}
+                    isTyping={isTyping}
+                  />
+                </div>
+              )
+              return {
+                key: message.key,
+                role: message.role,
+                content: (
+                  <div ref={(el) => setItemHeight(message.key, el)}>
+                    <MessageContent message={message} isTyping={isTyping} />
+                  </div>
+                ),
+                typing,
+                loading,
+                footer
+              }
+            })
+          }, [filteredMessagesForRender, isTyping, copiedMessageKey, onCopyMessage, onRetryMessage, setItemHeight])}
+        />
+        {bottomSpacerHeight > 0 && <div style={{ height: bottomSpacerHeight }} />}
       </div>
       {showScrollToBottom && (
         <FloatButton
@@ -794,6 +973,96 @@ export function ChatArea({
           style={{ position: 'fixed', right: 32, bottom: 168 }}
         />
       )}
+      <MetricsButton />
     </div>
+  )
+}
+
+function MetricsButton(): ReactElement {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <FloatButton
+        icon={<BarChartOutlined />}
+        onClick={() => setOpen(true)}
+        tooltip="检索指标"
+        style={{ position: 'fixed', right: 32, bottom: 224 }}
+      />
+      <MetricsPanel open={open} onClose={() => setOpen(false)} />
+    </>
+  )
+}
+
+interface MetricsPanelProps {
+  open: boolean
+  onClose: () => void
+}
+
+function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
+  const [items, setItems] = useState<Array<{ message: string; timestamp: number; context?: string; metadata?: Record<string, unknown> }>>([])
+  const [loading, setLoading] = useState(false)
+  const load = useCallback(async () => {
+    if (!window.api) return
+    setLoading(true)
+    try {
+      const res = await window.api.getMetricsRecent?.(200)
+      const list = Array.isArray(res) ? res : []
+      setItems(list.filter((e) => e?.context === 'Search'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+  useEffect(() => {
+    if (open) {
+      load()
+    }
+  }, [open, load])
+  const summary = useMemoReact(() => {
+    const metrics = items.filter(i => i.message === 'Search metrics')
+    const completed = items.filter(i => i.message === 'Search completed')
+    const avgScores = metrics.map(i => Number((i.metadata as any)?.avgTopScore || 0)).filter(n => !Number.isNaN(n))
+    const meanAvg = avgScores.length ? (avgScores.reduce((a, b) => a + b, 0) / avgScores.length) : 0
+    const latencies = completed.map(i => Number((i.metadata as any)?.latencyMs || 0)).filter(n => !Number.isNaN(n))
+    const meanLatency = latencies.length ? (latencies.reduce((a, b) => a + b, 0) / latencies.length) : 0
+    const coverage = new Set<string>()
+    for (const c of completed) {
+      const src = (c.metadata as any)?.sources || []
+      for (const s of src) {
+        if (s) coverage.add(String(s))
+      }
+    }
+    return {
+      meanAvg: Number(meanAvg.toFixed(3)),
+      meanLatency: Math.round(meanLatency),
+      coverageCount: coverage.size
+    }
+  }, [items])
+  return (
+    <Drawer title="检索指标" placement="right" width={420} onClose={onClose} open={open}>
+      <div className="mb-4 flex gap-4">
+        <Tag color="blue">Top-K均值: {summary.meanAvg}</Tag>
+        <Tag color="green">平均延迟: {summary.meanLatency}ms</Tag>
+        <Tag color="purple">来源覆盖: {summary.coverageCount}</Tag>
+        <Button size="small" loading={loading} onClick={load}>刷新</Button>
+      </div>
+      <List
+        size="small"
+        bordered
+        dataSource={items.slice().reverse().slice(0, 50)}
+        renderItem={(item) => (
+          <List.Item>
+            <div className="flex flex-col w-full">
+              <div className="flex justify-between">
+                <span>{item.message}</span>
+                <span>{new Date(item.timestamp).toLocaleTimeString('zh-CN')}</span>
+              </div>
+              {item.metadata && (
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(item.metadata, null, 2)}</pre>
+              )}
+            </div>
+          </List.Item>
+        )}
+      />
+    </Drawer>
   )
 }
