@@ -8,6 +8,7 @@ import path from 'path'
 import fs from 'fs'
 import { initEmbeddingInWorker, embedInWorker } from './workerManager'
 import { ProgressCallback, ProgressStatus, TaskType, ProgressMessage } from './progressTypes'
+import { RAG_CONFIG } from '../utils/config'
 
 // 配置模型缓存路径到应用数据目录
 const getModelsPath = (): string => {
@@ -281,7 +282,7 @@ export class LocalEmbeddings extends Embeddings {
 
     // 优化：增大批处理大小以提升吞吐量
     // Worker 内部会进一步分批（每 8 个文本一批）给模型处理
-    const batchSize = 64 // 增大到 64，Worker 会再细分
+    const batchSize = RAG_CONFIG.BATCH.EMBEDDING_BATCH_SIZE
     const total = documents.length
     const results: number[][] = []
 
@@ -299,8 +300,11 @@ export class LocalEmbeddings extends Embeddings {
       taskType: TaskType.EMBEDDING_GENERATION
     })
 
-    // 减少进度更新频率：最多更新 10 次
-    const progressUpdateInterval = Math.max(1, Math.floor(total / 10))
+    // 减少进度更新频率
+    const progressUpdateInterval = Math.max(
+      1, 
+      Math.floor(total / RAG_CONFIG.BATCH.PROGRESS_UPDATE_INTERVAL)
+    )
     let lastProgressUpdate = 0
 
     // 分批处理

@@ -9,6 +9,7 @@ import { Document } from '@langchain/core/documents'
 import { getSettings, type ModelProvider } from '../settings'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { ChatSource, ChatResult } from '../../types/chat'
+import { RAG_CONFIG } from '../utils/config'
 
 // 重新导出共享类型，保持向后兼容
 export type { ChatSource, ChatResult } from '../../types/chat'
@@ -271,7 +272,7 @@ export async function chatWithRag(
   // score > 0.5 表示 distance < 1，相关性较高
   // score > 0.4 表示 distance < 1.5，有一定相关性
   // score < 0.4 表示 distance > 1.5，相关性较低
-  const RELEVANCE_THRESHOLD = 0.4
+  const RELEVANCE_THRESHOLD = RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
 
   if (retrievedPairs.length > 0) {
     const topScore = retrievedPairs[0]?.score ?? 0

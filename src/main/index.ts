@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { normalizeError, isSchemaMismatchError as checkSchemaMismatch } from './utils/errorHandler'
 import { join, basename, dirname, delimiter } from 'path'
 import Module from 'module'
 
@@ -110,21 +111,13 @@ function createWindow(): BrowserWindow {
   return win
 }
 
+// 使用统一的错误处理工具
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  if (typeof error === 'object' && error && 'message' in error) {
-    return String((error as { message?: unknown }).message)
-  }
-  if (typeof error === 'string') {
-    return error
-  }
-  return ''
+  return normalizeError(error).message
 }
 
 function isSchemaMismatchError(error: unknown): boolean {
-  return getErrorMessage(error).includes('Found field not in schema')
+  return checkSchemaMismatch(error)
 }
 
 // This method will be called when Electron has finished
@@ -256,14 +249,18 @@ app.whenReady().then(async () => {
 
         try {
           // 添加进度回调
+          const { toFrontendProgressFormat } = await import('./utils/progressHelper')
           await addDocumentsToStore(docs, (progress) => {
             // 计算当前文件内的进度
             const fileProgress = (progress.progress || 0) / 100 * (100 / totalFiles) * 0.8 // 80% 权重给索引过程
             const currentPercent = basePercent + 10 + Math.round(fileProgress)
+            const frontendFormat = toFrontendProgressFormat({
+              ...progress,
+              message: `${progress.message} (${processedCount + 1}/${totalFiles})`
+            })
             event.sender.send('rag:process-progress', {
-              stage: `${progress.message} (${processedCount + 1}/${totalFiles})`,
-              percent: Math.min(currentPercent, 99),
-              taskType: progress.taskType
+              ...frontendFormat,
+              percent: Math.min(currentPercent, 99)
             })
           })
           upsertIndexedFileRecord(record)
@@ -625,8 +622,8 @@ app.whenReady().then(async () => {
     }
   )
 
-  ipcMain.handle('collections:delete', (_, collectionId: string) => {
-    return deleteDocumentCollection(collectionId)
+  ipcMain.handle('collections:delete', async (_, collectionId: string) => {
+    return await deleteDocumentCollection(collectionId)
   })
 
   ipcMain.on('rag:chat', async (event, payload) => {
@@ -635,8 +632,25 @@ app.whenReady().then(async () => {
         ? { question: payload, sources: undefined }
         : { question: payload?.question, sources: payload?.sources }
 
+    // 输入验证
     if (!normalized.question) {
       event.reply('rag:chat-error', '问题内容不能为空')
+      return
+    }
+    
+    const { RAG_CONFIG } = await import('./utils/config')
+    if (normalized.question.length > RAG_CONFIG.VALIDATION.MAX_QUERY_LENGTH) {
+      event.reply('rag:chat-error', `问题内容过长，最多支持 ${RAG_CONFIG.VALIDATION.MAX_QUERY_LENGTH} 个字符`)
+      return
+    }
+    
+    if (normalized.question.length < RAG_CONFIG.VALIDATION.MIN_QUERY_LENGTH) {
+      event.reply('rag:chat-error', '问题内容不能为空')
+      return
+    }
+    
+    if (normalized.sources && normalized.sources.length > RAG_CONFIG.VALIDATION.MAX_SOURCES) {
+      event.reply('rag:chat-error', `指定来源过多，最多支持 ${RAG_CONFIG.VALIDATION.MAX_SOURCES} 个文件`)
       return
     }
 
@@ -657,9 +671,9 @@ app.whenReady().then(async () => {
           }
           event.reply('rag:chat-done')
         } catch (docError) {
-          console.error('Document generation error:', docError)
-          const errorMsg = docError instanceof Error ? docError.message : '文档生成失败'
-          event.reply('rag:chat-error', errorMsg)
+          const errorInfo = normalizeError(docError)
+          console.error('Document generation error:', errorInfo.message, errorInfo.details)
+          event.reply('rag:chat-error', errorInfo.userFriendly || '文档生成失败')
         }
         return
       }
@@ -676,8 +690,9 @@ app.whenReady().then(async () => {
       }
       event.reply('rag:chat-done')
     } catch (error) {
-      console.error('Chat error:', error)
-      event.reply('rag:chat-error', String(error))
+      const errorInfo = normalizeError(error)
+      console.error('Chat error:', errorInfo.message, errorInfo.details)
+      event.reply('rag:chat-error', errorInfo.userFriendly || errorInfo.message)
     }
   })
 
@@ -776,6 +791,30 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+// 清理资源：在应用退出前终止所有 Worker
+app.on('before-quit', async (event) => {
+  event.preventDefault()
+  
+  try {
+    // 清理所有 Worker
+    const { terminateDocumentWorker } = await import('./rag/workerManager')
+    const { terminateOCRWorker } = await import('./rag/ocrProcessor')
+    const { closeVectorStore } = await import('./rag/store')
+    
+    await Promise.all([
+      terminateDocumentWorker(),
+      terminateOCRWorker(),
+      closeVectorStore()
+    ])
+    
+    console.log('All workers and resources cleaned up')
+  } catch (error) {
+    console.error('Error during cleanup:', error)
+  } finally {
+    app.exit(0)
   }
 })
 

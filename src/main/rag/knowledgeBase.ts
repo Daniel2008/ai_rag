@@ -15,6 +15,7 @@ import type {
   KnowledgeBaseSnapshot
 } from '../../types/files'
 import { ProgressMessage, ProgressStatus, TaskType } from './progressTypes'
+import { logInfo, logWarn } from '../utils/logger'
 
 interface KnowledgeBaseStoreShape {
   files: IndexedFileRecord[]
@@ -209,9 +210,28 @@ export function updateDocumentCollection(
   return getSnapshot()
 }
 
-export function deleteDocumentCollection(id: string): KnowledgeBaseSnapshot {
-  const collections = getDocumentCollections().filter((collection) => collection.id !== id)
-  saveDocumentCollections(collections)
+export async function deleteDocumentCollection(id: string): Promise<KnowledgeBaseSnapshot> {
+  const collections = getDocumentCollections()
+  const collectionToDelete = collections.find((c) => c.id === id)
+  
+  if (collectionToDelete) {
+    // 删除集合中所有文件的向量索引
+    if (collectionToDelete.files && collectionToDelete.files.length > 0) {
+      logInfo(`Removing ${collectionToDelete.files.length} files from vector store for collection deletion`, 'KnowledgeBase', { collectionId: id })
+      
+      // 导入批量删除函数
+      const { removeSourcesFromStore } = await import('./store')
+      try {
+        await removeSourcesFromStore(collectionToDelete.files)
+      } catch (error) {
+        logWarn('Failed to remove collection files from vector store', 'KnowledgeBase', { collectionId: id }, error as Error)
+      }
+    }
+  }
+  
+  // 删除集合本身
+  const remainingCollections = collections.filter((collection) => collection.id !== id)
+  saveDocumentCollections(remainingCollections)
   return getSnapshot()
 }
 

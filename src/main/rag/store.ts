@@ -15,6 +15,10 @@ import {
   type ModelProgressCallback
 } from './localEmbeddings'
 import { ProgressStatus, ProgressMessage, TaskType } from './progressTypes'
+import { RAG_CONFIG } from '../utils/config'
+import { logDebug, logInfo, logWarn, logError } from '../utils/logger'
+import { memoryMonitor } from '../utils/memoryMonitor'
+import { createProcessingProgress, createCompletedMessage } from '../utils/progressHelper'
 
 // Singleton instances
 let db: Connection | null = null
@@ -37,6 +41,8 @@ async function loadLanceModules(): Promise<void> {
 // 性能优化：缓存 Embeddings 实例
 let cachedEmbeddings: Embeddings | null = null
 let cachedEmbeddingsConfig: { provider: string; model: string; baseUrl?: string } | null = null
+// 并发控制：防止多个并发请求同时初始化
+let embeddingsInitPromise: Promise<Embeddings> | null = null
 
 const TABLE_NAME = 'documents'
 
@@ -60,11 +66,12 @@ function sendEmbeddingProgress(progress: Parameters<ModelProgressCallback>[0]): 
     })
   } else {
     // 在非Electron环境下打印进度
-    console.log('Embedding progress:', progress)
+    logInfo('Embedding progress', 'EmbeddingProgress', { status: progress.status, message: progress.message, progress: progress.progress })
   }
 }
 
 // 性能优化：缓存 Embeddings 实例，只在配置变化时重新创建
+// 线程安全：使用 Promise 确保并发请求共享同一个初始化过程
 function getEmbeddings(): Embeddings {
   const settings = getSettings()
   const currentConfig = {
@@ -82,6 +89,13 @@ function getEmbeddings(): Embeddings {
     cachedEmbeddingsConfig.baseUrl === currentConfig.baseUrl
   ) {
     return cachedEmbeddings
+  }
+
+  // 如果正在初始化且配置未变化，等待初始化完成
+  if (embeddingsInitPromise) {
+    // 注意：这里不能直接返回 Promise，需要同步返回 Embeddings
+    // 但如果配置变了，应该重新初始化
+    embeddingsInitPromise = null
   }
 
   // 根据提供者创建不同的嵌入实例
@@ -141,7 +155,7 @@ export async function initVectorStore(): Promise<void> {
   if (vectorStore) return
 
   const dbPath = getDbPath()
-  console.log('Initializing LanceDB at:', dbPath)
+  logInfo('Initializing LanceDB', 'VectorStore', { dbPath })
 
   // Ensure directory exists
   if (!fs.existsSync(dbPath)) {
@@ -162,10 +176,10 @@ export async function initVectorStore(): Promise<void> {
         table = await conn.openTable(TABLE_NAME)
         const embeddings = getEmbeddings()
         vectorStore = new LanceDBCtor!(embeddings, { table })
-        console.log('Opened existing LanceDB table')
+        logInfo('Opened existing LanceDB table', 'VectorStore')
       } catch (tableError) {
         // 表打开失败，可能是因为嵌入模型维度不匹配，标记为需要重建
-        console.warn('Failed to open existing table, may need rebuild:', tableError)
+        logWarn('Failed to open existing table, may need rebuild', 'VectorStore', undefined, tableError as Error)
         vectorStore = null
         table = null
       }
@@ -173,10 +187,10 @@ export async function initVectorStore(): Promise<void> {
       // 表不存在时，我们不立即创建，而是标记需要在添加文档时创建
       // 设置一个空的 vectorStore 标记，让 addDocumentsToStore 负责创建
       vectorStore = null
-      console.log('LanceDB table does not exist, will be created on first document add')
+      logInfo('LanceDB table does not exist, will be created on first document add', 'VectorStore')
     }
   } catch (error) {
-    console.warn('Failed to connect to LanceDB:', error)
+    logWarn('Failed to connect to LanceDB', 'VectorStore', undefined, error as Error)
     db = null
     vectorStore = null
     table = null
@@ -195,7 +209,7 @@ async function ensureTableWithDocuments(docs: Document[]): Promise<LanceDB> {
 
   // 总是使用 fromDocuments 创建新表，这样可以确保表结构正确
   // 如果表已存在，LanceDB.fromDocuments 会添加到现有表
-  console.log('Creating/updating LanceDB table with documents')
+  logInfo('Creating/updating LanceDB table with documents', 'VectorStore')
   await loadLanceModules()
   const store = await LanceDBCtor!.fromDocuments(docs, embeddings, {
     uri: dbPath,
@@ -232,17 +246,20 @@ export async function addDocumentsToStore(
 ): Promise<void> {
   if (docs.length === 0) return
 
+  // 检查内存使用
+  memoryMonitor.checkMemoryThreshold()
+  
   // 计算进度范围（默认0-100，接收起始进度后调整为startProgress-100）
   const progressRange = 100 - startProgress
 
   // 总是使用 ensureTableWithDocuments，它会处理表的创建或更新
   // 这样可以避免 vectorStore 指向无效表的问题
-  onProgress?.({
-    status: ProgressStatus.PROCESSING,
-    progress: startProgress,
-    message: '正在索引文档...',
-    taskType: TaskType.INDEX_REBUILD
-  })
+  const progressMsg = createProcessingProgress(
+    TaskType.INDEX_REBUILD,
+    startProgress,
+    '正在索引文档...'
+  )
+  onProgress?.(progressMsg)
 
   // 尝试接管嵌入进度
   const embeddings = getEmbeddings()
@@ -257,12 +274,11 @@ export async function addDocumentsToStore(
       } else if (progress.status === ProgressStatus.PROCESSING && progress.progress !== undefined) {
         // 向量生成进度，转换为相对于起始进度的百分比
         const adjustedProgress = Math.round(startProgress + (progress.progress / 100) * progressRange)
-        onProgress?.({
-          status: ProgressStatus.PROCESSING,
-          progress: adjustedProgress,
-          message: `正在生成向量 ${adjustedProgress}%`,
-          taskType: TaskType.EMBEDDING_GENERATION
-        })
+        onProgress?.(createProcessingProgress(
+          TaskType.EMBEDDING_GENERATION,
+          adjustedProgress,
+          `正在生成向量 ${adjustedProgress}%`
+        ))
       } else {
         // 其他进度类型直接传递
         onProgress?.(progress)
@@ -272,25 +288,19 @@ export async function addDocumentsToStore(
 
   try {
     vectorStore = await ensureTableWithDocuments(docs)
-    onProgress?.({
-      status: ProgressStatus.COMPLETED,
-      progress: 100,
-      message: '索引完成',
-      taskType: TaskType.INDEX_REBUILD
-    })
-    console.log(`Added ${docs.length} documents to LanceDB`)
+    onProgress?.(createCompletedMessage(TaskType.INDEX_REBUILD, '索引完成'))
+    logInfo(`Added ${docs.length} documents to LanceDB`, 'VectorStore')
+    // 清除文档数量缓存
+    invalidateDocCountCache()
   } catch (error) {
-    console.error('Failed to add documents, trying to recreate table:', error)
+    logError('Failed to add documents, trying to recreate table', 'VectorStore', undefined, error as Error)
     // 如果失败，尝试重置并重新创建
     await resetVectorStore()
     vectorStore = await ensureTableWithDocuments(docs)
-    onProgress?.({
-      status: ProgressStatus.COMPLETED,
-      progress: 100,
-      message: '索引完成（已重建）',
-      taskType: TaskType.INDEX_REBUILD
-    })
-    console.log(`Recreated LanceDB table and added ${docs.length} documents`)
+    onProgress?.(createCompletedMessage(TaskType.INDEX_REBUILD, '索引完成（已重建）'))
+    logInfo(`Recreated LanceDB table and added ${docs.length} documents`, 'VectorStore')
+    // 清除文档数量缓存
+    invalidateDocCountCache()
   } finally {
     // 清理临时回调
     if (embeddings instanceof LocalEmbeddings) {
@@ -304,10 +314,43 @@ export interface SearchOptions {
   sources?: string[]
 }
 
+// 缓存文档数量，避免重复查询
+let cachedDocCount: number | null = null
+let docCountCacheTime: number = 0
+const DOC_COUNT_CACHE_TTL = RAG_CONFIG.DOC_COUNT_CACHE.TTL
+
+async function getDocCountCached(): Promise<number> {
+  const now = Date.now()
+  if (cachedDocCount !== null && (now - docCountCacheTime) < DOC_COUNT_CACHE_TTL) {
+    return cachedDocCount
+  }
+
+  if (!table) {
+    await initVectorStore()
+    if (!table) return 0
+  }
+
+  try {
+    cachedDocCount = await table.countRows()
+    docCountCacheTime = now
+    return cachedDocCount
+  } catch (e) {
+    logWarn('[getDocCountCached] Failed to get doc count', 'VectorStore', undefined, e as Error)
+    return cachedDocCount ?? 0
+  }
+}
+
+/**
+ * 清除文档数量缓存（在添加或删除文档后调用）
+ */
+export function invalidateDocCountCache(): void {
+  cachedDocCount = null
+  docCountCacheTime = 0
+}
+
 export async function getDocCount(): Promise<number> {
-  await initVectorStore()
-  if (!table) return 0
-  return await table.countRows()
+  // 使用缓存版本
+  return getDocCountCached()
 }
 
 export async function searchSimilarDocumentsWithScores(
@@ -316,49 +359,46 @@ export async function searchSimilarDocumentsWithScores(
 ): Promise<{ doc: Document; score: number }[]> {
   const { k = 4, sources } = options
 
-  console.log('[searchWithScores] Starting search, query:', query.slice(0, 50))
-  console.log('[searchWithScores] Sources filter:', sources)
+  logDebug('Starting search', 'Search', { query: query.slice(0, 50), sourcesCount: sources?.length ?? 0 })
 
   await initVectorStore()
-  console.log('[searchWithScores] vectorStore initialized:', !!vectorStore)
-  console.log('[searchWithScores] table exists:', !!table)
+  logDebug('VectorStore initialized', 'Search', { hasVectorStore: !!vectorStore, hasTable: !!table })
 
   if (!vectorStore || !table) {
-    console.log('[searchWithScores] vectorStore or table is null, returning empty')
+    logWarn('vectorStore or table is null, returning empty', 'Search')
     return []
   }
 
-  // 检查数据库中的文档数量
-  try {
-    const count = await table.countRows()
-    console.log('[searchWithScores] Total docs in DB:', count)
-  } catch (e) {
-    console.log('[searchWithScores] Failed to count rows:', e)
-  }
-
   // 动态计算检索数量：根据库大小和是否全库检索调整
-  let docCount = 0
-  try {
-    docCount = await table.countRows()
-  } catch (e) {
-    console.warn('[searchWithScores] Failed to get doc count:', e)
-  }
+  // 使用缓存避免重复查询
+  const docCount = await getDocCountCached()
+  logDebug('Total docs in DB', 'Search', { docCount })
   
   // 全库检索时，需要检索更多结果以确保命中率
   // 如果库很大，需要检索更多；如果指定了 sources，可以检索少一些
+  const { SEARCH } = RAG_CONFIG
   const isGlobalSearch = !sources || sources.length === 0
   const baseFetchK = isGlobalSearch 
-    ? Math.max(k * 50, Math.min(500, Math.max(200, Math.floor(docCount * 0.1))))  // 全库检索：至少200，最多500，或库的10%
-    : Math.max(k * 20, 100)  // 指定来源：至少100
+    ? Math.max(
+        k * SEARCH.GLOBAL_SEARCH_MULTIPLIER, 
+        Math.min(
+          SEARCH.MAX_FETCH_K, 
+          Math.max(
+            SEARCH.MIN_FETCH_K, 
+            Math.floor(docCount * SEARCH.GLOBAL_SEARCH_RATIO)
+          )
+        )
+      )
+    : Math.max(k * SEARCH.FILTERED_SEARCH_MULTIPLIER, SEARCH.MIN_FETCH_K)
   const fetchK = Math.max(baseFetchK, k * 10)  // 至少是 k 的 10 倍
   
-  console.log('[searchWithScores] Using search, fetchK:', fetchK, 'docCount:', docCount, 'isGlobalSearch:', isGlobalSearch)
+  logDebug('Using search', 'Search', { fetchK, docCount, isGlobalSearch })
 
   try {
     // 直接使用原生 LanceDB API，因为 LangChain 的 similaritySearchWithScore 
     // 在当前版本中不返回有效的分数（返回 undefined）
     // 原生 API 可以正确返回 _distance 字段
-    console.log('[searchWithScores] Using native LanceDB API for accurate distance scores')
+    logDebug('Using native LanceDB API for accurate distance scores', 'Search')
     
     // 构建 where 子句进行元数据过滤（如果指定了 sources）
     // 参考 LanceDB 官方文档：使用 where 子句可以在查询时直接过滤，提高效率
@@ -376,7 +416,7 @@ export async function searchSimilarDocumentsWithScores(
       
       // 尝试多种字段名：source、metadata.source
       whereClause = `source IN (${escapedSources.join(', ')}) OR metadata.source IN (${escapedSources.join(', ')})`
-      console.log('[searchWithScores] Using where clause for source filtering:', whereClause.slice(0, 100) + '...')
+      logDebug('Using where clause for source filtering', 'Search', { whereClause: whereClause.slice(0, 100) })
     }
     
     // 生成查询向量（支持跨语言检索）
@@ -384,28 +424,51 @@ export async function searchSimilarDocumentsWithScores(
     
     // 尝试跨语言查询：如果查询是中文，同时用英文翻译进行检索
     let queryVector = await embeddings.embedQuery(query)
-    let allSearchResults: any[] = []
+    
+    // 定义搜索结果类型
+    interface SearchResult {
+      text?: string
+      pageContent?: string
+      source?: string
+      pageNumber?: number
+      metadata?: {
+        source?: string
+        pageNumber?: number
+        [key: string]: unknown
+      }
+      _distance?: number
+      _queryIndex?: number
+    }
+    
+    let allSearchResults: SearchResult[] = []
     
     // 检测查询语言，如果是中文，尝试用英文翻译进行额外检索
     const { detectLanguage, generateCrossLanguageQueries } = await import('./queryTranslator')
     const queryLang = detectLanguage(query)
     
+    // 定义搜索查询接口（部分类型，因为 LanceDB API 可能不完整）
+    interface SearchQuery {
+      where?: (clause: string) => SearchQuery
+      refineFactor?: (factor: number) => SearchQuery
+      limit: (n: number) => { toArray: () => Promise<SearchResult[]> }
+    }
+    
     // 辅助函数：执行向量搜索
-    const performSearch = async (vector: number[], searchLimit: number): Promise<any[]> => {
+    const performSearch = async (vector: number[], searchLimit: number): Promise<SearchResult[]> => {
       if (!table) {
         throw new Error('Table is null')
       }
       
       // 构建查询：明确指定向量列名 'vector'，并应用 where 过滤
       // 参考 LanceDB 官方文档：table.search() 支持 where 参数进行元数据过滤
-      let searchQuery = table.search(vector)
+      let searchQuery = table.search(vector) as unknown as SearchQuery
       
       // 应用 where 子句（如果存在）
       if (whereClause) {
         try {
           // 尝试使用 where 方法（如果支持）
-          if (typeof (searchQuery as any).where === 'function') {
-            searchQuery = (searchQuery as any).where(whereClause) as any
+          if (searchQuery.where && typeof searchQuery.where === 'function') {
+            searchQuery = searchQuery.where(whereClause)
           }
         } catch (whereError) {
           console.warn('[searchWithScores] Where clause not supported, will filter after search:', whereError)
@@ -419,8 +482,8 @@ export async function searchSimilarDocumentsWithScores(
       
       try {
         // 尝试使用 refineFactor 优化检索质量
-        if (typeof (searchQuery as any).refineFactor === 'function') {
-          searchQuery = (searchQuery as any).refineFactor(refineFactor) as any
+        if (searchQuery.refineFactor && typeof searchQuery.refineFactor === 'function') {
+          searchQuery = searchQuery.refineFactor(refineFactor)
         }
       } catch (refineError) {
         // refineFactor 可能不支持，忽略
@@ -440,24 +503,25 @@ export async function searchSimilarDocumentsWithScores(
           const vector = await embeddings.embedQuery(q)
           const results = await performSearch(vector, fetchK)
           console.log(`[searchWithScores] Query variant ${index + 1} (${q.slice(0, 30)}...) got ${results.length} results`)
-          return results.map((r: any) => ({ ...r, _queryIndex: index }))
+          return results.map((r: SearchResult) => ({ ...r, _queryIndex: index }))
         })
         
         const allResults = await Promise.all(searchPromises)
         allSearchResults = allResults.flat()
         
         // 去重：基于文档内容，保留距离最小的
-        const docMap = new Map<string, any>()
+        const docMap = new Map<string, SearchResult>()
         for (const result of allSearchResults) {
           const docKey = result.text || result.pageContent || JSON.stringify(result.metadata?.source || '')
-          if (!docMap.has(docKey) || result._distance < docMap.get(docKey)._distance) {
+          const existing = docMap.get(docKey)
+          if (!existing || (result._distance ?? Infinity) < (existing._distance ?? Infinity)) {
             docMap.set(docKey, result)
           }
         }
         allSearchResults = Array.from(docMap.values())
         
         // 按距离排序
-        allSearchResults.sort((a, b) => (a._distance || 0) - (b._distance || 0))
+        allSearchResults.sort((a, b) => (a._distance ?? 0) - (b._distance ?? 0))
         allSearchResults = allSearchResults.slice(0, fetchK)
         
         console.log(`[searchWithScores] Cross-language search: ${allSearchResults.length} results after deduplication`)
@@ -630,16 +694,62 @@ export async function searchSimilarDocuments(
 
   console.log(`[Search] Query: "${query}", Sources: ${sources?.length ?? 0} files`)
 
-  const logDebug = async (msg: string): Promise<void> => {
+  // 调试日志缓冲区，批量写入以提高性能
+  const isDev = process.env.NODE_ENV === 'development'
+  const DEBUG_LOG_FLUSH_INTERVAL = RAG_CONFIG.LOG.DEBUG_LOG_FLUSH_INTERVAL
+  let debugLogBuffer: string[] = []
+  let debugLogTimer: NodeJS.Timeout | null = null
+
+  const flushDebugLog = async (): Promise<void> => {
+    if (debugLogBuffer.length === 0) return
+    if (!isDev) {
+      // 生产环境不写入文件日志
+      debugLogBuffer = []
+      return
+    }
+
+    const logs = debugLogBuffer.join('')
+    debugLogBuffer = []
+
     try {
-      await fsPromises.appendFile('debug_search.log', `[${new Date().toISOString()}] ${msg}\n`)
+      await fsPromises.appendFile('debug_search.log', logs)
     } catch (error) {
-      // 忽略日志写入错误
       console.error('Failed to write debug log:', error)
     }
   }
 
-  await logDebug(`Query: "${query}", Sources count: ${sources?.length ?? 0}`)
+  const logDebug = (msg: string): void => {
+    if (!isDev) return
+
+    const timestamp = new Date().toISOString()
+    debugLogBuffer.push(`[${timestamp}] ${msg}\n`)
+
+    // 如果缓冲区太大，立即刷新
+    if (debugLogBuffer.length > RAG_CONFIG.LOG.MAX_DEBUG_LOG_BUFFER) {
+      if (debugLogTimer) {
+        clearTimeout(debugLogTimer)
+        debugLogTimer = null
+      }
+      flushDebugLog()
+    } else if (!debugLogTimer) {
+      // 设置定时刷新
+      debugLogTimer = setTimeout(() => {
+        flushDebugLog()
+        debugLogTimer = null
+      }, DEBUG_LOG_FLUSH_INTERVAL)
+    }
+  }
+
+  logDebug(`Query: "${query}", Sources count: ${sources?.length ?? 0}`)
+  
+  // 确保在函数返回前刷新日志
+  const ensureLogFlushed = async (): Promise<void> => {
+    if (debugLogTimer) {
+      clearTimeout(debugLogTimer)
+      debugLogTimer = null
+    }
+    await flushDebugLog()
+  }
 
   // 如果 vectorStore 不存在，返回空结果
   if (!vectorStore) {
@@ -648,20 +758,16 @@ export async function searchSimilarDocuments(
   if (!vectorStore) {
     const msg = '[Search] No documents indexed yet, returning empty results'
     console.log(msg)
-    await logDebug(msg)
+    logDebug(msg)
+    await ensureLogFlushed()
     return []
   }
 
   const store = vectorStore
 
-  // 记录一下数据库总行数
-  let docCount = 0
-  try {
-    docCount = await table?.countRows() ?? 0
-    await logDebug(`Total rows in DB: ${docCount}`)
-  } catch (e) {
-    await logDebug(`Failed to get row count: ${e}`)
-  }
+  // 使用缓存的文档数量
+  const docCount = await getDocCountCached()
+  logDebug(`Total rows in DB: ${docCount}`)
 
   // 如果指定了 sources，先检索更多文档，然后过滤
   // 因为 LanceDB 的过滤可能不直接支持 metadata 字段
@@ -672,33 +778,35 @@ export async function searchSimilarDocuments(
     }
     const sourceSet = new Set(sources.map((s) => normalizePath(s)))
     console.log('[Search] Filtering by sources:', Array.from(sourceSet))
-    await logDebug(`Filtering by ${sourceSet.size} sources. Example: ${Array.from(sourceSet)[0]}`)
+    logDebug(`Filtering by ${sourceSet.size} sources. Example: ${Array.from(sourceSet)[0]}`)
 
     // 检索更多文档以确保有足够的匹配
     // 增加检索数量以提高召回率
-    const fetchK = Math.max(k * 20, 100)
+    const { SEARCH } = RAG_CONFIG
+    const fetchK = Math.max(k * SEARCH.FILTERED_SEARCH_MULTIPLIER, SEARCH.MIN_FETCH_K)
     let allDocs: Document[] = []
     try {
       allDocs = await store.similaritySearch(query, fetchK)
     } catch (e) {
       console.warn('Similarity search failed (filtered mode):', e)
-      await logDebug(`Similarity search failed (filtered): ${String(e)}`)
+      logDebug(`Similarity search failed (filtered): ${String(e)}`)
+      await ensureLogFlushed()
       return []
     }
 
     console.log(`[Search] Retrieved ${allDocs.length} candidates (before filtering)`)
-    await logDebug(`Retrieved ${allDocs.length} candidates.`)
+    logDebug(`Retrieved ${allDocs.length} candidates.`)
 
     if (allDocs.length > 0) {
       const meta = JSON.stringify(allDocs[0].metadata)
       console.log('[Search] First candidate metadata:', allDocs[0].metadata)
-      await logDebug(`First candidate metadata: ${meta}`)
+      logDebug(`First candidate metadata: ${meta}`)
       const docSource =
         typeof allDocs[0].metadata?.source === 'string'
           ? normalizePath(allDocs[0].metadata.source)
           : ''
-      await logDebug(`Normalized doc source: "${docSource}"`)
-      await logDebug(`Match check: ${sourceSet.has(docSource)}`)
+      logDebug(`Normalized doc source: "${docSource}"`)
+      logDebug(`Match check: ${sourceSet.has(docSource)}`)
     }
 
     // 过滤匹配的文档
@@ -727,18 +835,29 @@ export async function searchSimilarDocuments(
     })
 
     console.log(`[Search] Found ${filteredDocs.length} docs after filtering`)
-    await logDebug(`Found ${filteredDocs.length} docs after filtering`)
+    logDebug(`Found ${filteredDocs.length} docs after filtering`)
 
+    await ensureLogFlushed()
     // 返回前 k 个匹配的文档
     return filteredDocs.slice(0, k)
   }
 
   // 全库检索：动态调整检索数量以提高命中率
-  const baseFetchK = Math.max(k * 50, Math.min(500, Math.max(200, Math.floor(docCount * 0.1))))
+  const { SEARCH } = RAG_CONFIG
+  const baseFetchK = Math.max(
+    k * SEARCH.GLOBAL_SEARCH_MULTIPLIER, 
+    Math.min(
+      SEARCH.MAX_FETCH_K, 
+      Math.max(
+        SEARCH.MIN_FETCH_K, 
+        Math.floor(docCount * SEARCH.GLOBAL_SEARCH_RATIO)
+      )
+    )
+  )
   const fetchK = Math.max(baseFetchK, k * 10)
   
   console.log(`[Search] Global search, fetchK: ${fetchK}, docCount: ${docCount}`)
-  await logDebug(`Global search, fetchK: ${fetchK}, docCount: ${docCount}`)
+  logDebug(`Global search, fetchK: ${fetchK}, docCount: ${docCount}`)
   
   let results: Document[] = []
   try {
@@ -748,14 +867,17 @@ export async function searchSimilarDocuments(
     results = results.slice(0, k)
   } catch (e) {
     console.warn('Similarity search failed (global mode):', e)
-    await logDebug(`Similarity search failed (global): ${String(e)}`)
+    logDebug(`Similarity search failed (global): ${String(e)}`)
+    await ensureLogFlushed()
     return []
   }
   console.log(`[Search] Global search found ${results.length} docs (from ${fetchK} candidates)`)
-  await logDebug(`Global search found ${results.length} docs (from ${fetchK} candidates)`)
+  logDebug(`Global search found ${results.length} docs (from ${fetchK} candidates)`)
   if (results.length > 0) {
-    await logDebug(`First global result metadata: ${JSON.stringify(results[0].metadata)}`)
+    logDebug(`First global result metadata: ${JSON.stringify(results[0].metadata)}`)
   }
+  
+  await ensureLogFlushed()
   return results
 }
 
@@ -766,6 +888,9 @@ export async function closeVectorStore(): Promise<void> {
   db = null
   cachedEmbeddings = null
   cachedEmbeddingsConfig = null
+  embeddingsInitPromise = null
+  // 清除文档数量缓存
+  invalidateDocCountCache()
 }
 
 export async function resetVectorStore(): Promise<void> {
@@ -776,33 +901,152 @@ export async function resetVectorStore(): Promise<void> {
   }
 }
 
+/**
+ * 标准化路径（与搜索时保持一致）
+ */
+function normalizePath(p: string): string {
+  return p.toLowerCase().replace(/\\/g, '/').trim()
+}
+
 function escapePredicateValue(value: string): string {
   return value.replace(/"/g, '\\"')
 }
 
+/**
+ * 从向量存储中删除指定来源的所有文档
+ * @param source 文件路径或 URL
+ */
 export async function removeSourceFromStore(source: string): Promise<void> {
   await initVectorStore()
-  if (!db) return
+  if (!db) {
+    logWarn('Database not initialized, cannot remove source', 'VectorStore', { source })
+    return
+  }
+  
   const conn = db as Connection
   if (!table) {
     const names = await conn.tableNames()
-    if (!names.includes(TABLE_NAME)) return
+    if (!names.includes(TABLE_NAME)) {
+      logInfo('Table does not exist, nothing to remove', 'VectorStore', { source })
+      return
+    }
     table = await conn.openTable(TABLE_NAME)
   }
-  const v = escapePredicateValue(source)
-  const predicates = [
-    `source == "${v}"`,
-    `metadata.source == "${v}"`,
-    `path == "${v}"`,
-    `url == "${v}"`
+
+  // 标准化路径以确保匹配
+  const normalizedSource = normalizePath(source)
+  const originalSource = source
+  
+  // 尝试多种路径格式和字段名
+  const sourceVariants = [
+    originalSource,           // 原始路径
+    normalizedSource,         // 标准化路径
+    originalSource.replace(/\\/g, '/'),  // 统一斜杠
+    path.normalize(originalSource),      // 规范化路径
   ]
-  for (const p of predicates) {
-    try {
-      await (table as unknown as { delete: (where: string) => Promise<void> }).delete(p)
-      break
-    } catch (e) {
-      console.warn('Delete by source failed with predicate', p, e)
+  
+  // 去重
+  const uniqueVariants = [...new Set(sourceVariants)]
+  
+  logInfo('Removing source from vector store', 'VectorStore', { 
+    originalSource, 
+    normalizedSource, 
+    variantsCount: uniqueVariants.length 
+  })
+
+  let deletedCount = 0
+  let lastError: Error | null = null
+
+  // 对每个路径变体尝试删除
+  for (const variant of uniqueVariants) {
+    const escapedVariant = escapePredicateValue(variant)
+    
+    // 尝试多种字段名和谓词格式
+    const predicates = [
+      `source == "${escapedVariant}"`,
+      `metadata.source == "${escapedVariant}"`,
+      `path == "${escapedVariant}"`,
+      `url == "${escapedVariant}"`,
+      // 也尝试 LIKE 匹配（如果支持）
+      `source LIKE "%${escapedVariant.replace(/"/g, '')}%"`,
+      `metadata.source LIKE "%${escapedVariant.replace(/"/g, '')}%"`,
+    ]
+
+    for (const predicate of predicates) {
+      try {
+        await (table as unknown as { delete: (where: string) => Promise<void> }).delete(predicate)
+        deletedCount++
+        logDebug(`Deleted records with predicate`, 'VectorStore', { predicate })
+      } catch (e) {
+        // 记录错误但继续尝试其他谓词
+        lastError = e as Error
+        logDebug(`Delete failed with predicate`, 'VectorStore', { predicate, error: String(e) })
+      }
     }
+  }
+
+  // 如果所有谓词都失败，尝试使用查询+删除的方式
+  if (deletedCount === 0) {
+    logWarn('All predicates failed, trying query-based deletion', 'VectorStore', { source })
+    try {
+      // 先查询匹配的记录数量
+      const allRows = await table.search([0]).limit(10000).toArray() // 使用虚拟向量查询所有记录
+      const matchingRows = allRows.filter((row: { source?: string; metadata?: { source?: string } }) => {
+        const rowSource = row.source || row.metadata?.source
+        if (!rowSource) return false
+        
+        const normalizedRowSource = normalizePath(String(rowSource))
+        return uniqueVariants.some(variant => {
+          const normalizedVariant = normalizePath(variant)
+          return normalizedRowSource === normalizedVariant || 
+                 normalizedRowSource.includes(normalizedVariant) ||
+                 normalizedVariant.includes(normalizedRowSource)
+        })
+      })
+
+      if (matchingRows.length > 0) {
+        logInfo(`Found ${matchingRows.length} matching records, attempting deletion`, 'VectorStore')
+        // 对每个匹配的记录尝试删除（通过唯一标识）
+        // 注意：这需要表有唯一 ID 字段，如果不存在则可能无法精确删除
+        for (const variant of uniqueVariants) {
+          const escapedVariant = escapePredicateValue(variant)
+          const finalPredicates = [
+            `source == "${escapedVariant}"`,
+            `metadata.source == "${escapedVariant}"`,
+          ]
+          for (const predicate of finalPredicates) {
+            try {
+              await (table as unknown as { delete: (where: string) => Promise<void> }).delete(predicate)
+              deletedCount++
+            } catch (e) {
+              // 忽略错误
+            }
+          }
+        }
+      }
+    } catch (queryError) {
+      logError('Query-based deletion also failed', 'VectorStore', { source }, queryError as Error)
+      lastError = queryError as Error
+    }
+  }
+
+  // 清除文档数量缓存
+  invalidateDocCountCache()
+
+  if (deletedCount > 0) {
+    logInfo(`Successfully removed source from vector store`, 'VectorStore', { source, deletedCount })
+  } else {
+    logWarn('No records deleted from vector store', 'VectorStore', { source, lastError: lastError?.message })
+  }
+}
+
+/**
+ * 批量删除多个来源
+ */
+export async function removeSourcesFromStore(sources: string[]): Promise<void> {
+  logInfo(`Removing ${sources.length} sources from vector store`, 'VectorStore')
+  for (const source of sources) {
+    await removeSourceFromStore(source)
   }
 }
 
@@ -815,6 +1059,7 @@ export async function clearEmbeddingsCache(): Promise<void> {
   // 清除嵌入实例缓存
   cachedEmbeddings = null
   cachedEmbeddingsConfig = null
+  embeddingsInitPromise = null
   // 清除所有缓存，包括数据库连接
   vectorStore = null
   table = null

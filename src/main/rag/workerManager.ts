@@ -112,3 +112,18 @@ export async function initEmbeddingInWorker(
 export async function embedInWorker(texts: string[]): Promise<number[][]> {
   return runTask('embed', { texts })
 }
+
+/**
+ * 终止文档处理 Worker
+ */
+export async function terminateDocumentWorker(): Promise<void> {
+  if (worker) {
+    // 拒绝所有待处理的任务
+    for (const [id, task] of pendingTasks.entries()) {
+      task.reject(new Error('Worker terminated'))
+      pendingTasks.delete(id)
+    }
+    await worker.terminate()
+    worker = null
+  }
+}

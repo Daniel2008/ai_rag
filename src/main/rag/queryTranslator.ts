@@ -7,6 +7,7 @@ import { ChatOpenAI } from '@langchain/openai'
 import { ChatOllama } from '@langchain/ollama'
 import { ChatAnthropic } from '@langchain/anthropic'
 import { ChatZhipuAI } from '@langchain/community/chat_models/zhipuai'
+import { getCachedTranslation, cacheTranslation } from '../utils/translationCache'
 
 /**
  * 检测文本语言（简单检测）
@@ -39,11 +40,20 @@ async function translateQuery(
   query: string,
   targetLang: 'zh' | 'en'
 ): Promise<string> {
+  // 检查缓存
+  const cached = getCachedTranslation(query, targetLang)
+  if (cached) {
+    console.log(`[translateQuery] Cache hit for "${query}" -> "${cached}"`)
+    return cached
+  }
+  
   const settings = getSettings()
   
   // 如果已经是目标语言，直接返回
   const sourceLang = detectLanguage(query)
   if (sourceLang === targetLang || (sourceLang === 'mixed' && targetLang === 'en')) {
+    // 缓存结果（即使是原文）
+    cacheTranslation(query, targetLang, query)
     return query
   }
   
@@ -114,6 +124,9 @@ Translation:`
     const translated = typeof response.content === 'string' 
       ? response.content.trim() 
       : String(response.content).trim()
+    
+    // 缓存翻译结果
+    cacheTranslation(query, targetLang, translated)
     
     console.log(`[translateQuery] Translated "${query}" (${sourceLang}) -> "${translated}" (${targetLang})`)
     return translated
