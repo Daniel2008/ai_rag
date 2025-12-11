@@ -245,6 +245,15 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         }
         // else: 全库检索，selectedSources 保持 undefined
 
+        // 在发送到主进程前记录调试信息，便于追踪渲染端传参
+        console.debug('[rag:chat-renderer] sendMessage called', {
+          question: trimmed,
+          selectedSources,
+          questionScope,
+          mentionedFiles,
+          resolvedCollectionId
+        })
+
         setInputValue('')
         setMentionedFiles([])
         // 使用 useChatWithXChat 的 sendMessage 发送消息

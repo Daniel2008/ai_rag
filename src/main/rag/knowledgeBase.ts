@@ -8,6 +8,7 @@ import {
   removeSourceFromStore,
   ensureEmbeddingsInitialized
 } from './store'
+import { normalizePath } from './pathUtils'
 import type { Document } from '@langchain/core/documents'
 import type {
   DocumentCollection,
@@ -61,23 +62,26 @@ function getSnapshot(): KnowledgeBaseSnapshot {
 }
 
 function sanitizeCollectionFiles(files: string[] = []): string[] {
-  const validPaths = new Set(getIndexedFileRecords().map((record) => record.path))
-  return [...new Set(files.filter((path) => validPaths.has(path)))]
+  const records = getIndexedFileRecords()
+  const validSet = new Set(records.map((r) => (r.normalizedPath ?? normalizePath(r.path))))
+  return [...new Set(files.filter((path) => validSet.has(normalizePath(path))))]
 }
 
 function pruneCollectionsForMissingFiles(): void {
-  const validPaths = new Set(getIndexedFileRecords().map((record) => record.path))
+  const records = getIndexedFileRecords()
+  const validSet = new Set(records.map((r) => (r.normalizedPath ?? normalizePath(r.path))))
   const collections = getDocumentCollections().map((collection) => ({
     ...collection,
-    files: collection.files.filter((path) => validPaths.has(path))
+    files: collection.files.filter((path) => validSet.has(normalizePath(path)))
   }))
   saveDocumentCollections(collections)
 }
 
 function removeFileFromCollections(path: string): void {
+  const nPath = normalizePath(path)
   const collections = getDocumentCollections().map((collection) => ({
     ...collection,
-    files: collection.files.filter((filePath) => filePath !== path)
+    files: collection.files.filter((filePath) => normalizePath(filePath) !== nPath)
   }))
   saveDocumentCollections(collections)
 }
@@ -89,18 +93,22 @@ export function getKnowledgeBaseSnapshot(): KnowledgeBaseSnapshot {
 
 export function upsertIndexedFileRecord(record: IndexedFileRecord): void {
   const records = getIndexedFileRecords()
-  const index = records.findIndex((item) => item.path === record.path)
+  const nPath = normalizePath(record.path)
+  // ensure normalizedPath stored
+  const toStore = { ...record, normalizedPath: nPath }
+  const index = records.findIndex((item) => (item.normalizedPath ?? normalizePath(item.path)) === nPath)
   if (index >= 0) {
-    records[index] = { ...records[index], ...record }
+    records[index] = { ...records[index], ...toStore }
   } else {
-    records.push(record)
+    records.push(toStore)
   }
   saveIndexedFileRecords(records)
 }
 
 export async function removeIndexedFileRecord(path: string): Promise<KnowledgeBaseSnapshot> {
   const records = getIndexedFileRecords()
-  const filtered = records.filter((item) => item.path !== path)
+  const nPath = normalizePath(path)
+  const filtered = records.filter((item) => (item.normalizedPath ?? normalizePath(item.path)) !== nPath)
   if (filtered.length === records.length) {
     return getSnapshot()
   }
@@ -127,7 +135,8 @@ export async function refreshKnowledgeBase(
 
 export async function reindexSingleFile(path: string): Promise<KnowledgeBaseSnapshot> {
   const records = getIndexedFileRecords()
-  const target = records.find((record) => record.path === path)
+  const nPath = normalizePath(path)
+  const target = records.find((record) => (record.normalizedPath ?? normalizePath(record.path)) === nPath)
   if (!target) {
     throw new Error('找不到需要重新索引的文档')
   }

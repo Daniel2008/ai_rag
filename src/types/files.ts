@@ -15,6 +15,8 @@ export interface IndexedFileRecord {
   url?: string
   /** URL 来源的站点名称 */
   siteName?: string
+  /** 标准化路径（用于内部匹配，保持可选以兼容旧记录） */
+  normalizedPath?: string
 }
 
 export interface IndexedFile extends IndexedFileRecord {

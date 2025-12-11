@@ -20,6 +20,44 @@ import { logDebug, logInfo, logWarn, logError } from '../utils/logger'
 import { memoryMonitor } from '../utils/memoryMonitor'
 import { createProcessingProgress, createCompletedMessage } from '../utils/progressHelper'
 
+// ==================== LRU 缓存工具 ====================
+
+/**
+ * 简易 LRU 缓存实现
+ */
+class LRUCache<K, V> {
+  private cache = new Map<K, V>()
+  constructor(private maxSize: number) {}
+
+  get(key: K): V | undefined {
+    const val = this.cache.get(key)
+    if (val !== undefined) {
+      // 刷新顺序：删除后重新插入
+      this.cache.delete(key)
+      this.cache.set(key, val)
+    }
+    return val
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key)
+    } else if (this.cache.size >= this.maxSize) {
+      // 删除最旧（第一个）
+      const firstKey = this.cache.keys().next().value
+      if (firstKey !== undefined) this.cache.delete(firstKey)
+    }
+    this.cache.set(key, value)
+  }
+
+  clear(): void {
+    this.cache.clear()
+  }
+}
+
+// 查询向量缓存（避免重复计算相同查询的 embedding）
+const queryEmbeddingCache = new LRUCache<string, number[]>(RAG_CONFIG.EMBEDDING.QUERY_CACHE_SIZE)
+
 // ==================== 公共工具函数 ====================
 
 /**
@@ -307,6 +345,55 @@ export async function initVectorStore(): Promise<void> {
   }
 }
 
+/**
+ * 在 LanceDB 表上创建向量索引（HNSW）
+ * 仅当文档数超过阈值且索引不存在时创建
+ */
+async function createVectorIndexIfNeeded(tableRef: Table): Promise<void> {
+  const { INDEX } = RAG_CONFIG.LANCEDB
+  if (!INDEX.ENABLED) return
+
+  try {
+    const rowCount = await tableRef.countRows()
+    // 文档数少于 500 时跳过索引（小表暴力搜索更快）
+    if (rowCount < 500) {
+      logDebug('Skipping index creation (table too small)', 'VectorStore', { rowCount })
+      return
+    }
+
+    // 检查是否已有索引
+    const indices = await (tableRef as unknown as { listIndices?: () => Promise<{ name: string }[]> }).listIndices?.()
+    if (indices && indices.some((idx) => idx.name === 'vector_idx')) {
+      logDebug('Vector index already exists', 'VectorStore')
+      return
+    }
+
+    logInfo('Creating HNSW vector index...', 'VectorStore', { rowCount })
+    const startTime = Date.now()
+
+    // LanceDB Node API：createIndex(columnName, indexType, options)
+    const createIndexFn = (tableRef as unknown as {
+      createIndex: (column: string, options?: Record<string, unknown>) => Promise<void>
+    }).createIndex
+
+    if (typeof createIndexFn === 'function') {
+      await createIndexFn.call(tableRef, 'vector', {
+        type: 'IVF_HNSW_SQ',
+        num_partitions: Math.min(INDEX.NUM_PARTITIONS, Math.ceil(rowCount / 100)),
+        num_sub_vectors: INDEX.NUM_SUB_VECTORS,
+        metric_type: INDEX.METRIC,
+        index_name: 'vector_idx'
+      })
+      logInfo(`Vector index created in ${Date.now() - startTime}ms`, 'VectorStore')
+    } else {
+      logDebug('createIndex not available on table', 'VectorStore')
+    }
+  } catch (e) {
+    // 索引创建失败不影响正常使用
+    logWarn('Failed to create vector index (non-fatal)', 'VectorStore', undefined, e as Error)
+  }
+}
+
 // 确保表存在，如果不存在则用初始文档创建
 async function ensureTableWithDocuments(docs: Document[]): Promise<LanceDB> {
   const dbPath = getDbPath()
@@ -331,6 +418,8 @@ async function ensureTableWithDocuments(docs: Document[]): Promise<LanceDB> {
   const tableNames = await conn2.tableNames()
   if (tableNames.includes(TABLE_NAME)) {
     table = await conn2.openTable(TABLE_NAME)
+    // 尝试创建向量索引（大表时提升检索性能）
+    await createVectorIndexIfNeeded(table)
   }
 
   return store
@@ -510,6 +599,17 @@ function buildSourceWhereClause(sources: string[]): string {
 }
 
 /**
+ * 获取查询向量（带缓存）
+ */
+async function getQueryVector(query: string, embeddings: Embeddings): Promise<number[]> {
+  const cached = queryEmbeddingCache.get(query)
+  if (cached) return cached
+  const vec = await embeddings.embedQuery(query)
+  queryEmbeddingCache.set(query, vec)
+  return vec
+}
+
+/**
  * 执行跨语言搜索（中文查询时同时使用英文翻译）
  */
 async function performCrossLanguageSearch(
@@ -523,8 +623,8 @@ async function performCrossLanguageSearch(
   const queryLang = detectLanguage(query)
 
   if (queryLang !== 'zh') {
-    // 非中文查询，直接使用原查询
-    const queryVector = await embeddings.embedQuery(query)
+    // 非中文查询，直接使用原查询（带缓存）
+    const queryVector = await getQueryVector(query, embeddings)
     return await performNativeSearch(tableRef, queryVector, fetchK, whereClause)
   }
 
@@ -533,9 +633,9 @@ async function performCrossLanguageSearch(
   try {
     const { queries } = await generateCrossLanguageQueries(query)
 
-    // 使用所有查询变体进行检索
+    // 使用所有查询变体进行检索（带缓存）
     const searchPromises = queries.map(async (q, index) => {
-      const vector = await embeddings.embedQuery(q)
+      const vector = await getQueryVector(q, embeddings)
       const results = await performNativeSearch(tableRef, vector, fetchK, whereClause)
       logDebug(`Query variant ${index + 1} got ${results.length} results`, 'Search')
       // 添加查询索引用于调试
@@ -561,7 +661,7 @@ async function performCrossLanguageSearch(
     return mergedResults.slice(0, fetchK)
   } catch (error) {
     logWarn('Cross-language search failed, using original query', 'Search', undefined, error as Error)
-    const queryVector = await embeddings.embedQuery(query)
+    const queryVector = await getQueryVector(query, embeddings)
     return await performNativeSearch(tableRef, queryVector, fetchK, whereClause)
   }
 }
@@ -596,59 +696,96 @@ function distanceToScore(distance: number): number {
 
 /**
  * 从查询中提取可能的文件名关键词
+ * 优化：提取人名、专有名词等短关键词
  */
 function extractFileNameKeywords(query: string): string[] {
-  // 提取可能是文件名的中文关键词（书名、经典名称等）
-  const chineseKeywords = query.match(/[\u4e00-\u9fa5]{2,}/g) || []
-  return chineseKeywords.filter(kw => kw.length >= 2)
+  // 移除常见的疑问词和语气词
+  const cleanQuery = query
+    .replace(/[是什么谁干啥做的吗呢吧呀哪里怎么样如何为什么？?！!。，,]/g, ' ')
+    .trim()
+  
+  // 提取所有2-6字的中文词组（人名通常2-3字，专有名词2-6字）
+  const chineseKeywords = cleanQuery.match(/[\u4e00-\u9fa5]{2,6}/g) || []
+  
+  // 过滤掉过于通用的词
+  const commonWords = new Set(['介绍', '内容', '什么', '哪些', '怎样', '如何', '为什么', '关于', '请问', '告诉', '说说', '讲讲'])
+  const filtered = chineseKeywords.filter(kw => !commonWords.has(kw) && kw.length >= 2)
+  
+  // 去重并返回
+  return [...new Set(filtered)]
 }
 
 /**
  * 搜索文件名匹配的文档
+ * 当查询关键词与文件名匹配时，这些文档应该获得最高优先级
  */
 async function searchByFileName(
   tableRef: Table,
   query: string,
   limit: number
-): Promise<LanceDBSearchResult[]> {
+): Promise<{ results: LanceDBSearchResult[]; matchedKeywords: string[] }> {
   const keywords = extractFileNameKeywords(query)
-  if (keywords.length === 0) return []
+  if (keywords.length === 0) return { results: [], matchedKeywords: [] }
   
   logDebug('Searching by filename keywords', 'Search', { keywords })
   
   try {
     // 直接查询表数据
-    const allRows = await tableRef.query().limit(1000).toArray() as LanceDBSearchResult[]
+    const allRows = await tableRef.query().limit(2000).toArray() as LanceDBSearchResult[]
     
-    // 过滤包含关键词的文档
-    const matchedRows = allRows.filter(row => {
-      const source = row.source || row.metadata?.source || ''
+    // 按匹配程度分类
+    const exactMatches: LanceDBSearchResult[] = []  // 文件名包含完整查询关键词
+    const partialMatches: LanceDBSearchResult[] = [] // 文件名包含部分关键词
+    const matchedKeywords: string[] = []
+    
+    for (const row of allRows) {
+      const source = (row.source || row.metadata?.source || '').toLowerCase()
       const text = row.text || row.pageContent || ''
       
       // 检查文件名是否包含关键词
+      let isExactMatch = false
+      let isPartialMatch = false
+      
       for (const kw of keywords) {
-        if (source.includes(kw)) {
-          return true
+        const kwLower = kw.toLowerCase()
+        if (source.includes(kwLower)) {
+          // 精确匹配：关键词是文件名的主要部分
+          const fileName = source.split(/[\\/]/).pop() || ''
+          if (fileName.includes(kwLower)) {
+            isExactMatch = true
+            if (!matchedKeywords.includes(kw)) matchedKeywords.push(kw)
+          } else {
+            isPartialMatch = true
+          }
         }
       }
       
-      // 如果文档内容开头包含关键词（可能是标题）
-      if (text.slice(0, 200).includes(query)) {
-        return true
+      // 如果文档内容开头包含查询（可能是标题）
+      if (!isExactMatch && !isPartialMatch && text.slice(0, 300).toLowerCase().includes(query.toLowerCase())) {
+        isPartialMatch = true
       }
       
-      return false
-    })
+      if (isExactMatch) {
+        exactMatches.push(row)
+      } else if (isPartialMatch) {
+        partialMatches.push(row)
+      }
+    }
+    
+    // 优先返回精确匹配，再返回部分匹配
+    const results = [...exactMatches, ...partialMatches].slice(0, limit)
     
     logDebug('Filename search found matches', 'Search', {
-      matchCount: matchedRows.length,
-      sources: [...new Set(matchedRows.map(r => r.source || r.metadata?.source).filter(Boolean))].slice(0, 5)
+      exactCount: exactMatches.length,
+      partialCount: partialMatches.length,
+      matchedKeywords,
+      sources: [...new Set(results.map(r => r.source || r.metadata?.source).filter(Boolean))].slice(0, 5)
     })
     
-    return matchedRows.slice(0, limit)
+    return { results, matchedKeywords }
   } catch (e) {
     logDebug('Filename search failed', 'Search', { error: String(e) })
-    return []
+    return { results: [], matchedKeywords: [] }
   }
 }
 
@@ -660,6 +797,7 @@ export async function searchSimilarDocumentsWithScores(
   query: string,
   options: SearchOptions = {}
 ): Promise<{ doc: Document; score: number }[]> {
+  const searchStart = Date.now()
   const { k = 4, sources } = options
 
   logDebug('Starting search', 'Search', { query: query.slice(0, 50), sourcesCount: sources?.length ?? 0 })
@@ -686,8 +824,11 @@ export async function searchSimilarDocumentsWithScores(
 
     // 1. 先执行文件名匹配搜索（对于全库搜索）
     let fileNameMatches: LanceDBSearchResult[] = []
+    let fileNameMatchedKeywords: string[] = []
     if (isGlobalSearch) {
-      fileNameMatches = await searchByFileName(table, query, fetchK)
+      const fnResult = await searchByFileName(table, query, fetchK)
+      fileNameMatches = fnResult.results
+      fileNameMatchedKeywords = fnResult.matchedKeywords
     }
 
     // 2. 执行跨语言向量搜索
@@ -709,14 +850,22 @@ export async function searchSimilarDocumentsWithScores(
         const key = match.text || match.pageContent || JSON.stringify(match.metadata?.source || '')
         if (!fileNameSet.has(key)) {
           fileNameSet.add(key)
-          // 文件名匹配的结果，设置较小的距离（更高的相关性）
+          // 文件名匹配的结果，根据匹配程度设置距离
+          // 如果查询关键词与文件名精确匹配，给予极高优先级（distance=0.1，对应90%分数）
+          const source = (match.source || match.metadata?.source || '').toLowerCase()
+          const fileName = source.split(/[\\/]/).pop() || ''
+          const hasExactKeywordMatch = fileNameMatchedKeywords.some(kw => fileName.includes(kw.toLowerCase()))
+          
           mergedResults.push({
             ...match,
-            _distance: Math.min(match._distance ?? 0, 0.3) // 确保文件名匹配有较高分数
+            _distance: hasExactKeywordMatch ? 0.1 : Math.min(match._distance ?? 0, 0.3)
           })
         }
       }
-      logDebug('Added filename matches', 'Search', { count: mergedResults.length })
+      logDebug('Added filename matches with boosted scores', 'Search', { 
+        count: mergedResults.length,
+        hasExactMatch: fileNameMatchedKeywords.length > 0
+      })
     }
     
     // 再添加向量搜索的结果（去重）
@@ -755,11 +904,18 @@ export async function searchSimilarDocumentsWithScores(
       score: distanceToScore(r.distance)
     }))
 
+    const elapsed = Date.now() - searchStart
     logDebug('Search completed', 'Search', {
       resultCount: Math.min(finalResults.length, k),
       topScore: finalResults[0]?.score.toFixed(3),
-      sources: [...new Set(finalResults.slice(0, k).map(r => r.doc.metadata?.source).filter(Boolean))]
+      sources: [...new Set(finalResults.slice(0, k).map(r => r.doc.metadata?.source).filter(Boolean))],
+      latencyMs: elapsed
     })
+
+    // 慢查询警告
+    if (RAG_CONFIG.METRICS.ENABLED && elapsed > RAG_CONFIG.METRICS.LOG_SLOW_QUERY_MS) {
+      logWarn('Slow search detected', 'Search', { query: query.slice(0, 30), latencyMs: elapsed })
+    }
 
     return finalResults.slice(0, k)
   } catch (e) {
@@ -953,8 +1109,10 @@ export async function clearEmbeddingsCache(): Promise<void> {
   vectorStore = null
   table = null
   db = null
+  // 清除查询向量缓存
+  queryEmbeddingCache.clear()
   // 同时清除本地模型缓存
   const localEmbeddings = await import('./localEmbeddings')
   localEmbeddings.clearModelCache()
-  console.log('Embeddings, vector store, and database connection cache cleared')
+  console.log('Embeddings, vector store, query cache, and database connection cache cleared')
 }

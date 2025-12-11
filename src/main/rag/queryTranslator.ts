@@ -138,6 +138,64 @@ Translation:`
 }
 
 /**
+ * 从中文查询中提取核心关键词（人名、专有名词等）
+ */
+function extractCoreKeywords(query: string): string[] {
+  // 移除疑问词和语气词
+  const cleanQuery = query
+    .replace(/[是什么谁干啥做的吗呢吧呀哪里怎么样如何为什么？?！!。，,、]/g, ' ')
+    .trim()
+  
+  // 提取2-4字的中文词组（人名、专有名词）
+  const keywords = cleanQuery.match(/[\u4e00-\u9fa5]{2,4}/g) || []
+  
+  // 过滤常见词
+  const commonWords = new Set([
+    '介绍', '内容', '什么', '哪些', '怎样', '如何', '为什么', 
+    '关于', '请问', '告诉', '说说', '讲讲', '一下', '可以',
+    '简历', '资料', '信息', '文档', '文件', '报告'
+  ])
+  
+  return keywords.filter(kw => !commonWords.has(kw) && kw.length >= 2)
+}
+
+/**
+ * 生成查询扩展变体
+ * 包括：原始查询、核心关键词、关键词组合
+ */
+function generateQueryExpansions(query: string): string[] {
+  const expansions: string[] = [query]
+  const keywords = extractCoreKeywords(query)
+  
+  if (keywords.length === 0) return expansions
+  
+  // 添加单独的关键词作为查询
+  for (const kw of keywords.slice(0, 3)) {
+    if (!expansions.includes(kw)) {
+      expansions.push(kw)
+    }
+  }
+  
+  // 如果有多个关键词，添加组合
+  if (keywords.length >= 2) {
+    const combined = keywords.slice(0, 2).join(' ')
+    if (!expansions.includes(combined)) {
+      expansions.push(combined)
+    }
+  }
+  
+  // 添加"关于+关键词"的变体
+  if (keywords.length > 0) {
+    const aboutQuery = `关于${keywords[0]}`
+    if (!expansions.includes(aboutQuery)) {
+      expansions.push(aboutQuery)
+    }
+  }
+  
+  return expansions
+}
+
+/**
  * 生成跨语言查询变体
  * 返回原始查询和翻译后的查询
  */
@@ -146,11 +204,14 @@ export async function generateCrossLanguageQueries(
 ): Promise<{ original: string; translated?: string; queries: string[] }> {
   const queryLang = detectLanguage(query)
   
+  // 生成中文查询扩展
+  const chineseExpansions = queryLang === 'zh' ? generateQueryExpansions(query) : [query]
+  
   // 如果查询是混合语言或已经是英文，不需要翻译
   if (queryLang === 'en' || queryLang === 'mixed') {
     return {
       original: query,
-      queries: [query]
+      queries: chineseExpansions
     }
   }
   
@@ -162,20 +223,23 @@ export async function generateCrossLanguageQueries(
     if (translated === query || translated.length < query.length * 0.3) {
       return {
         original: query,
-        queries: [query]
+        queries: chineseExpansions
       }
     }
+    
+    // 合并中文扩展和英文翻译
+    const allQueries = [...chineseExpansions, translated]
     
     return {
       original: query,
       translated,
-      queries: [query, translated] // 同时使用原始查询和翻译后的查询
+      queries: [...new Set(allQueries)] // 去重
     }
   } catch (error) {
     console.error('[generateCrossLanguageQueries] Failed to generate translated query:', error)
     return {
       original: query,
-      queries: [query]
+      queries: chineseExpansions
     }
   }
 }

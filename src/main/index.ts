@@ -731,15 +731,28 @@ app.whenReady().then(async () => {
     }
 
     // 进一步校验：仅保留当前 snapshot 中就绪的文件
+    // 注意：文件路径在不同平台/上下文中可能存在分隔符或大小写差异，
+    // 因此先对路径做统一标准化再比较，避免因分隔符或大小写导致误判
     if (normalized.sources) {
       const snapshot = getKnowledgeBaseSnapshot()
+      const normalizePath = (p: string) => p.replace(/\\/g, '/').toLowerCase()
       const readySet = new Set(
-        snapshot.files.filter((f) => f.status === 'ready').map((f) => f.path.toLowerCase())
+        snapshot.files.filter((f) => f.status === 'ready').map((f) => normalizePath(f.path))
       )
-      const filtered = normalized.sources.filter((s) => readySet.has(s.toLowerCase()))
+
+      // 记录进入过滤的原始来源，便于排查间歇性失效
+      console.debug('[rag:chat] incoming sources:', normalized.sources)
+
+      const filtered = normalized.sources.filter((s) => readySet.has(normalizePath(s)))
+
+      // 如果过滤后为空，设为 undefined 表示全库检索；并打印日志以便诊断
       if (filtered.length === 0) {
+        console.debug('[rag:chat] sources filtered out (no ready files matched), fallback to full-scope')
         normalized.sources = undefined
       } else {
+        if (filtered.length !== normalized.sources.length) {
+          console.debug('[rag:chat] sources partially filtered, using:', filtered)
+        }
         normalized.sources = filtered
       }
     }

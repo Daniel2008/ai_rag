@@ -270,7 +270,7 @@ export async function chatWithRag(
   // 1. 检索相似文档 - 增加检索数量以获取更多样的来源
   const retrievedPairs = await withEmbeddingProgressSuppressed(() =>
     searchSimilarDocumentsWithScores(question, {
-      k: 8, // 增加到 8 以获取更多样的来源
+      k: 12, // 增加检索数量提高命中率
       sources: options.sources
     })
   )
@@ -296,19 +296,50 @@ export async function chatWithRag(
     }
   }
 
-  // 3. 根据相关度阈值过滤文档
+  // 3. 根据相关度阈值过滤文档 - 使用渐进式阈值策略
   const RELEVANCE_THRESHOLD = RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
+  const RELEVANCE_THRESHOLD_LOW = RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD_LOW ?? 0.10
   let effectivePairs = retrievedPairs
 
   if (retrievedPairs.length > 0) {
     const topScore = retrievedPairs[0]?.score ?? 0
-    if (topScore < RELEVANCE_THRESHOLD) {
-      effectivePairs = retrievedPairs.filter((p) => p.score >= RELEVANCE_THRESHOLD)
-      logDebug('Filtered by relevance threshold', 'Chat', {
-        before: retrievedPairs.length,
-        after: effectivePairs.length
-      })
+    const topSource = retrievedPairs[0]?.doc.metadata?.source || ''
+    
+    // 提取查询关键词（人名通常2-3字）
+    const queryKeywords = question.match(/[\u4e00-\u9fa5]{2,4}/g) || []
+    const fileNameMatchesQuery = queryKeywords.some(kw => 
+      topSource.toLowerCase().includes(kw.toLowerCase())
+    )
+    
+    // 渐进式阈值策略：
+    // 1. 如果最高分 >= 阈值，保留所有高于低阈值的结果
+    // 2. 如果最高分 < 阈值但有结果，使用低阈值兜底
+    // 3. 文件名匹配时使用最低阈值
+    let effectiveThreshold: number
+    if (fileNameMatchesQuery) {
+      effectiveThreshold = RELEVANCE_THRESHOLD_LOW
+    } else if (topScore >= RELEVANCE_THRESHOLD) {
+      effectiveThreshold = RELEVANCE_THRESHOLD_LOW // 有高分时也放宽低分限制
+    } else if (topScore >= RELEVANCE_THRESHOLD_LOW) {
+      effectiveThreshold = RELEVANCE_THRESHOLD_LOW // 使用低阈值兜底
+    } else {
+      effectiveThreshold = 0 // 实在太低就全部保留让模型判断
     }
+    
+    effectivePairs = retrievedPairs.filter((p) => {
+      if (p.score >= effectiveThreshold) return true
+      // 检查该文档的文件名是否匹配查询
+      const source = p.doc.metadata?.source || ''
+      return queryKeywords.some(kw => source.toLowerCase().includes(kw.toLowerCase()))
+    })
+    
+    logDebug('Filtered by relevance threshold', 'Chat', {
+      before: retrievedPairs.length,
+      after: effectivePairs.length,
+      threshold: effectiveThreshold,
+      topScore: topScore.toFixed(3),
+      fileNameMatch: fileNameMatchesQuery
+    })
   }
 
   // 4. 兜底：针对指定来源的查询，尝试直接加载文档
