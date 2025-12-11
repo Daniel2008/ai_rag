@@ -7,7 +7,7 @@ export const RAG_CONFIG = {
   SEARCH: {
     DEFAULT_K: 4,
     MAX_K: 20,
-    RELEVANCE_THRESHOLD: 0.4,
+    RELEVANCE_THRESHOLD: 0.3, // 降低阈值以获取更多相关结果
     MIN_FETCH_K: 100,
     MAX_FETCH_K: 500,
     GLOBAL_SEARCH_MULTIPLIER: 50,

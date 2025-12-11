@@ -22,7 +22,7 @@ export function TitleBar({ title = '智汇' }: TitleBarProps): ReactElement {
     // 检查 window.api 是否可用
     if (!window.api) {
       console.warn('[TitleBar] window.api is not available')
-      return
+      return undefined
     }
 
     // 初始化最大化状态
@@ -35,6 +35,8 @@ export function TitleBar({ title = '智汇' }: TitleBarProps): ReactElement {
       const unsubscribe = window.api.onMaximizedChange(setIsMaximized)
       return unsubscribe
     }
+    
+    return undefined
   }, [])
 
   const handleMinimize = (): void => {

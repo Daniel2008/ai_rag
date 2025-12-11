@@ -1,15 +1,13 @@
-import { ChatOllama } from '@langchain/ollama'
-import { ChatOpenAI } from '@langchain/openai'
-import { ChatAnthropic } from '@langchain/anthropic'
 import { StringOutputParser } from '@langchain/core/output_parsers'
 import { PromptTemplate } from '@langchain/core/prompts'
 import { searchSimilarDocumentsWithScores, getDocCount, withEmbeddingProgressSuppressed } from './store'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { Document } from '@langchain/core/documents'
-import { getSettings, type ModelProvider } from '../settings'
-import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import { getSettings } from '../settings'
 import type { ChatSource, ChatResult } from '../../types/chat'
 import { RAG_CONFIG } from '../utils/config'
+import { createChatModel } from '../utils/createChatModel'
+import { logDebug, logInfo, logWarn } from '../utils/logger'
 
 // 重新导出共享类型，保持向后兼容
 export type { ChatSource, ChatResult } from '../../types/chat'
@@ -18,26 +16,43 @@ interface ChatOptions {
   sources?: string[]
 }
 
+// ==================== 辅助函数 ====================
+
 /** 根据文件名推断文件类型 */
 function inferFileType(fileName: string): ChatSource['fileType'] {
   const ext = fileName.split('.').pop()?.toLowerCase()
-  switch (ext) {
-    case 'pdf':
-      return 'pdf'
-    case 'doc':
-    case 'docx':
-      return 'word'
-    case 'txt':
-      return 'text'
-    case 'md':
-    case 'markdown':
-      return 'markdown'
-    default:
-      // 检查是否是 URL
-      if (fileName.startsWith('http://') || fileName.startsWith('https://')) {
-        return 'url'
-      }
-      return 'unknown'
+  const typeMap: Record<string, ChatSource['fileType']> = {
+    pdf: 'pdf',
+    doc: 'word',
+    docx: 'word',
+    txt: 'text',
+    md: 'markdown',
+    markdown: 'markdown'
+  }
+  
+  if (ext && typeMap[ext]) return typeMap[ext]
+  
+  // 检查是否是 URL
+  if (fileName.startsWith('http://') || fileName.startsWith('https://')) {
+    return 'url'
+  }
+  return 'unknown'
+}
+
+/** 判断路径是否为 URL */
+function isUrlPath(path: string): boolean {
+  return path.startsWith('http://') || path.startsWith('https://')
+}
+
+/** 从文件路径提取文件名 */
+function extractFileName(filePath: string, title?: string): string {
+  if (title) return title
+  
+  const pathPart = filePath.split(/[\\/]/).pop() || 'Unknown'
+  try {
+    return decodeURIComponent(pathPart)
+  } catch {
+    return pathPart
   }
 }
 
@@ -58,99 +73,106 @@ function deduplicateSources(sources: ChatSource[]): ChatSource[] {
   return Array.from(seen.values()).sort((a, b) => (b.score || 0) - (a.score || 0))
 }
 
-// 创建对应供应商的模型实例
-function createChatModel(provider: ModelProvider): BaseChatModel {
-  const settings = getSettings()
+/** 确保来源多样性：从不同文件中选取结果 */
+function ensureSourceDiversity(
+  pairs: { doc: Document; score: number }[],
+  minSources: number = 3,
+  maxPerSource: number = 2
+): { doc: Document; score: number }[] {
+  if (pairs.length === 0) return pairs
 
-  console.log(`[Chat] Creating model for provider: ${provider}`)
-
-  switch (provider) {
-    case 'ollama': {
-      const config = settings.ollama
-      console.log(`[Chat] Ollama config:`, { baseUrl: settings.ollamaUrl, model: config.chatModel })
-      return new ChatOllama({
-        baseUrl: settings.ollamaUrl || config.baseUrl,
-        model: config.chatModel
-      })
+  // 按来源分组
+  const bySource = new Map<string, { doc: Document; score: number }[]>()
+  for (const pair of pairs) {
+    const source = pair.doc.metadata?.source || 'unknown'
+    if (!bySource.has(source)) {
+      bySource.set(source, [])
     }
-    case 'openai': {
-      const config = settings.openai
-      console.log(`[Chat] OpenAI config:`, {
-        hasApiKey: !!config.apiKey,
-        baseUrl: config.baseUrl,
-        model: config.chatModel
-      })
-      if (!config.apiKey) {
-        throw new Error('OpenAI API Key 未设置，请在设置中配置')
-      }
-      // 使用类型断言避免类型实例化过深问题
-      return new ChatOpenAI({
-        apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    case 'anthropic': {
-      const config = settings.anthropic
-      if (!config.apiKey) {
-        throw new Error('Anthropic API Key 未设置，请在设置中配置')
-      }
-      // ChatAnthropic 使用 anthropicApiUrl 而非 baseURL
-      // 使用类型断言避免类型实例化过深问题
-      return new ChatAnthropic({
-        anthropicApiKey: config.apiKey,
-        anthropicApiUrl: config.baseUrl,
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    case 'deepseek': {
-      // DeepSeek 使用 OpenAI 兼容 API
-      const config = settings.deepseek
-      console.log(`[Chat] DeepSeek config:`, {
-        hasApiKey: !!config.apiKey,
-        apiKeyLength: config.apiKey?.length,
-        baseUrl: config.baseUrl,
-        model: config.chatModel
-      })
-      if (!config.apiKey) {
-        throw new Error('DeepSeek API Key 未设置，请在设置中配置')
-      }
-      // 使用类型断言避免类型实例化过深问题
-      return new ChatOpenAI({
-        apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    case 'zhipu': {
-      // 智谱 AI 使用 OpenAI 兼容 API
-      const config = settings.zhipu
-      if (!config.apiKey) {
-        throw new Error('智谱 AI API Key 未设置，请在设置中配置')
-      }
-      // 使用类型断言避免类型实例化过深问题
-      return new ChatOpenAI({
-        apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    case 'moonshot': {
-      // Moonshot 使用 OpenAI 兼容 API
-      const config = settings.moonshot
-      if (!config.apiKey) {
-        throw new Error('Moonshot API Key 未设置，请在设置中配置')
-      }
-      // 使用类型断言避免类型实例化过深问题
-      return new ChatOpenAI({
-        apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    default:
-      throw new Error(`Unsupported provider: ${provider}`)
+    bySource.get(source)!.push(pair)
   }
+
+  // 如果来源数量已经足够，直接返回
+  if (bySource.size >= minSources) {
+    // 但仍然限制每个来源的数量
+    const result: { doc: Document; score: number }[] = []
+    for (const [, sourcePairs] of bySource) {
+      result.push(...sourcePairs.slice(0, maxPerSource))
+    }
+    return result.sort((a, b) => b.score - a.score)
+  }
+
+  // 来源不足，采用轮询策略选取，确保多样性
+  const result: { doc: Document; score: number }[] = []
+  const sourceEntries = Array.from(bySource.entries())
+  
+  // 每轮从每个来源取一个
+  for (let round = 0; round < maxPerSource; round++) {
+    for (const [, sourcePairs] of sourceEntries) {
+      if (round < sourcePairs.length) {
+        result.push(sourcePairs[round])
+      }
+    }
+  }
+
+  return result.sort((a, b) => b.score - a.score)
+}
+
+/** 将检索到的文档转换为来源信息 */
+function convertDocsToSources(
+  docs: Document[],
+  scores: number[]
+): ChatSource[] {
+  return docs.map((doc, index) => {
+    const metadata = doc.metadata || {}
+    const filePath = typeof metadata.source === 'string' ? metadata.source : undefined
+    const isUrl = filePath ? isUrlPath(filePath) : false
+    const fileName = extractFileName(filePath || '', metadata.title || metadata.fileName)
+    
+    const rawPageNumber = typeof metadata.pageNumber === 'number'
+      ? metadata.pageNumber
+      : typeof metadata.loc?.pageNumber === 'number'
+        ? metadata.loc.pageNumber
+        : undefined
+
+    const fileType = metadata.fileType || metadata.type || (isUrl ? 'url' : inferFileType(fileName))
+    const score = scores[index] ?? (1 - index * 0.15)
+
+    return {
+      content: doc.pageContent.slice(0, 300) + (doc.pageContent.length > 300 ? '...' : ''),
+      fileName,
+      pageNumber: rawPageNumber && rawPageNumber > 0 ? rawPageNumber : undefined,
+      filePath,
+      fileType: fileType as ChatSource['fileType'],
+      score: Math.max(0, score),
+      position: typeof metadata.position === 'number' ? metadata.position : undefined,
+      sourceType: metadata.sourceType || (isUrl || metadata.type === 'url' ? 'url' : 'file'),
+      siteName: metadata.siteName,
+      url: isUrl || metadata.type === 'url' ? filePath : undefined,
+      fetchedAt: metadata.fetchedAt || metadata.importedAt
+    }
+  })
+}
+
+/** 构建 RAG 提示词 */
+function buildPrompt(context: string, question: string, isGlobalSearch: boolean): string {
+  const contextInfo = isGlobalSearch
+    ? '以下是从整个知识库中检索到的相关内容：'
+    : '以下是从指定文档中检索到的相关内容：'
+
+  if (context.trim()) {
+    return `你是一个专业的知识助手。${contextInfo}
+
+上下文内容：
+${context}
+
+用户问题：${question}
+
+请基于以上上下文内容回答用户的问题。如果上下文中没有相关信息，请如实告知用户"根据检索到的内容，未找到与您问题直接相关的信息"，并尝试基于你已有的知识给出帮助。`
+  }
+
+  return `你是一个专业的知识助手。用户的问题是：${question}
+
+当前知识库中未检索到与此问题直接相关的内容。请基于你已有的知识尽可能帮助用户回答这个问题，并友好地提示用户可以上传相关文档以获得更精准的回答。`
 }
 
 // DeepSeek Reasoner 专用流式请求（支持 reasoning_content）
@@ -231,176 +253,91 @@ async function* streamDeepSeekReasoner(
   }
 }
 
+// ==================== 主要导出函数 ====================
+
 export async function chatWithRag(
   question: string,
   options: ChatOptions = {}
 ): Promise<ChatResult> {
   const settings = getSettings()
+  const isGlobalSearch = !options.sources || options.sources.length === 0
 
-  console.log('[chatWithRag] Question:', question)
-  console.log('[chatWithRag] Sources filter:', options.sources)
+  logDebug('Starting RAG chat', 'Chat', {
+    question: question.slice(0, 50),
+    sourcesCount: options.sources?.length ?? 0
+  })
 
+  // 1. 检索相似文档 - 增加检索数量以获取更多样的来源
   const retrievedPairs = await withEmbeddingProgressSuppressed(() =>
     searchSimilarDocumentsWithScores(question, {
-      k: 4,
+      k: 8, // 增加到 8 以获取更多样的来源
       sources: options.sources
     })
   )
-  console.log('[chatWithRag] Retrieved pairs count:', retrievedPairs.length)
-  if (retrievedPairs.length > 0) {
-    console.log('[chatWithRag] First pair source:', retrievedPairs[0].doc.metadata?.source)
-    console.log('[chatWithRag] First pair score:', retrievedPairs[0].score)
-  }
-  const retrievedDocs = retrievedPairs.map((p) => p.doc)
 
-  if (retrievedDocs.length === 0) {
+  logDebug('Retrieved documents', 'Chat', {
+    count: retrievedPairs.length,
+    topScore: retrievedPairs[0]?.score.toFixed(3)
+  })
+
+  // 检查来源多样性
+  const uniqueSourcCount = new Set(retrievedPairs.map(p => p.doc.metadata?.source)).size
+  logDebug('Source diversity', 'Chat', { uniqueSources: uniqueSourcCount })
+
+  // 2. 检查索引状态
+  if (retrievedPairs.length === 0) {
     const docCount = await getDocCount()
     if (docCount === 0) {
-      const msg =
-        '知识库索引为空或已丢失。如果您刚刚切换了嵌入模型，请等待后台索引重建完成；否则请在侧边栏中点击“重建索引”。'
+      const msg = '知识库索引为空或已丢失。如果您刚刚切换了嵌入模型，请等待后台索引重建完成；否则请在侧边栏中点击"重建索引"。'
       return {
-        stream: (async function* () {
-          yield msg
-        })(),
+        stream: (async function* () { yield msg })(),
         sources: []
       }
     }
   }
 
-  let effectiveDocs = retrievedDocs
-
-  // 全库检索时，使用绝对相似度阈值过滤不相关的文档
-  // 现在 score 是绝对相似度 (1/(1+distance))，可以用阈值判断
-  // score > 0.5 表示 distance < 1，相关性较高
-  // score > 0.4 表示 distance < 1.5，有一定相关性
-  // score < 0.4 表示 distance > 1.5，相关性较低
+  // 3. 根据相关度阈值过滤文档
   const RELEVANCE_THRESHOLD = RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
+  let effectivePairs = retrievedPairs
 
   if (retrievedPairs.length > 0) {
     const topScore = retrievedPairs[0]?.score ?? 0
-    console.log('[chatWithRag] Top score (absolute):', topScore)
-
     if (topScore < RELEVANCE_THRESHOLD) {
-      console.log('[chatWithRag] Top score below threshold, documents may not be relevant')
-      // 过滤掉低相关度的文档
-      const relevantPairs = retrievedPairs.filter((p) => p.score >= RELEVANCE_THRESHOLD)
-      effectiveDocs = relevantPairs.map((p) => p.doc)
-      console.log('[chatWithRag] Filtered to', effectiveDocs.length, 'relevant docs')
+      effectivePairs = retrievedPairs.filter((p) => p.score >= RELEVANCE_THRESHOLD)
+      logDebug('Filtered by relevance threshold', 'Chat', {
+        before: retrievedPairs.length,
+        after: effectivePairs.length
+      })
     }
   }
 
-  if (effectiveDocs.length === 0 && options.sources && options.sources.length > 0) {
-    try {
-      const fallbackDocs: Document[] = []
-      for (const s of options.sources) {
-        if (s.startsWith('http://') || s.startsWith('https://')) {
-          const { loadFromUrl } = await import('./urlLoader')
-          const res = await loadFromUrl(s)
-          if (res.success && res.documents) {
-            fallbackDocs.push(...res.documents.slice(0, 2))
-          }
-        } else {
-          const { loadAndSplitFileInWorker } = await import('./workerManager')
-          const docs = await loadAndSplitFileInWorker(s)
-          fallbackDocs.push(...docs.slice(0, 2))
-        }
-      }
-      effectiveDocs = fallbackDocs.slice(0, 4)
-    } catch (e) {
-      console.warn('Fallback context load failed:', e)
-    }
+  // 4. 兜底：针对指定来源的查询，尝试直接加载文档
+  if (effectivePairs.length === 0 && options.sources && options.sources.length > 0) {
+    effectivePairs = await loadFallbackContext(options.sources)
   }
 
-  // 全库检索不进行兜底上下文构建，避免误将某个最近文档当作来源
-
+  // 5. 确保来源多样性并构建上下文
+  const diversePairs = ensureSourceDiversity(effectivePairs, 3, 2)
+  const effectiveDocs = diversePairs.map((p) => p.doc)
+  const effectiveScores = diversePairs.map((p) => p.score)
   const context = effectiveDocs.map((doc) => doc.pageContent).join('\n\n')
-
-  console.log(`Retrieved ${effectiveDocs.length} docs for context`)
-
-  // 2. Extract sources for citations with detailed metadata
-  const sources: ChatSource[] = effectiveDocs.map((doc: Document, index: number) => {
-    const metadata = doc.metadata || {}
-
-    // 提取页码
-    const rawPageNumber =
-      typeof metadata.pageNumber === 'number'
-        ? metadata.pageNumber
-        : typeof metadata.loc?.pageNumber === 'number'
-          ? metadata.loc.pageNumber
-          : undefined
-
-    // 提取文件路径和名称
-    const filePath = typeof metadata.source === 'string' ? metadata.source : undefined
-    const isUrlSource = filePath?.startsWith('http://') || filePath?.startsWith('https://')
-
-    // 优先使用 title（URL 来源），其次 fileName，最后从路径提取
-    let fileName = metadata.title || metadata.fileName
-    if (!fileName && filePath) {
-      const pathPart = filePath.split(/[\\/]/).pop() || 'Unknown'
-      // 对 URL 编码的文件名进行解码
-      try {
-        fileName = decodeURIComponent(pathPart)
-      } catch {
-        fileName = pathPart
-      }
-    }
-    fileName = fileName || 'Unknown'
-
-    // 提取文件类型
-    const fileType =
-      metadata.fileType || metadata.type || (isUrlSource ? 'url' : inferFileType(fileName))
-
-    // 计算相关度分数（优先使用检索分数归一化值）
-    const scoreFromSearch = retrievedPairs[index]?.score
-    const score = typeof scoreFromSearch === 'number' ? scoreFromSearch : 1 - index * 0.15
-
-    // 构建详细的来源信息
-    const source: ChatSource = {
-      content: doc.pageContent.slice(0, 300) + (doc.pageContent.length > 300 ? '...' : ''),
-      fileName,
-      pageNumber: rawPageNumber && rawPageNumber > 0 ? rawPageNumber : undefined,
-      filePath,
-      fileType: fileType as ChatSource['fileType'],
-      score: Math.max(0, score),
-      position: typeof metadata.position === 'number' ? metadata.position : undefined,
-      sourceType: metadata.sourceType || (isUrlSource || metadata.type === 'url' ? 'url' : 'file'),
-      siteName: metadata.siteName,
-      url: isUrlSource || metadata.type === 'url' ? filePath : undefined,
-      fetchedAt: metadata.fetchedAt || metadata.importedAt
-    }
-
-    return source
-  })
-
-  // 去重：相同文件+页码只保留最相关的一个
+  
+  const sources = convertDocsToSources(effectiveDocs, effectiveScores)
   const uniqueSources = deduplicateSources(sources)
 
-  // 3. Construct Prompt
-  // 根据是否有来源过滤来调整提示词
-  const isGlobalSearch = !options.sources || options.sources.length === 0
-  const contextInfo = isGlobalSearch
-    ? '以下是从整个知识库中检索到的相关内容：'
-    : '以下是从指定文档中检索到的相关内容：'
+  logDebug('Final sources', 'Chat', {
+    sourceCount: uniqueSources.length,
+    fileNames: uniqueSources.map(s => s.fileName).join(', ')
+  })
 
-  const promptText = context.trim()
-    ? `你是一个专业的知识助手。${contextInfo}
+  logDebug('Context built', 'Chat', { docCount: effectiveDocs.length })
 
-上下文内容：
-${context}
+  // 6. 生成回答
+  const promptText = buildPrompt(context, question, isGlobalSearch)
 
-用户问题：${question}
-
-请基于以上上下文内容回答用户的问题。如果上下文中没有相关信息，请如实告知用户"根据检索到的内容，未找到与您问题直接相关的信息"，并尝试基于你已有的知识给出帮助。`
-    : `你是一个专业的知识助手。用户的问题是：${question}
-
-当前知识库中未检索到与此问题直接相关的内容。请基于你已有的知识尽可能帮助用户回答这个问题，并友好地提示用户可以上传相关文档以获得更精准的回答。`
-
-  // 4. 检查是否是 DeepSeek Reasoner 模型（需要特殊处理思维链）
-  const isDeepSeekReasoner =
-    settings.provider === 'deepseek' && settings.deepseek.chatModel.includes('reasoner')
-
-  if (isDeepSeekReasoner) {
-    console.log('[Chat] Using DeepSeek Reasoner with reasoning_content support')
+  // 检查是否是 DeepSeek Reasoner 模型
+  if (settings.provider === 'deepseek' && settings.deepseek.chatModel.includes('reasoner')) {
+    logInfo('Using DeepSeek Reasoner', 'Chat')
     const config = settings.deepseek
     if (!config.apiKey) {
       throw new Error('DeepSeek API Key 未设置，请在设置中配置')
@@ -414,36 +351,47 @@ ${context}
     return { stream, sources: uniqueSources }
   }
 
-  // 5. 其他模型使用 LangChain
-  const contextInfoTemplate = isGlobalSearch
-    ? '以下是从整个知识库中检索到的相关内容：'
-    : '以下是从指定文档中检索到的相关内容：'
-
-  const template = context.trim()
-    ? `你是一个专业的知识助手。${contextInfoTemplate}
-
-上下文内容：
-{context}
-
-用户问题：{question}
-
-请基于以上上下文内容回答用户的问题。如果上下文中没有相关信息，请如实告知用户"根据检索到的内容，未找到与您问题直接相关的信息"，并尝试基于你已有的知识给出帮助。`
-    : `你是一个专业的知识助手。用户的问题是：{question}
-
-当前知识库中未检索到与此问题直接相关的内容。请基于你已有的知识尽可能帮助用户回答这个问题，并友好地提示用户可以上传相关文档以获得更精准的回答。`
+  // 其他模型使用 LangChain
+  const template = buildPrompt('{context}', '{question}', isGlobalSearch)
 
   const prompt = PromptTemplate.fromTemplate(template)
   const model = createChatModel(settings.provider)
   const chain = RunnableSequence.from([prompt, model, new StringOutputParser()])
 
-  const stream = await chain.stream({
-    context,
-    question
-  })
+  const stream = await chain.stream({ context, question })
 
-  return {
-    stream,
-    sources: uniqueSources
+  return { stream, sources: uniqueSources }
+}
+
+/** 加载兜底上下文（当检索失败时） */
+async function loadFallbackContext(
+  sources: string[]
+): Promise<{ doc: Document; score: number }[]> {
+  try {
+    const fallbackDocs: Document[] = []
+    
+    for (const s of sources) {
+      if (isUrlPath(s)) {
+        const { loadFromUrl } = await import('./urlLoader')
+        const res = await loadFromUrl(s)
+        if (res.success && res.documents) {
+          fallbackDocs.push(...res.documents.slice(0, 2))
+        }
+      } else {
+        const { loadAndSplitFileInWorker } = await import('./workerManager')
+        const docs = await loadAndSplitFileInWorker(s)
+        fallbackDocs.push(...docs.slice(0, 2))
+      }
+    }
+    
+    // 兜底文档使用较低的分数
+    return fallbackDocs.slice(0, 4).map((doc, i) => ({
+      doc,
+      score: 0.3 - i * 0.05
+    }))
+  } catch (e) {
+    logWarn('Fallback context load failed', 'Chat', undefined, e as Error)
+    return []
   }
 }
 

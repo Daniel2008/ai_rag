@@ -10,6 +10,8 @@ import {
   FilePdfOutlined,
   FileWordOutlined,
   FileMarkdownOutlined,
+  FileExcelOutlined,
+  FilePptOutlined,
   GlobalOutlined,
   RobotOutlined,
   CopyOutlined,
@@ -53,6 +55,10 @@ function getFileTypeIcon(fileType?: ChatSource['fileType']): ReactElement {
       return <FileWordOutlined style={{ color: '#1890ff' }} />
     case 'markdown':
       return <FileMarkdownOutlined style={{ color: '#52c41a' }} />
+    case 'excel':
+      return <FileExcelOutlined style={{ color: '#52c41a' }} />
+    case 'ppt':
+      return <FilePptOutlined style={{ color: '#fa8c16' }} />
     case 'url':
       return <GlobalOutlined style={{ color: '#722ed1' }} />
     case 'text':
@@ -71,6 +77,10 @@ function getFileTypeColor(fileType?: ChatSource['fileType']): string {
       return 'blue'
     case 'markdown':
       return 'green'
+    case 'excel':
+      return 'green'
+    case 'ppt':
+      return 'orange'
     case 'url':
       return 'purple'
     case 'text':

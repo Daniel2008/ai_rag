@@ -1,10 +1,10 @@
 import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf'
-import { DocxLoader } from '@langchain/community/document_loaders/fs/docx'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
 import { Document } from '@langchain/core/documents'
 import * as path from 'path'
 import * as fs from 'fs/promises'
 import { ProgressCallback, ProgressStatus, TaskType } from './progressTypes'
+import officeParser from 'officeparser'
 
 /**
  * 检测文本是否为乱码
@@ -34,42 +34,60 @@ function isGarbledText(text: string): boolean {
   return (meaningfulRatio < 0.3 && punctuationRatio > 0.4) || hasGarbledPattern
 }
 
-/**
- * 将 ProgressCallback 转换为 OCRProgressCallback
- */
-function createOCRProgressAdapter(onProgress?: ProgressCallback): OCRProgressCallback | undefined {
-  if (!onProgress) return undefined
-  
-  return (ocrProgress) => {
-    onProgress({
-      taskType: TaskType.DOCUMENT_PARSE,
-      status: ProgressStatus.PROCESSING,
-      message: ocrProgress.stage,
-      progress: ocrProgress.percent,
-      processedCount: ocrProgress.currentPage,
-      totalCount: ocrProgress.totalPages
-    })
-  }
-}
-
 /** 文件类型映射 */
-type FileType = 'pdf' | 'word' | 'text' | 'markdown' | 'unknown'
+type FileType = 'pdf' | 'word' | 'text' | 'markdown' | 'excel' | 'ppt' | 'unknown'
+
+/** officeparser 支持的文件扩展名（新版 Office 和 OpenDocument 格式）*/
+const OFFICE_PARSER_EXTENSIONS = ['.docx', '.pptx', '.xlsx', '.odt', '.odp', '.ods']
+
+/** 不支持的旧版 Office 格式（需提示用户转换）*/
+const UNSUPPORTED_LEGACY_EXTENSIONS = ['.doc', '.xls', '.ppt']
 
 /** 根据扩展名获取文件类型 */
 function getFileType(ext: string): FileType {
   switch (ext.toLowerCase()) {
     case '.pdf':
       return 'pdf'
-    case '.doc':
     case '.docx':
+    case '.odt':
       return 'word'
     case '.txt':
       return 'text'
     case '.md':
     case '.markdown':
       return 'markdown'
+    case '.xlsx':
+    case '.ods':
+      return 'excel'
+    case '.pptx':
+    case '.odp':
+      return 'ppt'
     default:
       return 'unknown'
+  }
+}
+
+/** 获取文件类型的中文名称 */
+function getFileTypeName(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case '.pdf':
+      return 'PDF'
+    case '.docx':
+    case '.odt':
+      return 'Word'
+    case '.txt':
+      return '文本'
+    case '.md':
+    case '.markdown':
+      return 'Markdown'
+    case '.xlsx':
+    case '.ods':
+      return 'Excel'
+    case '.pptx':
+    case '.odp':
+      return 'PPT'
+    default:
+      return '文档'
   }
 }
 
@@ -270,35 +288,59 @@ export async function loadAndSplitFile(
         `PDF文件解析失败: ${fileName}。文件可能已损坏或格式不支持。错误详情: ${String(error)}`
       )
     }
-  } else if (ext === '.docx' || ext === '.doc') {
-    // Word 文档加载
+  } else if (OFFICE_PARSER_EXTENSIONS.includes(ext)) {
+    // 使用 officeparser 处理 Office 和 OpenDocument 文件
+    // 支持: .docx, .pptx, .xlsx, .odt, .odp, .ods
+    const typeName = getFileTypeName(ext)
     onProgress?.({ 
       taskType: TaskType.DOCUMENT_PARSE, 
       status: ProgressStatus.PROCESSING, 
-      message: `开始解析Word文件: ${fileName}`,
+      message: `开始解析${typeName}文件: ${fileName}`,
       progress: 30 
     })
     
     try {
-      const loader = new DocxLoader(filePath)
-      docs = await loader.load()
+      const content = await officeParser.parseOfficeAsync(filePath)
+      docs = [
+        new Document({
+          pageContent: content,
+          metadata: { source: filePath }
+        })
+      ]
       
       onProgress?.({ 
         taskType: TaskType.DOCUMENT_PARSE, 
         status: ProgressStatus.PROCESSING, 
-        message: `Word文件解析完成`,
+        message: `${typeName}文件解析完成`,
         progress: 60 
       })
     } catch (error) {
       onProgress?.({ 
         taskType: TaskType.DOCUMENT_PARSE, 
         status: ProgressStatus.ERROR, 
-        message: `Word文件解析失败: ${fileName}` 
+        message: `${typeName}文件解析失败: ${fileName}` 
       })
       throw new Error(
-        `Word文件解析失败: ${fileName}。文件可能已损坏或格式不支持。错误详情: ${String(error)}`
+        `${typeName}文件解析失败: ${fileName}。文件可能已损坏或格式不支持。错误详情: ${String(error)}`
       )
     }
+  } else if (UNSUPPORTED_LEGACY_EXTENSIONS.includes(ext)) {
+    // 旧版 Office 格式不支持，提示用户转换
+    const formatMap: Record<string, { name: string; newExt: string }> = {
+      '.doc': { name: 'Word', newExt: '.docx' },
+      '.xls': { name: 'Excel', newExt: '.xlsx' },
+      '.ppt': { name: 'PPT', newExt: '.pptx' }
+    }
+    const format = formatMap[ext] || { name: '文档', newExt: '' }
+    
+    onProgress?.({ 
+      taskType: TaskType.DOCUMENT_PARSE, 
+      status: ProgressStatus.ERROR, 
+      message: `不支持旧版 ${ext} 格式: ${fileName}` 
+    })
+    throw new Error(
+      `不支持旧版 ${ext} 格式: ${fileName}。请使用 Microsoft Office 或 WPS 将文件另存为 ${format.newExt} 格式后再导入。`
+    )
   } else if (ext === '.txt' || ext === '.md') {
     // 自定义文本文件加载逻辑
     onProgress?.({ 
@@ -333,7 +375,7 @@ export async function loadAndSplitFile(
       throw new Error(`文本文件读取失败: ${fileName}。错误详情: ${String(error)}`)
     }
   } else {
-    throw new Error(`不支持的文件类型: ${ext}。当前只支持PDF、Word、TXT和Markdown文件。`)
+    throw new Error(`不支持的文件类型: ${ext}。当前支持 PDF、Word(.doc/.docx/.odt)、Excel(.xls/.xlsx/.ods)、PPT(.ppt/.pptx/.odp)、TXT 和 Markdown 文件。`)
   }
 
   // 发送开始分割进度

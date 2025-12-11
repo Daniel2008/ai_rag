@@ -7,10 +7,8 @@ import { searchSimilarDocuments } from '../rag/store'
 import { generateWordDocument } from './wordGenerator'
 import { generatePPTDocument } from './pptGenerator'
 import type { DocumentOutline, SectionContent, DocumentTheme } from './types'
-import { getSettings, type ModelProvider } from '../settings'
-import { ChatOpenAI } from '@langchain/openai'
-import { ChatOllama } from '@langchain/ollama'
-import { ChatAnthropic } from '@langchain/anthropic'
+import { getSettings } from '../settings'
+import { createChatModel } from '../utils/createChatModel'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 
 /** 文档生成请求（从聊天中解析） */
@@ -84,68 +82,6 @@ export function detectDocumentIntent(message: string): DocumentChatRequest | nul
     title,
     requirements: message,
     theme: 'professional'
-  }
-}
-
-// 创建 LLM 模型实例
-function createChatModel(provider: ModelProvider): BaseChatModel {
-  const settings = getSettings()
-
-  switch (provider) {
-    case 'ollama': {
-      const config = settings.ollama
-      return new ChatOllama({
-        baseUrl: settings.ollamaUrl || config.baseUrl,
-        model: config.chatModel
-      })
-    }
-    case 'openai': {
-      const config = settings.openai
-      if (!config.apiKey) throw new Error('OpenAI API Key 未设置')
-      return new ChatOpenAI({
-        apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    case 'anthropic': {
-      const config = settings.anthropic
-      if (!config.apiKey) throw new Error('Anthropic API Key 未设置')
-      return new ChatAnthropic({
-        anthropicApiKey: config.apiKey,
-        anthropicApiUrl: config.baseUrl,
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    case 'deepseek': {
-      const config = settings.deepseek
-      if (!config.apiKey) throw new Error('DeepSeek API Key 未设置')
-      return new ChatOpenAI({
-        apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    case 'zhipu': {
-      const config = settings.zhipu
-      if (!config.apiKey) throw new Error('智谱 AI API Key 未设置')
-      return new ChatOpenAI({
-        apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    case 'moonshot': {
-      const config = settings.moonshot
-      if (!config.apiKey) throw new Error('Moonshot API Key 未设置')
-      return new ChatOpenAI({
-        apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
-        model: config.chatModel
-      }) as unknown as BaseChatModel
-    }
-    default:
-      throw new Error(`不支持的模型提供商: ${provider}`)
   }
 }
 

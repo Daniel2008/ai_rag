@@ -65,8 +65,9 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null)
   const [sidebarCollapsed] = useState(false)
   const [initializing, setInitializing] = useState(true)
-  const [showKnowledgeBase, setShowKnowledgeBase] = useState(true)
-  const [showChatSidebar, setShowChatSidebar] = useState(true)
+  // 初始状态基于窗口宽度，避免首次渲染后的布局跳动
+  const [showKnowledgeBase, setShowKnowledgeBase] = useState(() => window.innerWidth >= 1280)
+  const [showChatSidebar, setShowChatSidebar] = useState(() => window.innerWidth >= 1100)
 
   // 全局进度管理
   const { progress } = useProgress()
@@ -97,7 +98,6 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     activeCollectionId,
     questionScope,
     readyDocuments,
-    activeFile,
     resolvedCollectionId,
     setActiveCollectionId,
     setQuestionScope,
@@ -222,8 +222,12 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
 
         let selectedSources: string[] | undefined
 
-        // 文档集优先
-        if (questionScope === 'collection') {
+        // 优先级：# 选择的文件 > 文档集 > 全库
+        if (mentionedFiles.length > 0) {
+          // 最高优先级：用户通过 # 明确指定的文件
+          selectedSources = mentionedFiles.map((m) => m.path)
+        } else if (questionScope === 'collection') {
+          // 次优先级：文档集
           if (!resolvedCollectionId) {
             messageApi.warning('请先创建并选择一个文档集')
             return
@@ -238,10 +242,8 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             return
           }
           selectedSources = targetCollection.files
-        } else {
-          // 全库：若输入中有 # 选择的文件，则限定这些文件；否则全库
-          selectedSources = mentionedFiles.length > 0 ? mentionedFiles.map((m) => m.path) : undefined
         }
+        // else: 全库检索，selectedSources 保持 undefined
 
         setInputValue('')
         setMentionedFiles([])
@@ -492,25 +494,26 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             isTyping={isTyping}
             readyDocuments={readyDocuments}
             questionScope={questionScope}
-          activeDocument={activeDocument}
+            activeDocument={activeDocument}
             collections={collections}
             resolvedCollectionId={resolvedCollectionId}
             showQuickQuestions={displayMessages.length <= 1}
             hasReadyFiles={readyDocuments > 0}
             readyFiles={readyFiles}
-          onMentionFilesChange={setMentionedFiles}
-          onInputChange={setInputValue}
-          onSubmit={handleSend}
-          onQuestionScopeChange={(scope) => {
-            userChangedScopeRef.current = true
-            setQuestionScope(scope)
-            if (scope === 'collection') {
-              if (!resolvedCollectionId && collections[0]) {
-                setActiveCollectionId((prev) => prev ?? collections[0].id)
+            mentionedFiles={mentionedFiles}
+            onMentionFilesChange={setMentionedFiles}
+            onInputChange={setInputValue}
+            onSubmit={handleSend}
+            onQuestionScopeChange={(scope) => {
+              userChangedScopeRef.current = true
+              setQuestionScope(scope)
+              if (scope === 'collection') {
+                if (!resolvedCollectionId && collections[0]) {
+                  setActiveCollectionId((prev) => prev ?? collections[0].id)
+                }
               }
-            }
-          }}
-          onCollectionChange={setActiveCollectionId}
+            }}
+            onCollectionChange={setActiveCollectionId}
             onStopGeneration={stopGeneration}
             onPromptClick={handlePromptClick}
           />

@@ -31,6 +31,7 @@
       "!**/node_modules/*/{.npmignore,.gitignore,.eslintrc*,tsconfig.json}",
       "!**/node_modules/*/{coverage,.nyc_output,.jest}",
       "!**/node_modules/*/{*.map,*.min.map}",
+      "!**/node_modules/pnpm/**",
       "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
       "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
       "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
@@ -49,69 +50,14 @@
       "resources/**",
       "**/@lancedb/**",
       "**/apache-arrow/**",
-      "**/@huggingface/**",
       "**/better-sqlite3/**",
-      "**/onnxruntime-node/**",
-      "**/vectordb/**",
+      "**/canvas/**",
+      "**/@img/**",
+      "**/@napi-rs/**",
       "**/*.node"
     ],
     "asar": true,
     "compression": "maximum",
-    "extraResources": [
-      {
-        "from": "node_modules/@lancedb",
-        "to": "node_modules/@lancedb",
-        "filter": [
-          "**/*",
-          "!**/*.md",
-          "!**/*.txt",
-          "!**/test/**",
-          "!**/tests/**",
-          "!**/examples/**",
-          "!**/*.map"
-        ]
-      },
-      {
-        "from": "node_modules/apache-arrow",
-        "to": "node_modules/apache-arrow",
-        "filter": [
-          "**/*",
-          "!**/*.md",
-          "!**/*.txt",
-          "!**/test/**",
-          "!**/tests/**",
-          "!**/examples/**",
-          "!**/*.map"
-        ]
-      },
-      {
-        "from": "node_modules/@huggingface/transformers",
-        "to": "node_modules/@huggingface/transformers",
-        "filter": [
-          "**/*",
-          "!**/*.md",
-          "!**/*.txt",
-          "!**/test/**",
-          "!**/tests/**",
-          "!**/examples/**",
-          "!**/*.map",
-          "!**/dist/**/*.map"
-        ]
-      },
-      {
-        "from": "node_modules/onnxruntime-node",
-        "to": "node_modules/onnxruntime-node",
-        "filter": [
-          "**/*",
-          "!**/*.md",
-          "!**/*.txt",
-          "!**/test/**",
-          "!**/tests/**",
-          "!**/examples/**",
-          "!**/*.map"
-        ]
-      }
-    ],
     "win": {
       "executableName": "ZhiHui",
       "icon": "build/icon.ico",
@@ -232,11 +178,10 @@
     "docx": "^9.5.1",
     "electron-store": "^11.0.2",
     "lucide-react": "^0.556.0",
-    "mammoth": "^1.11.0",
+    "officeparser": "^5.2.2",
     "ollama": "^0.6.3",
     "onnxruntime-node": "^1.23.2",
     "pdf-parse": "^1.1.1",
-    "pnpm": "^10.25.0",
     "pptxgenjs": "^4.0.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",

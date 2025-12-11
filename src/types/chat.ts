@@ -14,7 +14,7 @@ export interface ChatSource {
   /** 完整文件路径 */
   filePath?: string
   /** 文件类型 */
-  fileType?: 'pdf' | 'word' | 'text' | 'markdown' | 'url' | 'unknown'
+  fileType?: 'pdf' | 'word' | 'text' | 'markdown' | 'excel' | 'ppt' | 'url' | 'unknown'
   /** 相关度分数 (0-1) */
   score?: number
   /** 内容在文档中的位置（字符偏移） */

@@ -1,6 +1,11 @@
 /**
  * 全局进度状态管理 Hook
  * 监听文档处理、模型下载、向量化等后台任务的进度
+ *
+ * 优化要点：
+ * 1. 关键状态变化（开始、完成、错误）立即显示
+ * 2. 中间进度按批次更新，避免频繁刷新
+ * 3. 阶段切换时立即更新以保证用户感知
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -13,11 +18,53 @@ export interface ProgressInfo {
 }
 
 /** 进度更新的批处理配置 */
-const BATCH_INTERVAL_MS = 400 // 批处理间隔
-const MIN_PERCENT_CHANGE = 3 // 最小百分比变化
-const MIN_TIME_INTERVAL_MS = 200 // 最小时间间隔
-const COMPLETION_DISPLAY_MS = 1500 // 完成状态显示时长
-const ERROR_DISPLAY_MS = 3000 // 错误状态显示时长
+const BATCH_INTERVAL_MS = 300 // 批处理间隔（减少以提高响应性）
+const MIN_PERCENT_CHANGE = 2 // 最小百分比变化（降低以更平滑）
+const MIN_TIME_INTERVAL_MS = 150 // 最小时间间隔（减少以提高响应性）
+const COMPLETION_DISPLAY_MS = 2000 // 完成状态显示时长（增加以便用户注意）
+const ERROR_DISPLAY_MS = 4000 // 错误状态显示时长（增加以便用户查看）
+
+/** 阶段描述优化映射 */
+const STAGE_DESCRIPTIONS: Record<string, string> = {
+  // 模型下载相关
+  '正在加载模型': '正在初始化嵌入模型...',
+  '模型已就绪': '嵌入模型就绪',
+  '模型加载完成': '嵌入模型加载完成',
+  
+  // 文档处理相关
+  '正在索引文档...': '正在将文档添加到知识库...',
+  '索引完成': '文档已添加到知识库',
+  '索引完成（已重建）': '知识库索引已重建',
+  
+  // 通用
+  '处理完成': '✓ 处理完成',
+  '重建完成': '✓ 索引重建完成'
+}
+
+/** 优化阶段描述 */
+function optimizeStageDescription(stage: string): string {
+  // 首先检查精确匹配
+  if (STAGE_DESCRIPTIONS[stage]) {
+    return STAGE_DESCRIPTIONS[stage]
+  }
+  
+  // 处理动态内容（如包含文件名或数量的描述）
+  // 例如：「正在解析文档 (1/3)...」保持原样
+  // 例如：「文档解析完成，共 5 个片段」保持原样
+  
+  // 简化一些冗长的描述
+  if (stage.startsWith('正在生成向量') && stage.includes('/')) {
+    // 保持格式但简化
+    return stage
+  }
+  
+  if (stage.startsWith('下载中:')) {
+    // 模型下载进度，保持原样
+    return stage
+  }
+  
+  return stage
+}
 
 export interface UseProgressReturn {
   /** 当前进度（null 表示没有任务） */
@@ -170,52 +217,90 @@ export function useProgress(): UseProgressReturn {
     // 监听文档处理进度
     if (typeof window.api.onProcessProgress === 'function') {
       window.api.onProcessProgress((progressData) => {
+        // 优化阶段描述
+        const optimizedStage = optimizeStageDescription(progressData.stage)
+        
         const newProgress: ProgressInfo = {
           ...progressData,
-          taskType: progressData.taskType || 'INDEX_REBUILD'
+          stage: optimizedStage,
+          taskType: progressData.taskType || 'index_rebuild'
         }
 
+        // 错误状态立即显示
         if (progressData.error) {
-          updateProgressImmediate(newProgress)
-          scheduleClear(ERROR_DISPLAY_MS)
-        } else if (progressData.percent === 100) {
           updateProgressImmediate({
             ...newProgress,
-            stage: '处理完成',
-            taskType: 'COMPLETED'
+            taskType: 'error'
+          })
+          scheduleClear(ERROR_DISPLAY_MS)
+          return
+        }
+        
+        // 完成状态（100% 或 taskType 为 completed）
+        if (progressData.percent >= 100 || progressData.taskType?.toLowerCase() === 'completed') {
+          updateProgressImmediate({
+            ...newProgress,
+            stage: optimizedStage.includes('✓') ? optimizedStage : '✓ 处理完成',
+            percent: 100,
+            taskType: 'completed'
           })
           scheduleClear(COMPLETION_DISPLAY_MS)
-        } else {
-          updateProgressBatched(newProgress)
+          return
         }
+        
+        // 开始状态（0-5%）立即显示，让用户知道任务已开始
+        if (progressData.percent <= 5 && lastDisplayedRef.current.percent <= 0) {
+          updateProgressImmediate(newProgress)
+          return
+        }
+        
+        // 中间进度批量更新
+        updateProgressBatched(newProgress)
       })
     }
 
     // 监听嵌入模型进度
     if (typeof window.api.onEmbeddingProgress === 'function') {
       window.api.onEmbeddingProgress((progressData) => {
-        const stage = progressData.stage || progressData.message || '正在处理模型...'
-        const taskType = progressData.taskType || 'MODEL_DOWNLOAD'
+        const rawStage = progressData.stage || progressData.message || '正在处理模型...'
+        const stage = optimizeStageDescription(rawStage)
+        const taskType = progressData.taskType || 'model_download'
         const percent = progressData.percent || progressData.progress || 0
         const isError = progressData.status === 'error'
         const isCompleted = progressData.status === 'completed' || progressData.status === 'ready'
 
         const newProgress: ProgressInfo = {
-          stage: isCompleted ? '模型就绪' : stage,
+          stage: isCompleted ? '✓ 嵌入模型就绪' : stage,
           percent: isCompleted ? 100 : Math.max(0, Math.min(100, percent)),
           error: isError ? progressData.message : undefined,
-          taskType: isCompleted ? 'COMPLETED' : taskType
+          taskType: isCompleted ? 'completed' : taskType
         }
 
+        // 错误状态立即显示
         if (isError) {
-          updateProgressImmediate(newProgress)
+          updateProgressImmediate({
+            ...newProgress,
+            taskType: 'error'
+          })
           scheduleClear(ERROR_DISPLAY_MS)
-        } else if (isCompleted) {
+          return
+        }
+        
+        // 完成状态立即显示
+        if (isCompleted) {
           updateProgressImmediate(newProgress)
           scheduleClear(COMPLETION_DISPLAY_MS)
-        } else {
-          updateProgressBatched(newProgress)
+          return
         }
+        
+        // 开始下载时立即显示
+        if (percent <= 5 && lastDisplayedRef.current.percent <= 0) {
+          updateProgressImmediate(newProgress)
+          return
+        }
+        
+        // 中间进度批量更新
+        updateProgressBatched(newProgress)
       })
     }
 

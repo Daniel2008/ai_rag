@@ -1,8 +1,8 @@
 import type { ReactElement } from 'react'
 import { useMemo, useState, useCallback } from 'react'
 import { Sender } from '@ant-design/x'
-import { Divider, Select, Tag, Typography, theme as antdTheme } from 'antd'
-import { ThunderboltOutlined } from '@ant-design/icons'
+import { Divider, Select, Tag, Typography, theme as antdTheme, Tooltip } from 'antd'
+import { ThunderboltOutlined, FileTextOutlined, FolderOutlined, GlobalOutlined } from '@ant-design/icons'
 import type { QuestionScope } from '../../types/chat'
 import type { DocumentCollection, IndexedFile } from '../../types/files'
 import { QUICK_QUESTIONS } from '../../constants/chat'
@@ -20,6 +20,8 @@ interface ChatInputProps {
   /** 是否有可用文件（用于启用"当前文档"选项） */
   hasReadyFiles: boolean
   readyFiles: IndexedFile[]
+  /** 当前已选择的 # 文件 */
+  mentionedFiles: { token: string; path: string }[]
   onMentionFilesChange: (mentions: { token: string; path: string }[]) => void
   onInputChange: (value: string) => void
   onSubmit: (value: string) => void
@@ -41,6 +43,7 @@ export function ChatInput({
   showQuickQuestions,
   hasReadyFiles,
   readyFiles,
+  mentionedFiles,
   onMentionFilesChange,
   onInputChange,
   onSubmit,
@@ -52,7 +55,6 @@ export function ChatInput({
   const { token } = antdTheme.useToken()
   const [mentionVisible, setMentionVisible] = useState(false)
   const [mentionKeyword, setMentionKeyword] = useState('')
-  const [mentioned, setMentioned] = useState<{ token: string; path: string }[]>([])
 
   const filteredMentionOptions = useMemo(
     () =>
@@ -65,11 +67,12 @@ export function ChatInput({
   const handleChange = useCallback(
     (val: string) => {
       onInputChange(val)
-      const remaining = mentioned.filter((m) => val.includes(m.token))
-      if (remaining.length !== mentioned.length) {
-        setMentioned(remaining)
+      // 检查已选文件的 token 是否仍在输入中
+      const remaining = mentionedFiles.filter((m) => val.includes(m.token))
+      if (remaining.length !== mentionedFiles.length) {
         onMentionFilesChange(remaining)
       }
+      // 检测 # 触发
       const match = /#([^\s#]*)$/.exec(val)
       if (match) {
         setMentionKeyword(match[1] || '')
@@ -79,64 +82,162 @@ export function ChatInput({
         setMentionVisible(false)
       }
     },
-    [mentioned, onInputChange, onMentionFilesChange]
+    [mentionedFiles, onInputChange, onMentionFilesChange]
   )
 
   const handleSelectMention = useCallback(
     (path: string, name: string) => {
-      const token = `#${name}`
-      const next = inputValue.replace(/#([^\s#]*)$/, `${token} `)
+      const mentionToken = `#${name}`
+      const next = inputValue.replace(/#([^\s#]*)$/, `${mentionToken} `)
       onInputChange(next)
-      const nextMentions = mentioned.some((m) => m.path === path)
-        ? mentioned
-        : [...mentioned, { token, path }]
-      setMentioned(nextMentions)
+      // 避免重复添加相同文件
+      const nextMentions = mentionedFiles.some((m) => m.path === path)
+        ? mentionedFiles
+        : [...mentionedFiles, { token: mentionToken, path }]
       onMentionFilesChange(nextMentions)
       setMentionVisible(false)
       setMentionKeyword('')
     },
-    [inputValue, mentioned, onInputChange, onMentionFilesChange]
+    [inputValue, mentionedFiles, onInputChange, onMentionFilesChange]
   )
+
+  // 移除已选文件
+  const handleRemoveMention = useCallback(
+    (path: string) => {
+      const toRemove = mentionedFiles.find((m) => m.path === path)
+      if (toRemove) {
+        // 从输入框中移除对应的 token
+        const newInput = inputValue.replace(toRemove.token, '').replace(/\s+/g, ' ').trim()
+        onInputChange(newInput)
+        onMentionFilesChange(mentionedFiles.filter((m) => m.path !== path))
+      }
+    },
+    [inputValue, mentionedFiles, onInputChange, onMentionFilesChange]
+  )
+
+  // 计算当前实际检索范围的描述
+  const effectiveSearchScope = useMemo(() => {
+    if (mentionedFiles.length > 0) {
+      return {
+        type: 'mention' as const,
+        label: `指定文件 (${mentionedFiles.length})`,
+        icon: <FileTextOutlined />,
+        files: mentionedFiles.map(m => {
+          const file = readyFiles.find(f => f.path === m.path)
+          return file?.name || m.token.replace('#', '')
+        })
+      }
+    }
+    if (questionScope === 'collection' && resolvedCollectionId) {
+      const col = collections.find(c => c.id === resolvedCollectionId)
+      return {
+        type: 'collection' as const,
+        label: col ? `${col.name} (${col.files.length})` : '文档集',
+        icon: <FolderOutlined />,
+        files: []
+      }
+    }
+    return {
+      type: 'all' as const,
+      label: `全库 (${readyDocuments})`,
+      icon: <GlobalOutlined />,
+      files: []
+    }
+  }, [mentionedFiles, questionScope, resolvedCollectionId, collections, readyDocuments, readyFiles])
 
   // Sender 头部操作
   const senderHeader = useMemo(
     () => (
-      <div className="flex items-center gap-2 px-2 py-1">
-        <Select
-          size="small"
-          value={questionScope}
-          onChange={onQuestionScopeChange}
-          options={[
-            { label: '🌐 全库检索', value: 'all', disabled: !hasReadyFiles },
-            {
-              label: '📁 文档集',
-              value: 'collection',
-              disabled: !hasReadyFiles || collections.length === 0
+      <div className="flex flex-col gap-1 px-2 py-1">
+        {/* 检索范围选择 */}
+        <div className="flex items-center gap-2">
+          <Tooltip title="选择检索范围（输入 # 可指定文件，优先级最高）">
+            <Select
+              size="small"
+              value={questionScope}
+              onChange={onQuestionScopeChange}
+              options={[
+                { label: '🌐 全库检索', value: 'all', disabled: !hasReadyFiles },
+                {
+                  label: '📁 文档集',
+                  value: 'collection',
+                  disabled: !hasReadyFiles || collections.length === 0
+                }
+              ]}
+              style={{ width: 130 }}
+              variant="borderless"
+            />
+          </Tooltip>
+          {questionScope === 'collection' && (
+            <Select
+              size="small"
+              placeholder="选择文档集"
+              value={resolvedCollectionId}
+              options={collections.map((collection) => ({
+                label: `${collection.name} (${collection.files.length})`,
+                value: collection.id
+              }))}
+              onChange={onCollectionChange}
+              style={{ width: 160 }}
+              variant="borderless"
+            />
+          )}
+          <div className="flex-1" />
+          {/* 实际检索范围提示 */}
+          <Tooltip
+            title={
+              effectiveSearchScope.type === 'mention'
+                ? `将在以下文件中检索：${effectiveSearchScope.files.join(', ')}`
+                : effectiveSearchScope.type === 'collection'
+                ? '将在选定文档集内检索'
+                : '将在所有文档中检索'
             }
-          ]}
-          style={{ width: 130 }}
-          variant="borderless"
-        />
-        {questionScope === 'collection' && (
-          <Select
-            size="small"
-            placeholder="选择文档集"
-            value={resolvedCollectionId}
-            options={collections.map((collection) => ({
-              label: `${collection.name} (${collection.files.length})`,
-              value: collection.id
-            }))}
-            onChange={onCollectionChange}
-            style={{ width: 160 }}
-            variant="borderless"
-          />
+          >
+            <Tag
+              icon={effectiveSearchScope.icon}
+              color={effectiveSearchScope.type === 'mention' ? 'blue' : effectiveSearchScope.type === 'collection' ? 'green' : 'default'}
+              style={{ margin: 0 }}
+            >
+              {effectiveSearchScope.label}
+            </Tag>
+          </Tooltip>
+        </div>
+
+        {/* 已选文件标签 */}
+        {mentionedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1 items-center">
+            <Typography.Text type="secondary" className="text-xs mr-1">
+              指定检索：
+            </Typography.Text>
+            {mentionedFiles.map((m) => {
+              const file = readyFiles.find((f) => f.path === m.path)
+              const fileName = file?.name || m.token.replace('#', '')
+              return (
+                <Tag
+                  key={m.path}
+                  closable
+                  onClose={(e) => {
+                    e.preventDefault()
+                    handleRemoveMention(m.path)
+                  }}
+                  style={{
+                    margin: 0,
+                    borderRadius: 12,
+                    padding: '0 8px',
+                    fontSize: 12
+                  }}
+                  color="blue"
+                >
+                  <FileTextOutlined className="mr-1" />
+                  {fileName.length > 20 ? fileName.slice(0, 20) + '...' : fileName}
+                </Tag>
+              )
+            })}
+            <Typography.Text type="secondary" className="text-xs ml-1">
+              (优先于检索范围)
+            </Typography.Text>
+          </div>
         )}
-        <div className="flex-1" />
-        <Typography.Text type="secondary" className="text-xs">
-          {questionScope === 'collection'
-            ? `限定: ${collections.find((c) => c.id === resolvedCollectionId)?.name || '未选择'}`
-            : `全库 · ${readyDocuments} 个文档`}
-        </Typography.Text>
       </div>
     ),
     [
@@ -146,8 +247,12 @@ export function ChatInput({
       resolvedCollectionId,
       readyDocuments,
       hasReadyFiles,
+      mentionedFiles,
+      readyFiles,
+      effectiveSearchScope,
       onQuestionScopeChange,
-      onCollectionChange
+      onCollectionChange,
+      handleRemoveMention
     ]
   )
 

@@ -26,57 +26,130 @@ interface GlobalProgressProps {
   progress: ProgressInfo | null
 }
 
+/** 任务类型枚举（与后端保持一致） */
+const TaskTypeMap = {
+  MODEL_DOWNLOAD: 'model_download',
+  DOCUMENT_PARSE: 'document_parse',
+  DOCUMENT_SPLIT: 'document_split',
+  EMBEDDING_GENERATION: 'embedding_generation',
+  INDEX_REBUILD: 'index_rebuild',
+  KNOWLEDGE_BASE_BUILD: 'knowledge_base_build',
+  COMPLETED: 'completed',
+  ERROR: 'error'
+} as const
+
 /** 获取任务类型对应的图标 */
 function getTaskIcon(taskType?: string, isError?: boolean): ReactElement {
   if (isError) {
     return <CloseCircleOutlined />
   }
 
-  const type = taskType?.toUpperCase()
-  if (type === 'COMPLETED') {
-    return <CheckCircleOutlined />
+  const type = taskType?.toLowerCase()
+  
+  switch (type) {
+    case 'completed':
+      return <CheckCircleOutlined />
+    case TaskTypeMap.MODEL_DOWNLOAD:
+    case 'downloading':
+      return <CloudDownloadOutlined />
+    case TaskTypeMap.DOCUMENT_PARSE:
+    case TaskTypeMap.DOCUMENT_SPLIT:
+      return <FileTextOutlined />
+    case TaskTypeMap.EMBEDDING_GENERATION:
+    case TaskTypeMap.INDEX_REBUILD:
+    case TaskTypeMap.KNOWLEDGE_BASE_BUILD:
+      return <ThunderboltOutlined />
+    default:
+      // 兼容旧格式（大写）和包含关键字的情况
+      if (type?.includes('model') || type?.includes('download')) {
+        return <CloudDownloadOutlined />
+      }
+      if (type?.includes('document') || type?.includes('parse')) {
+        return <FileTextOutlined />
+      }
+      if (type?.includes('embed') || type?.includes('index') || type?.includes('vector')) {
+        return <ThunderboltOutlined />
+      }
+      return <LoadingOutlined />
   }
-  if (type?.includes('MODEL')) {
-    return <CloudDownloadOutlined />
-  }
-  if (type === 'DOCUMENT_PARSE') {
-    return <FileTextOutlined />
-  }
-  if (type === 'INDEX_REBUILD' || type === 'EMBEDDING_GENERATION') {
-    return <ThunderboltOutlined />
-  }
-  return <LoadingOutlined />
+}
+
+/** 任务标题映射 */
+const TASK_TITLES: Record<string, string> = {
+  [TaskTypeMap.MODEL_DOWNLOAD]: '下载嵌入模型',
+  [TaskTypeMap.DOCUMENT_PARSE]: '解析文档',
+  [TaskTypeMap.DOCUMENT_SPLIT]: '分割文档',
+  [TaskTypeMap.EMBEDDING_GENERATION]: '生成向量',
+  [TaskTypeMap.INDEX_REBUILD]: '重建索引',
+  [TaskTypeMap.KNOWLEDGE_BASE_BUILD]: '构建知识库',
+  'completed': '处理完成',
+  'error': '处理失败',
+  'downloading': '下载模型'
 }
 
 /** 获取任务类型对应的标题 */
 function getTaskTitle(taskType?: string): string {
   if (!taskType) return '正在处理'
-  const type = taskType.toUpperCase()
-  if (type === 'COMPLETED') return '处理完成'
-  if (type?.includes('MODEL')) return '正在下载模型'
-  if (type === 'DOCUMENT_PARSE') return '正在解析文档'
-  if (type === 'INDEX_REBUILD') return '正在重建索引'
-  if (type === 'EMBEDDING_GENERATION') return '正在生成向量'
-  if (type === 'ERROR') return '处理失败'
+  
+  const type = taskType.toLowerCase()
+  
+  // 精确匹配
+  if (TASK_TITLES[type]) {
+    return TASK_TITLES[type]
+  }
+  
+  // 模糊匹配（兼容旧格式）
+  if (type.includes('model') || type.includes('download')) {
+    return '下载嵌入模型'
+  }
+  if (type.includes('parse')) {
+    return '解析文档'
+  }
+  if (type.includes('split')) {
+    return '分割文档'
+  }
+  if (type.includes('embed') || type.includes('vector')) {
+    return '生成向量'
+  }
+  if (type.includes('index') || type.includes('rebuild')) {
+    return '重建索引'
+  }
+  if (type.includes('knowledge')) {
+    return '构建知识库'
+  }
+  
   return '正在处理'
 }
 
 /** 获取进度条颜色 */
 function getProgressColor(token: ReturnType<typeof antdTheme.useToken>['token'], taskType?: string): string | { from: string; to: string } {
-  const type = taskType?.toUpperCase()
-  if (type === 'COMPLETED') {
-    return '#52c41a' // 成功绿色
+  const type = taskType?.toLowerCase()
+  
+  // 完成状态：绿色
+  if (type === 'completed') {
+    return '#52c41a'
   }
-  if (type?.includes('MODEL')) {
-    return { from: token.colorInfo, to: '#3b82f6' } // 蓝色渐变
+  
+  // 模型下载：蓝色渐变
+  if (type === TaskTypeMap.MODEL_DOWNLOAD || type?.includes('model') || type?.includes('download')) {
+    return { from: token.colorInfo, to: '#3b82f6' }
   }
-  if (type === 'DOCUMENT_PARSE') {
-    return { from: '#faad14', to: '#ffc107' } // 橙色渐变
+  
+  // 文档解析/分割：橙色渐变
+  if (type === TaskTypeMap.DOCUMENT_PARSE || type === TaskTypeMap.DOCUMENT_SPLIT ||
+      type?.includes('parse') || type?.includes('split')) {
+    return { from: '#faad14', to: '#ffc107' }
   }
-  if (type === 'INDEX_REBUILD' || type === 'EMBEDDING_GENERATION') {
-    return { from: '#52c41a', to: '#87d068' } // 绿色渐变
+  
+  // 向量生成/索引重建/知识库构建：绿色渐变
+  if (type === TaskTypeMap.EMBEDDING_GENERATION || type === TaskTypeMap.INDEX_REBUILD ||
+      type === TaskTypeMap.KNOWLEDGE_BASE_BUILD ||
+      type?.includes('embed') || type?.includes('index') || type?.includes('vector') || type?.includes('knowledge')) {
+    return { from: '#52c41a', to: '#87d068' }
   }
-  return { from: token.colorPrimary, to: '#7c3aed' } // 紫色渐变
+  
+  // 默认：紫色渐变
+  return { from: token.colorPrimary, to: '#7c3aed' }
 }
 
 export function GlobalProgress({ progress }: GlobalProgressProps): ReactElement | null {
