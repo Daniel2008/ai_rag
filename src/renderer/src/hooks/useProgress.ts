@@ -161,58 +161,74 @@ export function useProgress(): UseProgressReturn {
 
   // 监听进度事件
   useEffect(() => {
-    // 监听文档处理进度
-    window.api.onProcessProgress((progressData) => {
-      const newProgress: ProgressInfo = {
-        ...progressData,
-        taskType: progressData.taskType || 'INDEX_REBUILD'
-      }
+    // 检查 window.api 是否已初始化
+    if (!window.api) {
+      console.warn('[useProgress] window.api is not available yet')
+      return
+    }
 
-      if (progressData.error) {
-        updateProgressImmediate(newProgress)
-        scheduleClear(ERROR_DISPLAY_MS)
-      } else if (progressData.percent === 100) {
-        updateProgressImmediate({
-          ...newProgress,
-          stage: '处理完成',
-          taskType: 'COMPLETED'
-        })
-        scheduleClear(COMPLETION_DISPLAY_MS)
-      } else {
-        updateProgressBatched(newProgress)
-      }
-    })
+    // 监听文档处理进度
+    if (typeof window.api.onProcessProgress === 'function') {
+      window.api.onProcessProgress((progressData) => {
+        const newProgress: ProgressInfo = {
+          ...progressData,
+          taskType: progressData.taskType || 'INDEX_REBUILD'
+        }
+
+        if (progressData.error) {
+          updateProgressImmediate(newProgress)
+          scheduleClear(ERROR_DISPLAY_MS)
+        } else if (progressData.percent === 100) {
+          updateProgressImmediate({
+            ...newProgress,
+            stage: '处理完成',
+            taskType: 'COMPLETED'
+          })
+          scheduleClear(COMPLETION_DISPLAY_MS)
+        } else {
+          updateProgressBatched(newProgress)
+        }
+      })
+    }
 
     // 监听嵌入模型进度
-    window.api.onEmbeddingProgress((progressData) => {
-      const stage = progressData.stage || progressData.message || '正在处理模型...'
-      const taskType = progressData.taskType || 'MODEL_DOWNLOAD'
-      const percent = progressData.percent || progressData.progress || 0
-      const isError = progressData.status === 'error'
-      const isCompleted = progressData.status === 'completed' || progressData.status === 'ready'
+    if (typeof window.api.onEmbeddingProgress === 'function') {
+      window.api.onEmbeddingProgress((progressData) => {
+        const stage = progressData.stage || progressData.message || '正在处理模型...'
+        const taskType = progressData.taskType || 'MODEL_DOWNLOAD'
+        const percent = progressData.percent || progressData.progress || 0
+        const isError = progressData.status === 'error'
+        const isCompleted = progressData.status === 'completed' || progressData.status === 'ready'
 
-      const newProgress: ProgressInfo = {
-        stage: isCompleted ? '模型就绪' : stage,
-        percent: isCompleted ? 100 : Math.max(0, Math.min(100, percent)),
-        error: isError ? progressData.message : undefined,
-        taskType: isCompleted ? 'COMPLETED' : taskType
-      }
+        const newProgress: ProgressInfo = {
+          stage: isCompleted ? '模型就绪' : stage,
+          percent: isCompleted ? 100 : Math.max(0, Math.min(100, percent)),
+          error: isError ? progressData.message : undefined,
+          taskType: isCompleted ? 'COMPLETED' : taskType
+        }
 
-      if (isError) {
-        updateProgressImmediate(newProgress)
-        scheduleClear(ERROR_DISPLAY_MS)
-      } else if (isCompleted) {
-        updateProgressImmediate(newProgress)
-        scheduleClear(COMPLETION_DISPLAY_MS)
-      } else {
-        updateProgressBatched(newProgress)
-      }
-    })
+        if (isError) {
+          updateProgressImmediate(newProgress)
+          scheduleClear(ERROR_DISPLAY_MS)
+        } else if (isCompleted) {
+          updateProgressImmediate(newProgress)
+          scheduleClear(COMPLETION_DISPLAY_MS)
+        } else {
+          updateProgressBatched(newProgress)
+        }
+      })
+    }
 
     return () => {
       clearAllTimers()
-      window.api.removeProcessProgressListener()
-      window.api.removeEmbeddingProgressListener()
+      if (window.api) {
+        if (typeof window.api.removeProcessProgressListener === 'function') {
+          window.api.removeProcessProgressListener()
+        }
+        if (typeof window.api.removeEmbeddingProgressListener === 'function') {
+          window.api.removeEmbeddingProgressListener()
+        }
+      }
     }
   }, [updateProgressBatched, updateProgressImmediate, scheduleClear, clearAllTimers])
 

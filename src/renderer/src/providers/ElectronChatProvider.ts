@@ -60,7 +60,10 @@ export class ElectronChatProvider extends AbstractChatProvider<
       request.dispose()
     }
     activeRequests.clear()
-    window.api.removeAllChatListeners()
+    // 安全地清理监听器
+    if (window.api && typeof window.api.removeAllChatListeners === 'function') {
+      window.api.removeAllChatListeners()
+    }
   }
 
   /**

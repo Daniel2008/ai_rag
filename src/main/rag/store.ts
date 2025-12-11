@@ -336,11 +336,49 @@ export async function searchSimilarDocumentsWithScores(
     console.log('[searchWithScores] Failed to count rows:', e)
   }
 
-  // 使用 LanceDB 原生 API 获取带距离的搜索结果
-  const fetchK = Math.max(k * 20, 100)
-  console.log('[searchWithScores] Using native LanceDB search, fetchK:', fetchK)
+  // 动态计算检索数量：根据库大小和是否全库检索调整
+  let docCount = 0
+  try {
+    docCount = await table.countRows()
+  } catch (e) {
+    console.warn('[searchWithScores] Failed to get doc count:', e)
+  }
+  
+  // 全库检索时，需要检索更多结果以确保命中率
+  // 如果库很大，需要检索更多；如果指定了 sources，可以检索少一些
+  const isGlobalSearch = !sources || sources.length === 0
+  const baseFetchK = isGlobalSearch 
+    ? Math.max(k * 50, Math.min(500, Math.max(200, Math.floor(docCount * 0.1))))  // 全库检索：至少200，最多500，或库的10%
+    : Math.max(k * 20, 100)  // 指定来源：至少100
+  const fetchK = Math.max(baseFetchK, k * 10)  // 至少是 k 的 10 倍
+  
+  console.log('[searchWithScores] Using search, fetchK:', fetchK, 'docCount:', docCount, 'isGlobalSearch:', isGlobalSearch)
 
   try {
+    // 直接使用原生 LanceDB API，因为 LangChain 的 similaritySearchWithScore 
+    // 在当前版本中不返回有效的分数（返回 undefined）
+    // 原生 API 可以正确返回 _distance 字段
+    console.log('[searchWithScores] Using native LanceDB API for accurate distance scores')
+    
+    // 构建 where 子句进行元数据过滤（如果指定了 sources）
+    // 参考 LanceDB 官方文档：使用 where 子句可以在查询时直接过滤，提高效率
+    let whereClause: string | undefined
+    if (sources && sources.length > 0) {
+      const normalizePath = (p: string): string => p.toLowerCase().replace(/\\/g, '/').trim()
+      const normalizedSources = sources.map((s) => normalizePath(s))
+      
+      // 构建 OR 条件：source == "path1" OR source == "path2" ...
+      // 使用转义函数处理路径中的特殊字符
+      const escapedSources = normalizedSources.map((s) => {
+        const escaped = s.replace(/"/g, '\\"')
+        return `"${escaped}"`
+      })
+      
+      // 尝试多种字段名：source、metadata.source
+      whereClause = `source IN (${escapedSources.join(', ')}) OR metadata.source IN (${escapedSources.join(', ')})`
+      console.log('[searchWithScores] Using where clause for source filtering:', whereClause.slice(0, 100) + '...')
+    }
+    
     // 生成查询向量（支持跨语言检索）
     const embeddings = getEmbeddings()
     
@@ -352,6 +390,46 @@ export async function searchSimilarDocumentsWithScores(
     const { detectLanguage, generateCrossLanguageQueries } = await import('./queryTranslator')
     const queryLang = detectLanguage(query)
     
+    // 辅助函数：执行向量搜索
+    const performSearch = async (vector: number[], searchLimit: number): Promise<any[]> => {
+      if (!table) {
+        throw new Error('Table is null')
+      }
+      
+      // 构建查询：明确指定向量列名 'vector'，并应用 where 过滤
+      // 参考 LanceDB 官方文档：table.search() 支持 where 参数进行元数据过滤
+      let searchQuery = table.search(vector)
+      
+      // 应用 where 子句（如果存在）
+      if (whereClause) {
+        try {
+          // 尝试使用 where 方法（如果支持）
+          if (typeof (searchQuery as any).where === 'function') {
+            searchQuery = (searchQuery as any).where(whereClause) as any
+          }
+        } catch (whereError) {
+          console.warn('[searchWithScores] Where clause not supported, will filter after search:', whereError)
+        }
+      }
+      
+      // 设置检索参数
+      // refineFactor: 用于提高检索质量的参数，值越大质量越高但速度越慢
+      // 根据检索数量动态调整 refineFactor
+      const refineFactor = fetchK > 200 ? 2 : 1
+      
+      try {
+        // 尝试使用 refineFactor 优化检索质量
+        if (typeof (searchQuery as any).refineFactor === 'function') {
+          searchQuery = (searchQuery as any).refineFactor(refineFactor) as any
+        }
+      } catch (refineError) {
+        // refineFactor 可能不支持，忽略
+      }
+      
+      const results = await searchQuery.limit(searchLimit).toArray()
+      return results
+    }
+    
     if (queryLang === 'zh') {
       console.log('[searchWithScores] Detected Chinese query, attempting cross-language search')
       try {
@@ -360,10 +438,7 @@ export async function searchSimilarDocumentsWithScores(
         // 使用所有查询变体进行检索
         const searchPromises = queries.map(async (q, index) => {
           const vector = await embeddings.embedQuery(q)
-          if (!table) {
-            throw new Error('Table is null')
-          }
-          const results = await table.search(vector).limit(fetchK).toArray()
+          const results = await performSearch(vector, fetchK)
           console.log(`[searchWithScores] Query variant ${index + 1} (${q.slice(0, 30)}...) got ${results.length} results`)
           return results.map((r: any) => ({ ...r, _queryIndex: index }))
         })
@@ -389,21 +464,11 @@ export async function searchSimilarDocumentsWithScores(
       } catch (error) {
         console.warn('[searchWithScores] Cross-language search failed, using original query:', error)
         // 回退到原始查询
-        if (!table) {
-          console.log('[searchWithScores] Table is null, returning empty')
-          return []
-        }
-        const results = await table.search(queryVector).limit(fetchK).toArray()
-        allSearchResults = results
+        allSearchResults = await performSearch(queryVector, fetchK)
       }
     } else {
       // 非中文查询，使用原始方法
-      if (!table) {
-        console.log('[searchWithScores] Table is null, returning empty')
-        return []
-      }
-      const results = await table.search(queryVector).limit(fetchK).toArray()
-      allSearchResults = results
+      allSearchResults = await performSearch(queryVector, fetchK)
     }
     
     console.log('[searchWithScores] Native search got', allSearchResults.length, 'results')
@@ -441,11 +506,12 @@ export async function searchSimilarDocumentsWithScores(
 
     console.log('[searchWithScores] Before source filtering:', results.length)
 
-    // 过滤来源（如指定了 sources）
+    // 如果 where 子句不支持或未生效，进行后置过滤
+    // 如果 where 子句生效，大部分过滤已在查询时完成，这里只做精确匹配和模糊匹配
     if (sources && sources.length > 0) {
       const normalizePath = (p: string): string => p.toLowerCase().replace(/\\/g, '/').trim()
       const sourceSet = new Set(sources.map((s) => normalizePath(s)))
-      console.log('[searchWithScores] Filtering by sources:', Array.from(sourceSet).slice(0, 3))
+      console.log('[searchWithScores] Post-filtering by sources:', Array.from(sourceSet).slice(0, 3))
 
       if (results.length > 0) {
         const firstDocSource = results[0].doc.metadata?.source
@@ -454,17 +520,29 @@ export async function searchSimilarDocumentsWithScores(
         console.log('[searchWithScores] First doc source:', firstDocSource)
       }
 
-      results = results.filter(({ doc }) => {
+      // 如果 where 子句可能已生效，先检查是否需要过滤
+      const needsFiltering = results.some(({ doc }) => {
         const docSource = doc.metadata?.source ? normalizePath(String(doc.metadata.source)) : ''
-        if (sourceSet.has(docSource)) return true
-        if (sourceSet.size < 50) {
-          for (const s of sourceSet) {
-            if (docSource.endsWith(s) || s.endsWith(docSource)) return true
-          }
-        }
-        return false
+        return !sourceSet.has(docSource)
       })
-      console.log('[searchWithScores] After source filtering:', results.length)
+
+      if (needsFiltering) {
+        // 进行精确匹配和模糊匹配
+        results = results.filter(({ doc }) => {
+          const docSource = doc.metadata?.source ? normalizePath(String(doc.metadata.source)) : ''
+          if (sourceSet.has(docSource)) return true
+          // 模糊匹配：处理路径格式差异
+          if (sourceSet.size < 50) {
+            for (const s of sourceSet) {
+              if (docSource.endsWith(s) || s.endsWith(docSource)) return true
+            }
+          }
+          return false
+        })
+        console.log('[searchWithScores] After source filtering:', results.length)
+      } else {
+        console.log('[searchWithScores] Where clause filtering already applied, skipping post-filter')
+      }
     }
 
     // 如果没有结果，直接返回空数组
@@ -577,9 +655,10 @@ export async function searchSimilarDocuments(
   const store = vectorStore
 
   // 记录一下数据库总行数
+  let docCount = 0
   try {
-    const count = await table?.countRows()
-    await logDebug(`Total rows in DB: ${count}`)
+    docCount = await table?.countRows() ?? 0
+    await logDebug(`Total rows in DB: ${docCount}`)
   } catch (e) {
     await logDebug(`Failed to get row count: ${e}`)
   }
@@ -654,16 +733,26 @@ export async function searchSimilarDocuments(
     return filteredDocs.slice(0, k)
   }
 
+  // 全库检索：动态调整检索数量以提高命中率
+  const baseFetchK = Math.max(k * 50, Math.min(500, Math.max(200, Math.floor(docCount * 0.1))))
+  const fetchK = Math.max(baseFetchK, k * 10)
+  
+  console.log(`[Search] Global search, fetchK: ${fetchK}, docCount: ${docCount}`)
+  await logDebug(`Global search, fetchK: ${fetchK}, docCount: ${docCount}`)
+  
   let results: Document[] = []
   try {
-    results = await store.similaritySearch(query, k)
+    // 全库检索时检索更多结果，然后取前 k 个
+    results = await store.similaritySearch(query, fetchK)
+    // 只返回前 k 个结果
+    results = results.slice(0, k)
   } catch (e) {
     console.warn('Similarity search failed (global mode):', e)
     await logDebug(`Similarity search failed (global): ${String(e)}`)
     return []
   }
-  console.log(`[Search] Global search found ${results.length} docs`)
-  await logDebug(`Global search found ${results.length} docs`)
+  console.log(`[Search] Global search found ${results.length} docs (from ${fetchK} candidates)`)
+  await logDebug(`Global search found ${results.length} docs (from ${fetchK} candidates)`)
   if (results.length > 0) {
     await logDebug(`First global result metadata: ${JSON.stringify(results[0].metadata)}`)
   }

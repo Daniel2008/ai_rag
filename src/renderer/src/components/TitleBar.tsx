@@ -14,27 +14,45 @@ interface TitleBarProps {
 export function TitleBar({ title = '智汇' }: TitleBarProps): ReactElement {
   const { token } = antdTheme.useToken()
   const [isMaximized, setIsMaximized] = useState(false)
-  const isMac = window.api.platform === 'darwin'
+  // 安全地获取平台信息，默认为非 macOS
+  // 如果 window.api 不存在，platform 为 undefined，undefined === 'darwin' 返回 false
+  const isMac = (window.api?.platform ?? '') === 'darwin'
 
   useEffect(() => {
+    // 检查 window.api 是否可用
+    if (!window.api) {
+      console.warn('[TitleBar] window.api is not available')
+      return
+    }
+
     // 初始化最大化状态
-    window.api.isWindowMaximized().then(setIsMaximized)
+    if (typeof window.api.isWindowMaximized === 'function') {
+      window.api.isWindowMaximized().then(setIsMaximized).catch(console.error)
+    }
 
     // 监听最大化状态变化
-    const unsubscribe = window.api.onMaximizedChange(setIsMaximized)
-    return unsubscribe
+    if (typeof window.api.onMaximizedChange === 'function') {
+      const unsubscribe = window.api.onMaximizedChange(setIsMaximized)
+      return unsubscribe
+    }
   }, [])
 
   const handleMinimize = (): void => {
-    window.api.minimizeWindow()
+    if (window.api && typeof window.api.minimizeWindow === 'function') {
+      window.api.minimizeWindow()
+    }
   }
 
   const handleMaximize = (): void => {
-    window.api.maximizeWindow()
+    if (window.api && typeof window.api.maximizeWindow === 'function') {
+      window.api.maximizeWindow()
+    }
   }
 
   const handleClose = (): void => {
-    window.api.closeWindow()
+    if (window.api && typeof window.api.closeWindow === 'function') {
+      window.api.closeWindow()
+    }
   }
 
   // macOS 使用原生标题栏按钮，只需要可拖拽区域

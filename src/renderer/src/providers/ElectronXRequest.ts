@@ -70,6 +70,14 @@ export class ElectronXRequest extends AbstractXRequestClass<
   run(params?: ElectronRequestInput): void {
     if (!params) return
 
+    // 检查 window.api 是否可用
+    if (!window.api) {
+      console.error('[ElectronXRequest] window.api is not available')
+      this._isRequesting = false
+      this.options.callbacks?.onError?.(new Error('Electron API is not available'))
+      return
+    }
+
     this._isRequesting = true
     this.chunks = []
     this.tokenBuffer = ''
@@ -146,21 +154,37 @@ export class ElectronXRequest extends AbstractXRequestClass<
         clearTimeout(this.batchTimer)
         this.batchTimer = null
       }
-      window.api.removeAllChatListeners()
+      // 安全地清理监听器
+      if (window.api && typeof window.api.removeAllChatListeners === 'function') {
+        window.api.removeAllChatListeners()
+      }
     }
     this.cleanup = cleanup
 
-    // 注册监听器
-    window.api.onChatToken(handleToken)
-    window.api.onChatSources(handleSources)
-    window.api.onChatDone(handleDone)
-    window.api.onChatError(handleError)
+    // 安全地注册监听器
+    if (typeof window.api.onChatToken === 'function') {
+      window.api.onChatToken(handleToken)
+    }
+    if (typeof window.api.onChatSources === 'function') {
+      window.api.onChatSources(handleSources)
+    }
+    if (typeof window.api.onChatDone === 'function') {
+      window.api.onChatDone(handleDone)
+    }
+    if (typeof window.api.onChatError === 'function') {
+      window.api.onChatError(handleError)
+    }
 
     // 发送请求
-    window.api.chat({
-      question: params.question,
-      sources: params.sources
-    })
+    if (typeof window.api.chat === 'function') {
+      window.api.chat({
+        question: params.question,
+        sources: params.sources
+      })
+    } else {
+      console.error('[ElectronXRequest] window.api.chat is not available')
+      handleError('Chat API is not available')
+    }
   }
 
   private cleanup: () => void = () => {}
