@@ -2,6 +2,8 @@ import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
+const IS_ANALYZE = process.env.ANALYZE === 'true'
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -39,11 +41,31 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()],
+    plugins: [
+      react(),
+      IS_ANALYZE
+        ? {
+            name: 'bundle-analyze-log',
+            generateBundle(_, bundle) {
+              const entries = Object.values(bundle) as any[]
+              const report = entries
+                .filter((entry) => entry && entry.type === 'chunk')
+                .map((chunk) => ({
+                  fileName: chunk.fileName,
+                  sizeKB: +(chunk.code.length / 1024).toFixed(2),
+                  imports: chunk.imports,
+                  modules: Object.keys(chunk.modules || {}).length
+                }))
+                .sort((a, b) => b.sizeKB - a.sizeKB)
+              console.log('Renderer bundle report:', report)
+            }
+          }
+        : null
+    ].filter(Boolean),
     build: {
       // 优化渲染进程构建
       minify: 'esbuild',
-      sourcemap: false,
+      sourcemap: IS_ANALYZE ? true : false,
       // 启用 CSS 代码分割
       cssCodeSplit: true,
       // 优化 chunk 大小
@@ -54,7 +76,7 @@ export default defineConfig({
           manualChunks: {
             'react-vendor': ['react', 'react-dom'],
             'antd-vendor': ['antd', '@ant-design/icons'],
-            'langchain-vendor': ['@langchain/core', '@langchain/community']
+            'langchain-vendor': ['@langchain/core', '@langchain/community', '@langchain/openai', '@langchain/ollama']
           }
         }
       }

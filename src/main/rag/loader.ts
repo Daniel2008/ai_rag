@@ -6,14 +6,6 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { ProgressCallback, ProgressStatus, TaskType } from './progressTypes'
 
-// OCR 相关类型定义（避免静态导入 ocrProcessor）
-type OCRProgressCallback = (progress: {
-  stage: string
-  percent: number
-  currentPage?: number
-  totalPages?: number
-}) => void
-
 /**
  * 检测文本是否为乱码
  * 乱码特征：大量无意义的标点符号、特殊字符组合，缺少有意义的文字
@@ -79,6 +71,65 @@ function getFileType(ext: string): FileType {
     default:
       return 'unknown'
   }
+}
+
+/** 尝试根据 BOM 判断编码 */
+function detectEncodingFromBOM(buffer: Buffer): 'utf8' | 'utf16le' | 'utf16be' | null {
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return 'utf8'
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return 'utf16le'
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return 'utf16be'
+  }
+  return null
+}
+
+/** 统计替换符数量（�）用于评估解码质量 */
+function countReplacementChars(text: string): number {
+  return (text.match(/\uFFFD/g) || []).length
+}
+
+/** 尝试用多编码解码文本，优先 UTF-8，其次 gb18030，最后 UTF-16 变体 */
+function decodeTextBuffer(buffer: Buffer): { text: string; encoding: string } {
+  // BOM 优先
+  const bom = detectEncodingFromBOM(buffer)
+  if (bom === 'utf8') {
+    return { text: buffer.toString('utf8'), encoding: 'utf8' }
+  }
+  if (bom === 'utf16le') {
+    return { text: buffer.toString('utf16le'), encoding: 'utf16le' }
+  }
+  if (bom === 'utf16be') {
+    // Node 不直接支持 utf16be，需要手动交换字节
+    const swapped = Buffer.alloc(buffer.length - 2)
+    for (let i = 2; i < buffer.length; i += 2) {
+      swapped[i - 2] = buffer[i + 1]
+      swapped[i - 1] = buffer[i]
+    }
+    return { text: swapped.toString('utf16le'), encoding: 'utf16be' }
+  }
+
+  // 无 BOM，尝试 UTF-8 与 GB18030 取较佳
+  const utf8Text = buffer.toString('utf8')
+  const utf8Bad = countReplacementChars(utf8Text) + (isGarbledText(utf8Text) ? 10_000 : 0)
+
+  let gbText = utf8Text
+  let gbBad = utf8Bad
+  try {
+    const decoder = new TextDecoder('gb18030')
+    gbText = decoder.decode(buffer)
+    gbBad = countReplacementChars(gbText) + (isGarbledText(gbText) ? 10_000 : 0)
+  } catch {
+    // 环境不支持 gb18030，忽略
+  }
+
+  if (gbBad < utf8Bad) {
+    return { text: gbText, encoding: 'gb18030' }
+  }
+  return { text: utf8Text, encoding: 'utf8' }
 }
 
 /** 文档元数据接口 */
@@ -173,9 +224,11 @@ export async function loadAndSplitFile(
       // 检查是否有乱码
       let garbledPageCount = 0
       let totalTextLength = 0
+      let meaningfulCharsTotal = 0
       
       for (const doc of docs) {
         totalTextLength += doc.pageContent.length
+        meaningfulCharsTotal += (doc.pageContent.match(/[\u4e00-\u9fa5a-zA-Z0-9]/g) || []).length
         if (isGarbledText(doc.pageContent)) {
           garbledPageCount++
         }
@@ -183,59 +236,30 @@ export async function loadAndSplitFile(
       
       // 如果超过 50% 的页面是乱码，使用 OCR
       const garbledRatio = docs.length > 0 ? garbledPageCount / docs.length : 0
+      const meaningfulRatio = totalTextLength > 0 ? meaningfulCharsTotal / totalTextLength : 0
       
-      if (garbledRatio > 0.5) {
-        console.warn(`[PDF Loader] 检测到 ${fileName} 存在字体编码问题（${garbledPageCount}/${docs.length} 页乱码），启用 OCR 处理`)
-        
-        onProgress?.({ 
-          taskType: TaskType.DOCUMENT_PARSE, 
-          status: ProgressStatus.PROCESSING, 
-          message: `⚠️ 检测到字体编码问题，启用 OCR 识别...`,
-          progress: 35 
+      // 判定：页面乱码比例超过 20% 或整体有效字符比例低于 40%，则认为无法解析
+      const isUnparsable = garbledRatio > 0.2 || meaningfulRatio < 0.4
+      
+      if (isUnparsable) {
+        const msg = `检测到文件疑似乱码，无法解析: ${fileName}（页乱码率 ${(
+          garbledRatio * 100
+        ).toFixed(1)}%，有效字符占比 ${(meaningfulRatio * 100).toFixed(1)}%）`
+        console.warn(`[PDF Loader] ${msg}`)
+        onProgress?.({
+          taskType: TaskType.DOCUMENT_PARSE,
+          status: ProgressStatus.ERROR,
+          message: msg
         })
-        
-        // 动态导入 OCR 模块并处理
-        const { ocrPDF } = await import('./ocrProcessor')
-        const ocrResult = await ocrPDF(filePath, createOCRProgressAdapter(onProgress))
-        
-        if (ocrResult.success && ocrResult.pages.length > 0) {
-          // OCR 成功，使用 OCR 结果替换
-          docs = ocrResult.pages.map((pageText, index) => {
-            return new Document({
-              pageContent: pageText,
-              metadata: {
-                source: filePath,
-                loc: { pageNumber: index + 1 },
-                ocrProcessed: true,
-                ocrConfidence: ocrResult.confidence
-              }
-            })
-          })
-          
-          onProgress?.({ 
-            taskType: TaskType.DOCUMENT_PARSE, 
-            status: ProgressStatus.PROCESSING, 
-            message: `OCR 识别完成，共 ${docs.length} 页，置信度 ${Math.round(ocrResult.confidence)}%`,
-            progress: 60 
-          })
-        } else {
-          // OCR 失败，保留原始（可能是乱码的）内容并警告
-          console.error(`[PDF Loader] OCR 处理失败: ${ocrResult.error}`)
-          onProgress?.({ 
-            taskType: TaskType.DOCUMENT_PARSE, 
-            status: ProgressStatus.PROCESSING, 
-            message: `⚠️ OCR 处理失败，保留原始解析结果`,
-            progress: 60 
-          })
-        }
-      } else {
-        onProgress?.({ 
-          taskType: TaskType.DOCUMENT_PARSE, 
-          status: ProgressStatus.PROCESSING, 
-          message: `PDF文件解析完成，共 ${docs.length} 页`,
-          progress: 60 
-        })
+        throw new Error(msg)
       }
+      
+      onProgress?.({ 
+        taskType: TaskType.DOCUMENT_PARSE, 
+        status: ProgressStatus.PROCESSING, 
+        message: `PDF文件解析完成，共 ${docs.length} 页`,
+        progress: 60 
+      })
     } catch (error) {
       onProgress?.({ 
         taskType: TaskType.DOCUMENT_PARSE, 
@@ -285,13 +309,19 @@ export async function loadAndSplitFile(
     })
     
     try {
-      const content = await fs.readFile(filePath, 'utf-8')
-      docs = [new Document({ pageContent: content, metadata: { source: filePath } })]
+      const buffer = await fs.readFile(filePath)
+      const { text: content, encoding } = decodeTextBuffer(buffer)
+      docs = [
+        new Document({
+          pageContent: content,
+          metadata: { source: filePath, encodingDetected: encoding }
+        })
+      ]
       
       onProgress?.({ 
         taskType: TaskType.DOCUMENT_PARSE, 
         status: ProgressStatus.PROCESSING, 
-        message: `文本文件读取完成`,
+        message: `文本文件读取完成（编码: ${encoding}）`,
         progress: 60 
       })
     } catch (error) {

@@ -801,12 +801,10 @@ app.on('before-quit', async (event) => {
   try {
     // 清理所有 Worker
     const { terminateDocumentWorker } = await import('./rag/workerManager')
-    const { terminateOCRWorker } = await import('./rag/ocrProcessor')
     const { closeVectorStore } = await import('./rag/store')
     
     await Promise.all([
       terminateDocumentWorker(),
-      terminateOCRWorker(),
       closeVectorStore()
     ])
     
