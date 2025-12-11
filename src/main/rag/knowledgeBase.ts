@@ -7,7 +7,7 @@ import {
   resetVectorStore,
   removeSourceFromStore,
   ensureEmbeddingsInitialized
-} from './store'
+} from './store/index'
 import { normalizePath } from './pathUtils'
 import type { Document } from '@langchain/core/documents'
 import type {
@@ -229,7 +229,7 @@ export async function deleteDocumentCollection(id: string): Promise<KnowledgeBas
       logInfo(`Removing ${collectionToDelete.files.length} files from vector store for collection deletion`, 'KnowledgeBase', { collectionId: id })
       
       // 导入批量删除函数
-      const { removeSourcesFromStore } = await import('./store')
+      const { removeSourcesFromStore } = await import('./store/index')
       try {
         await removeSourcesFromStore(collectionToDelete.files)
       } catch (error) {
@@ -374,7 +374,8 @@ async function rebuildVectorStore(
       (d) => new Document({ pageContent: d.pageContent, metadata: d.metadata })
     )
     // 阶段2：建立索引 (30-100%)
-    await addDocumentsToStore(docs, onProgress, 30)
+    // 重建时不使用追加模式，因为已经 resetVectorStore 清空了
+    await addDocumentsToStore(docs, onProgress, 30, false)
   } else if (onProgress) {
     onProgress({
       status: ProgressStatus.COMPLETED,

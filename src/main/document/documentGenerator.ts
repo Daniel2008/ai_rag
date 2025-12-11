@@ -3,7 +3,7 @@
  * 整合 LLM 大纲生成、RAG 内容检索和文档生成
  */
 import { BrowserWindow, dialog } from 'electron'
-import { searchSimilarDocuments } from '../rag/store'
+import { searchSimilarDocuments } from '../rag/store/index'
 import { generateWordDocument } from './wordGenerator'
 import { generatePPTDocument } from './pptGenerator'
 import type {

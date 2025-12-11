@@ -49,9 +49,9 @@ import {
   initVectorStore,
   clearEmbeddingsCache,
   removeSourceFromStore
-} from './rag/store'
+} from './rag/store/index'
 import { chatWithRag } from './rag/chat'
-import { logger, LogLevel } from './utils/logger'
+import { logger } from './utils/logger'
 import { runLangGraphChat } from './rag/langgraphChat'
 import { getSettings, saveSettings, AppSettings } from './settings'
 import {
@@ -958,7 +958,7 @@ app.on('before-quit', async (event) => {
   try {
     // 清理所有 Worker
     const { terminateDocumentWorker } = await import('./rag/workerManager')
-    const { closeVectorStore } = await import('./rag/store')
+    const { closeVectorStore } = await import('./rag/store/index')
     
     await Promise.all([
       terminateDocumentWorker(),

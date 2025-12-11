@@ -5,6 +5,10 @@
  */
 import { Document } from '@langchain/core/documents'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
+import { SemanticChunker, SemanticChunkConfig } from './semanticChunker'
+
+/** 分块策略类型 */
+export type ChunkingStrategy = 'semantic' | 'fixed'
 
 /** URL 加载选项 */
 export interface UrlLoadOptions {
@@ -26,6 +30,10 @@ export interface UrlLoadOptions {
   onProgress?: (stage: string, percent: number) => void
   allowedHosts?: string[]
   maxTotalChars?: number
+  /** 分块策略，默认 'semantic' */
+  chunkingStrategy?: ChunkingStrategy
+  /** 语义分块配置 */
+  semanticChunkConfig?: SemanticChunkConfig
 }
 
 /** 页面元信息 */
@@ -72,6 +80,54 @@ const DYNAMIC_RENDER_SITES = [
   'sspai.com',
   'infoq.cn'
 ]
+
+/**
+ * 统一的文本分块函数
+ * 根据配置选择语义分块或固定分块
+ */
+async function splitTextToDocuments(
+  content: string,
+  metadata: Record<string, unknown>,
+  strategy: ChunkingStrategy = 'semantic',
+  semanticConfig?: SemanticChunkConfig
+): Promise<Document[]> {
+  if (strategy === 'semantic') {
+    const chunker = new SemanticChunker({
+      maxChunkSize: 800,
+      minChunkSize: 200,
+      chunkOverlap: 150,
+      preserveHeadings: true,
+      preserveLists: true,
+      preserveCodeBlocks: true,
+      languageMode: 'auto',
+      ...semanticConfig
+    })
+
+    const chunks = await chunker.splitText(content)
+    return chunks.map((chunk, index) =>
+      new Document({
+        pageContent: chunk.content,
+        metadata: {
+          ...metadata,
+          chunkIndex: chunk.metadata.chunkIndex ?? index,
+          blockTypes: chunk.metadata.blockTypes ?? [],
+          hasHeading: chunk.metadata.hasHeading ?? false,
+          headingText: chunk.metadata.headingText ?? '',
+          chunkingStrategy: 'semantic'
+        }
+      })
+    )
+  } else {
+    const splitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 1000,
+      chunkOverlap: 200,
+      separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
+    })
+
+    const docs = await splitter.createDocuments([content], [{ ...metadata, chunkingStrategy: 'fixed' }])
+    return docs
+  }
+}
 
 // 常见的内容区域选择器权重
 const CONTENT_SELECTORS = [
@@ -661,23 +717,20 @@ export async function loadFromUrl(
       }
       
       onProgress?.('正在分割文档', 80)
-      const splitter = new RecursiveCharacterTextSplitter({
-        chunkSize: 1000,
-        chunkOverlap: 200,
-        separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
-      })
       
-      const docs = await splitter.createDocuments(
-        [cleanContent],
-        [
-          {
-            source: url,
-            title: title,
-            type: 'url',
-            fetchedAt: new Date().toISOString(),
-            siteName: new URL(url).hostname
-          }
-        ]
+      // 使用统一的分块函数
+      const chunkStrategy = options.chunkingStrategy ?? 'semantic'
+      const docs = await splitTextToDocuments(
+        cleanContent,
+        {
+          source: url,
+          title: title,
+          type: 'url',
+          fetchedAt: new Date().toISOString(),
+          siteName: new URL(url).hostname
+        },
+        chunkStrategy,
+        options.semanticChunkConfig
       )
       
       onProgress?.('处理完成', 100)

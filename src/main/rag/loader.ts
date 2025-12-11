@@ -5,6 +5,23 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { ProgressCallback, ProgressStatus, TaskType } from './progressTypes'
 import officeParser from 'officeparser'
+import { SemanticChunker, SemanticChunkConfig } from './semanticChunker'
+
+/** 分块策略类型 */
+export type ChunkingStrategy = 'semantic' | 'fixed'
+
+/** 分块配置 */
+export interface ChunkingConfig {
+  /** 分块策略，默认 'semantic' */
+  strategy?: ChunkingStrategy
+  /** 语义分块配置（仅当 strategy 为 'semantic' 时有效） */
+  semanticConfig?: SemanticChunkConfig
+  /** 固定分块配置（仅当 strategy 为 'fixed' 时有效） */
+  fixedConfig?: {
+    chunkSize?: number
+    chunkOverlap?: number
+  }
+}
 
 /**
  * 检测文本是否为乱码
@@ -170,13 +187,17 @@ export interface DocumentMetadata {
 
 export async function loadAndSplitFile(
   filePath: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  chunkingConfig?: ChunkingConfig
 ): Promise<Document[]> {
   const ext = path.extname(filePath).toLowerCase()
   const fileName = path.basename(filePath)
   const fileType = getFileType(ext)
   const importedAt = new Date().toISOString()
   let docs: Document[]
+
+  // 默认使用语义分块
+  const strategy = chunkingConfig?.strategy ?? 'semantic'
 
   // 发送开始解析进度
   onProgress?.({
@@ -382,16 +403,36 @@ export async function loadAndSplitFile(
   onProgress?.({ 
     taskType: TaskType.DOCUMENT_SPLIT, 
     status: ProgressStatus.PROCESSING, 
-    message: `开始分割文档内容`,
+    message: `开始分割文档内容（策略: ${strategy === 'semantic' ? '语义分块' : '固定分块'}）`,
     progress: 70 
   })
 
-  const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 1_000,
-    chunkOverlap: 200
-  })
+  let splitDocs: Document[]
 
-  const splitDocs = await splitter.splitDocuments(docs)
+  if (strategy === 'semantic') {
+    // 使用语义分块器（支持 NLP、自定义、固定三种方法）
+    const semanticChunker = new SemanticChunker({
+      method: 'nlp', // 默认使用 NLP 分块
+      maxTokens: 512,
+      minChunkSize: 200,
+      maxChunkSize: 1500,
+      chunkOverlap: 100,
+      preserveHeadings: true,
+      preserveLists: true,
+      preserveCodeBlocks: true,
+      preserveTables: true,
+      languageMode: 'auto',
+      ...chunkingConfig?.semanticConfig
+    })
+    splitDocs = await semanticChunker.splitDocuments(docs)
+  } else {
+    // 使用传统固定字符分块
+    const splitter = new RecursiveCharacterTextSplitter({
+      chunkSize: chunkingConfig?.fixedConfig?.chunkSize ?? 1000,
+      chunkOverlap: chunkingConfig?.fixedConfig?.chunkOverlap ?? 200
+    })
+    splitDocs = await splitter.splitDocuments(docs)
+  }
   
   onProgress?.({ 
     taskType: TaskType.DOCUMENT_SPLIT, 
@@ -402,23 +443,36 @@ export async function loadAndSplitFile(
 
   // 计算每个 chunk 的位置
   let currentPosition = 0
-  const sanitizedDocs = splitDocs.map((doc) => {
+  const sanitizedDocs = splitDocs.map((doc, index) => {
     const locPageNumber = doc.metadata?.loc?.pageNumber
     const resolvedPageNumber =
       typeof locPageNumber === 'number' && Number.isFinite(locPageNumber) ? locPageNumber : 0
 
-    // 估算位置：基于 chunk 索引和平均 chunk 大小
-    const position = currentPosition
-    currentPosition += doc.pageContent.length
+    // 使用语义分块器提供的位置信息，或估算位置
+    const position = doc.metadata?.chunkStartPosition ?? currentPosition
+    currentPosition = doc.metadata?.chunkEndPosition ?? (currentPosition + doc.pageContent.length)
 
-    const metadata: DocumentMetadata = {
+    // 构建增强的元数据
+    const metadata: DocumentMetadata & {
+      chunkIndex?: number
+      blockTypes?: string[]
+      hasHeading?: boolean
+      headingText?: string
+      chunkingStrategy?: string
+    } = {
       source: typeof doc.metadata?.source === 'string' ? doc.metadata.source : filePath,
       fileName,
       fileType,
       pageNumber: resolvedPageNumber,
       position,
       sourceType: 'file',
-      importedAt
+      importedAt,
+      // 语义分块额外元数据（确保没有 undefined 值，否则 LanceDB 无法推断类型）
+      chunkIndex: doc.metadata?.chunkIndex ?? index,
+      blockTypes: doc.metadata?.blockTypes ?? [],
+      hasHeading: doc.metadata?.hasHeading ?? false,
+      headingText: doc.metadata?.headingText ?? '',
+      chunkingStrategy: strategy
     }
 
     return new Document({

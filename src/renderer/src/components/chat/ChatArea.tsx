@@ -94,7 +94,7 @@ function getFileTypeColor(fileType?: ChatSource['fileType']): string {
 }
 
 /** 格式化时间 */
-function formatTime(dateStr?: string): string {
+function formatTime(dateStr?: string | number): string {
   if (!dateStr) return ''
   try {
     const date = new Date(dateStr)
@@ -111,23 +111,96 @@ function formatTime(dateStr?: string): string {
   }
 }
 
+/** 合并后的文件来源类型 */
+interface MergedSource {
+  fileName: string
+  fileType?: ChatSource['fileType']
+  filePath?: string
+  sourceType?: ChatSource['sourceType']
+  siteName?: string
+  url?: string
+  fetchedAt?: string | number
+  maxScore: number
+  avgScore: number
+  chunks: Array<{
+    content: string
+    pageNumber?: number
+    score: number
+  }>
+}
+
+/** 将同一文件的来源合并 */
+function mergeSourcesByFile(sources: ChatSource[]): MergedSource[] {
+  const byFile = new Map<string, MergedSource>()
+
+  for (const source of sources) {
+    const key = source.fileName
+    const existing = byFile.get(key)
+
+    if (existing) {
+      // 添加新的内容片段
+      existing.chunks.push({
+        content: source.content || '',
+        pageNumber: source.pageNumber,
+        score: source.score || 0
+      })
+      // 更新最高分
+      existing.maxScore = Math.max(existing.maxScore, source.score || 0)
+    } else {
+      // 创建新的合并来源
+      byFile.set(key, {
+        fileName: source.fileName,
+        fileType: source.fileType,
+        filePath: source.filePath,
+        sourceType: source.sourceType,
+        siteName: source.siteName,
+        url: source.url,
+        fetchedAt: source.fetchedAt,
+        maxScore: source.score || 0,
+        avgScore: 0,
+        chunks: [{
+          content: source.content || '',
+          pageNumber: source.pageNumber,
+          score: source.score || 0
+        }]
+      })
+    }
+  }
+
+  // 计算平均分并按最高分排序
+  const result = Array.from(byFile.values())
+  for (const item of result) {
+    item.avgScore = item.chunks.reduce((sum, c) => sum + c.score, 0) / item.chunks.length
+    // 按分数降序排序chunks
+    item.chunks.sort((a, b) => b.score - a.score)
+  }
+
+  return result.sort((a, b) => b.maxScore - a.maxScore)
+}
+
 /** 自定义引用来源显示组件 */
 const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactElement => {
   const { token } = antdTheme.useToken()
 
-  const items = sources.map((source, index) => ({
+  // 合并同一文件的来源
+  const mergedSources = mergeSourcesByFile(sources)
+
+  const items = mergedSources.map((source, index) => ({
     key: `source-${index}`,
     label: (
       <div className="flex items-center gap-2 w-full">
         {getFileTypeIcon(source.fileType)}
         <span className="flex-1 truncate font-medium">{source.fileName}</span>
-        {source.score !== undefined && (
+        <Tag color="blue" style={{ margin: 0 }}>
+          {source.chunks.length} 段
+        </Tag>
+        {source.maxScore !== undefined && (
           <Progress
-            percent={Math.round(source.score * 100)}
+            percent={Math.round(source.maxScore * 100)}
             size="small"
             style={{ width: 60 }}
             strokeColor={
-              source.score > 0.7 ? '#52c41a' : source.score > 0.5 ? '#faad14' : '#ff4d4f'
+              source.maxScore > 0.7 ? '#52c41a' : source.maxScore > 0.5 ? '#faad14' : '#ff4d4f'
             }
             format={(percent): string => `${percent}%`}
           />
@@ -135,17 +208,12 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
       </div>
     ),
     children: (
-      <div className="space-y-2 text-sm">
+      <div className="space-y-3 text-sm">
         {/* 元信息标签 */}
         <div className="flex flex-wrap gap-1">
           {source.fileType && (
             <Tag color={getFileTypeColor(source.fileType)} style={{ margin: 0 }}>
               {source.fileType === 'url' ? '网页' : source.fileType.toUpperCase()}
-            </Tag>
-          )}
-          {source.pageNumber && source.pageNumber > 0 && (
-            <Tag color="cyan" style={{ margin: 0 }}>
-              第 {source.pageNumber} 页
             </Tag>
           )}
           {source.sourceType === 'url' && source.siteName && (
@@ -155,17 +223,32 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
           )}
         </div>
 
-        {/* 引用内容预览 */}
-        <div
-          className="p-2 rounded text-xs leading-relaxed"
-          style={{
-            background: token.colorFillQuaternary,
-            color: token.colorTextSecondary,
-            maxHeight: 100,
-            overflow: 'auto'
-          }}
-        >
-          {source.content}
+        {/* 引用内容片段列表 */}
+        <div className="space-y-2">
+          {source.chunks.map((chunk, chunkIndex) => (
+            <div
+              key={chunkIndex}
+              className="p-2 rounded text-xs leading-relaxed"
+              style={{
+                background: token.colorFillQuaternary,
+                border: `1px solid ${token.colorBorderSecondary}`
+              }}
+            >
+              <div className="flex items-center gap-2 mb-1" style={{ color: token.colorTextTertiary }}>
+                {chunk.pageNumber && chunk.pageNumber > 0 && (
+                  <Tag color="cyan" style={{ margin: 0, fontSize: 10 }}>
+                    第 {chunk.pageNumber} 页
+                  </Tag>
+                )}
+                <span className="ml-auto text-xs">
+                  相关度: {Math.round(chunk.score * 100)}%
+                </span>
+              </div>
+              <div style={{ color: token.colorTextSecondary }}>
+                {chunk.content}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* 底部信息 */}
@@ -204,7 +287,7 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
         style={{ color: token.colorTextSecondary }}
       >
         <DatabaseOutlined />
-        <span>引用来源 ({sources.length})</span>
+        <span>引用来源 ({mergedSources.length} 个文件，{sources.length} 段引用)</span>
       </div>
       <Collapse
         items={items}
@@ -728,50 +811,6 @@ export function ChatArea({
     ]
   )
 
-  // 构建 Bubble.List 需要的 items 数组
-  const bubbleItems = useMemo(() => {
-    const filteredMessages = currentMessages.filter(
-      (m) => m.role !== 'system' || m.content.trim().length > 0
-    )
-
-    const messagesToRender =
-      filteredMessages.length > MAX_RENDERED_MESSAGES
-        ? filteredMessages.slice(-MAX_RENDERED_MESSAGES)
-        : filteredMessages
-
-    return messagesToRender.map((message) => {
-      const { think, realContent } = parseContent(message.content)
-      const hasContent = realContent.trim().length > 0
-      const typing = message.typing && hasContent
-      const loading = message.typing && !hasContent && !think
-
-      // 构建 Footer
-      const footer = (
-        <div className="flex flex-col w-full">
-          {message.role === 'ai' && message.sources && message.sources.length > 0 && (
-            <SourcesDisplay sources={message.sources} />
-          )}
-          <MessageActions
-            message={message}
-            copiedMessageKey={copiedMessageKey}
-            onCopyMessage={onCopyMessage}
-            onRetryMessage={onRetryMessage}
-            isTyping={isTyping}
-          />
-        </div>
-      )
-
-      return {
-        key: message.key,
-        role: message.role,
-        content: <MessageContent message={message} isTyping={isTyping} />,
-        typing,
-        loading,
-        footer
-      }
-    })
-  }, [currentMessages, isTyping, copiedMessageKey, onCopyMessage, onRetryMessage])
-
   // 计算是否有被截断的消息
   const hasHiddenMessages = useMemo(() => {
     const filteredCount = currentMessages.filter(
@@ -970,7 +1009,7 @@ export function ChatArea({
           type="primary"
           onClick={scrollToBottom}
           tooltip="回到底部"
-          style={{ position: 'fixed', right: 32, bottom: 168 }}
+          style={{ position: 'fixed', right: 24, bottom: 168 }}
         />
       )}
       <MetricsButton />
@@ -986,7 +1025,7 @@ function MetricsButton(): ReactElement {
         icon={<BarChartOutlined />}
         onClick={() => setOpen(true)}
         tooltip="检索指标"
-        style={{ position: 'fixed', right: 32, bottom: 224 }}
+        style={{ position: 'fixed', right: 24, bottom: 224 }}
       />
       <MetricsPanel open={open} onClose={() => setOpen(false)} />
     </>

@@ -127,6 +127,18 @@ class Logger {
   }
 
   /**
+   * 清理资源（停止定时器）
+   */
+  dispose(): void {
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer)
+      this.flushTimer = null
+    }
+    // 最后一次刷新到文件
+    this.flushToFile()
+  }
+
+  /**
    * 设置日志级别
    */
   setLevel(level: LogLevel): void {

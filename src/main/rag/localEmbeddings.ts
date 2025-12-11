@@ -22,14 +22,74 @@ const getModelsPath = (): string => {
 }
 
 // 支持的本地嵌入模型
+// 推荐使用 multilingual-e5-small 或 bge-m3 用于多语言场景
 export const LOCAL_EMBEDDING_MODELS = {
-  'nomic-embed-text': 'nomic-ai/nomic-embed-text-v1.5',
-  'all-MiniLM-L6': 'Xenova/all-MiniLM-L6-v2',
-  'bge-small-zh': 'Xenova/bge-small-zh-v1.5',
-  'multilingual-e5-small': 'Xenova/multilingual-e5-small'
+  // 多语言模型（推荐用于中英文混合场景）
+  'multilingual-e5-small': 'intfloat/multilingual-e5-small',  // 多语言，效果好
+  'multilingual-e5-base': 'intfloat/multilingual-e5-base',    // 多语言，更大更准
+  'bge-m3': 'BAAI/bge-m3',                                     // 多语言，最新最强
+  
+  // 中文专用模型
+  'bge-small-zh': 'BAAI/bge-small-zh-v1.5',                   // 中文专用
+  'bge-base-zh': 'BAAI/bge-base-zh-v1.5',                     // 中文专用，更大
+  
+  // 英文模型
+  'nomic-embed-text': 'nomic-ai/nomic-embed-text-v1.5',       // 英文，效果好
+  'all-MiniLM-L6': 'Xenova/all-MiniLM-L6-v2',                 // 英文，轻量
+  
+  // 通用多语言（Xenova 量化版，兼容性好）
+  'paraphrase-multilingual': 'Xenova/paraphrase-multilingual-MiniLM-L12-v2'
 } as const
 
 export type LocalEmbeddingModelName = keyof typeof LOCAL_EMBEDDING_MODELS
+
+// 模型语言支持信息
+export const MODEL_LANGUAGE_SUPPORT: Record<LocalEmbeddingModelName, {
+  languages: string[]
+  recommended: boolean
+  description: string
+}> = {
+  'multilingual-e5-small': {
+    languages: ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'it', 'pt', 'ru'],
+    recommended: true,
+    description: '多语言嵌入模型，支持100+语言，推荐用于中英文混合场景'
+  },
+  'multilingual-e5-base': {
+    languages: ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'it', 'pt', 'ru'],
+    recommended: true,
+    description: '多语言嵌入模型（大），效果更好但更慢'
+  },
+  'bge-m3': {
+    languages: ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'it', 'pt', 'ru'],
+    recommended: true,
+    description: 'BAAI最新多语言模型，支持稀疏+密集混合检索'
+  },
+  'bge-small-zh': {
+    languages: ['zh'],
+    recommended: false,
+    description: '中文专用嵌入模型，仅支持中文'
+  },
+  'bge-base-zh': {
+    languages: ['zh'],
+    recommended: false,
+    description: '中文专用嵌入模型（大），仅支持中文'
+  },
+  'nomic-embed-text': {
+    languages: ['en'],
+    recommended: false,
+    description: '英文嵌入模型，不推荐用于中文'
+  },
+  'all-MiniLM-L6': {
+    languages: ['en'],
+    recommended: false,
+    description: '轻量英文模型，不推荐用于中文'
+  },
+  'paraphrase-multilingual': {
+    languages: ['zh', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru'],
+    recommended: false,
+    description: '多语言释义模型，兼容性好'
+  }
+}
 
 // 模型下载进度回调
 export type ModelProgressCallback = ProgressCallback

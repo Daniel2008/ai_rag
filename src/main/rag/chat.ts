@@ -1,6 +1,6 @@
 import { StringOutputParser } from '@langchain/core/output_parsers'
 import { PromptTemplate } from '@langchain/core/prompts'
-import { searchSimilarDocumentsWithScores, getDocCount, withEmbeddingProgressSuppressed } from './store'
+import { searchSimilarDocumentsWithScores, getDocCount, withEmbeddingProgressSuppressed } from './store/index'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { Document } from '@langchain/core/documents'
 import { getSettings } from '../settings'
@@ -56,65 +56,36 @@ function extractFileName(filePath: string, title?: string): string {
   }
 }
 
-/** 去重：相同文件+页码只保留最相关的一个 */
+/** 去重：相同文件+页码+内容片段只保留一个，允许同文件多条不同内容 */
 function deduplicateSources(sources: ChatSource[]): ChatSource[] {
   const seen = new Map<string, ChatSource>()
 
   for (const source of sources) {
-    const key = `${source.fileName}:${source.pageNumber || 0}`
+    // 使用文件名+页码+内容前50字符作为主键，允许同文件同页的不同内容片段
+    const contentKey = source.content?.slice(0, 50) || ''
+    const key = `${source.fileName}:${source.pageNumber || 0}:${contentKey}`
     const existing = seen.get(key)
 
-    // 保留分数更高的
+    // 保留分数更高的（仅对完全相同的内容去重）
     if (!existing || (source.score || 0) > (existing.score || 0)) {
-      seen.set(key, source)
+      seen.set(key, { ...source })
     }
   }
 
+  // 按分数降序排序
   return Array.from(seen.values()).sort((a, b) => (b.score || 0) - (a.score || 0))
 }
 
-/** 确保来源多样性：从不同文件中选取结果 */
+/** 按分数排序返回结果，不再限制每个来源的数量 */
 function ensureSourceDiversity(
   pairs: { doc: Document; score: number }[],
-  minSources: number = 3,
-  maxPerSource: number = 2
+  _minSources: number = 3,
+  _maxPerSource: number = 20
 ): { doc: Document; score: number }[] {
   if (pairs.length === 0) return pairs
-
-  // 按来源分组
-  const bySource = new Map<string, { doc: Document; score: number }[]>()
-  for (const pair of pairs) {
-    const source = pair.doc.metadata?.source || 'unknown'
-    if (!bySource.has(source)) {
-      bySource.set(source, [])
-    }
-    bySource.get(source)!.push(pair)
-  }
-
-  // 如果来源数量已经足够，直接返回
-  if (bySource.size >= minSources) {
-    // 但仍然限制每个来源的数量
-    const result: { doc: Document; score: number }[] = []
-    for (const [, sourcePairs] of bySource) {
-      result.push(...sourcePairs.slice(0, maxPerSource))
-    }
-    return result.sort((a, b) => b.score - a.score)
-  }
-
-  // 来源不足，采用轮询策略选取，确保多样性
-  const result: { doc: Document; score: number }[] = []
-  const sourceEntries = Array.from(bySource.entries())
   
-  // 每轮从每个来源取一个
-  for (let round = 0; round < maxPerSource; round++) {
-    for (const [, sourcePairs] of sourceEntries) {
-      if (round < sourcePairs.length) {
-        result.push(sourcePairs[round])
-      }
-    }
-  }
-
-  return result.sort((a, b) => b.score - a.score)
+  // 直接按分数降序排序返回所有结果，不限制每个来源的数量
+  return [...pairs].sort((a, b) => b.score - a.score)
 }
 
 /** 将检索到的文档转换为来源信息 */
@@ -348,7 +319,7 @@ export async function chatWithRag(
   }
 
   // 5. 确保来源多样性并构建上下文
-  const diversePairs = ensureSourceDiversity(effectivePairs, 3, 2)
+  const diversePairs = ensureSourceDiversity(effectivePairs)
   const effectiveDocs = diversePairs.map((p) => p.doc)
   const effectiveScores = diversePairs.map((p) => p.score)
   const context = effectiveDocs.map((doc) => doc.pageContent).join('\n\n')

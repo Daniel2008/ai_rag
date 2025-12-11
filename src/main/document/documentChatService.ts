@@ -3,7 +3,7 @@
  * 将文档生成集成到对话流程中，使用流式输出和思维链
  */
 import { dialog, BrowserWindow } from 'electron'
-import { searchSimilarDocuments } from '../rag/store'
+import { searchSimilarDocuments } from '../rag/store/index'
 import { generateWordDocument } from './wordGenerator'
 import { generatePPTDocument } from './pptGenerator'
 import type { DocumentOutline, SectionContent, DocumentTheme } from './types'

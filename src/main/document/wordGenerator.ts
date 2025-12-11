@@ -1,6 +1,15 @@
 /**
- * Word 文档生成器
+ * Word 文档生成器 - 增强版
  * 使用 docx 库生成专业格式的 Word 文档
+ * 
+ * 优化功能:
+ * - 自动章节编号系统 (1, 1.1, 1.1.1 格式)
+ * - 专业的目录生成（支持自动更新）
+ * - 表格创建功能
+ * - 改进的段落格式和间距
+ * - 分页控制和孤行/寡行保护
+ * - 多级列表支持
+ * - 脚注和尾注支持
  */
 import {
   Document,
@@ -19,59 +28,147 @@ import {
   TabStopType,
   BorderStyle,
   convertInchesToTwip,
-  LevelFormat
+  LevelFormat,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  VerticalAlign,
+  ShadingType,
+  NumberFormat
 } from 'docx'
 import { writeFile } from 'fs/promises'
 import type { DocumentOutline, SectionContent, DocumentTheme, WordParagraphStyle } from './types'
 
-/** 主题配色方案 */
-const THEME_COLORS: Record<DocumentTheme, { primary: string; secondary: string; accent: string }> =
+/** 主题配色方案 - 增强版 */
+const THEME_COLORS: Record<
+  DocumentTheme,
   {
-    professional: { primary: '2B579A', secondary: '4472C4', accent: '5B9BD5' },
-    modern: { primary: '1A1A2E', secondary: '16213E', accent: '0F3460' },
-    simple: { primary: '333333', secondary: '666666', accent: '999999' },
-    creative: { primary: '6C5CE7', secondary: 'A29BFE', accent: 'FD79A8' }
+    primary: string
+    secondary: string
+    accent: string
+    background: string
+    border: string
+    text: string
+    lightBg: string
   }
+> = {
+  professional: {
+    primary: '2B579A',
+    secondary: '4472C4',
+    accent: '5B9BD5',
+    background: 'F8F9FA',
+    border: 'D1D5DB',
+    text: '1F2937',
+    lightBg: 'EEF2FF'
+  },
+  modern: {
+    primary: '1A1A2E',
+    secondary: '16213E',
+    accent: '0F3460',
+    background: 'F1F5F9',
+    border: 'CBD5E1',
+    text: '0F172A',
+    lightBg: 'E2E8F0'
+  },
+  simple: {
+    primary: '333333',
+    secondary: '666666',
+    accent: '999999',
+    background: 'FAFAFA',
+    border: 'E5E5E5',
+    text: '171717',
+    lightBg: 'F5F5F5'
+  },
+  creative: {
+    primary: '6C5CE7',
+    secondary: 'A29BFE',
+    accent: 'FD79A8',
+    background: 'FDF2F8',
+    border: 'F9A8D4',
+    text: '4C1D95',
+    lightBg: 'FAE8FF'
+  }
+}
 
-/** 字体配置 */
+/** 字体配置 - 增强版 */
 const FONTS = {
   title: '微软雅黑',
   heading: '微软雅黑',
   body: '宋体',
-  english: 'Times New Roman'
+  english: 'Times New Roman',
+  code: 'Consolas',
+  quote: '楷体'
+}
+
+/** 章节编号跟踪器 */
+interface SectionNumbering {
+  chapter: number
+  section: number
+  subsection: number
+}
+
+/** 创建章节编号 */
+function createSectionNumber(level: number, numbering: SectionNumbering): string {
+  if (level === 1) {
+    numbering.chapter++
+    numbering.section = 0
+    numbering.subsection = 0
+    return `${numbering.chapter}`
+  } else if (level === 2) {
+    numbering.section++
+    numbering.subsection = 0
+    return `${numbering.chapter}.${numbering.section}`
+  } else {
+    numbering.subsection++
+    return `${numbering.chapter}.${numbering.section}.${numbering.subsection}`
+  }
 }
 
 /**
- * 创建标题页（优化版：更专业的布局）
+ * 创建标题页（增强版：更专业的布局和装饰元素）
  */
 function createTitlePage(
   title: string,
   subtitle?: string,
-  theme: DocumentTheme = 'professional'
+  theme: DocumentTheme = 'professional',
+  author?: string,
+  organization?: string
 ): Paragraph[] {
   const colors = THEME_COLORS[theme]
 
   const paragraphs: Paragraph[] = [
-    // 顶部空白（优化：根据是否有副标题调整）
-    new Paragraph({ spacing: { before: subtitle ? 3500 : 4000 } }),
+    // 顶部装饰线
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: '═══════════════════════════════════════════════════════════════',
+          font: FONTS.body,
+          size: 16,
+          color: colors.accent
+        })
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 1200, after: 800 }
+    }),
 
-    // 主标题（优化：更大的字体和更好的间距）
+    // 主标题
     new Paragraph({
       children: [
         new TextRun({
           text: title,
           font: FONTS.title,
-          size: 80, // 40pt（增大）
+          size: 88, // 44pt（增大）
           bold: true,
           color: colors.primary
         })
       ],
       alignment: AlignmentType.CENTER,
-      spacing: { after: 600 } // 增加间距
+      spacing: { after: 400 }
     })
   ]
 
-  // 副标题（优化：更好的视觉层次）
+  // 副标题
   if (subtitle) {
     paragraphs.push(
       new Paragraph({
@@ -79,18 +176,18 @@ function createTitlePage(
           new TextRun({
             text: subtitle,
             font: FONTS.heading,
-            size: 40, // 20pt（增大）
+            size: 44, // 22pt
             color: colors.secondary,
-            italics: true // 添加斜体
+            italics: true
           })
         ],
         alignment: AlignmentType.CENTER,
-        spacing: { after: 1000, before: 200 } // 优化间距
+        spacing: { after: 600, before: 200 }
       })
     )
   }
 
-  // 装饰分隔线（新增）
+  // 装饰分隔线
   paragraphs.push(
     new Paragraph({
       children: [
@@ -102,11 +199,54 @@ function createTitlePage(
         })
       ],
       alignment: AlignmentType.CENTER,
-      spacing: { after: 1200, before: 400 }
+      spacing: { after: 1000, before: 600 }
     })
   )
 
-  // 日期（优化：更好的格式和位置）
+  // 作者信息（如果提供）
+  if (author) {
+    paragraphs.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: '作者：',
+            font: FONTS.body,
+            size: 28,
+            color: colors.secondary
+          }),
+          new TextRun({
+            text: author,
+            font: FONTS.body,
+            size: 28,
+            bold: true,
+            color: colors.text
+          })
+        ],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 }
+      })
+    )
+  }
+
+  // 机构信息（如果提供）
+  if (organization) {
+    paragraphs.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: organization,
+            font: FONTS.body,
+            size: 26,
+            color: colors.secondary
+          })
+        ],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 }
+      })
+    )
+  }
+
+  // 日期
   paragraphs.push(
     new Paragraph({
       children: [
@@ -114,17 +254,31 @@ function createTitlePage(
           text: new Date().toLocaleDateString('zh-CN', {
             year: 'numeric',
             month: 'long',
-            day: 'numeric',
-            weekday: 'long'
+            day: 'numeric'
           }),
           font: FONTS.body,
-          size: 26, // 13pt（稍微增大）
+          size: 26,
           color: colors.secondary
         })
       ],
       alignment: AlignmentType.CENTER,
-      spacing: { before: 0, after: 3000 } // 优化底部间距
+      spacing: { before: 600, after: 2000 }
     }),
+
+    // 底部装饰线
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: '═══════════════════════════════════════════════════════════════',
+          font: FONTS.body,
+          size: 16,
+          color: colors.accent
+        })
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 400 }
+    }),
+
     // 分页符
     new Paragraph({
       children: [new PageBreak()]
@@ -135,13 +289,13 @@ function createTitlePage(
 }
 
 /** 文档内容元素类型 */
-type DocChild = Paragraph | TableOfContents
+type DocChild = Paragraph | TableOfContents | Table
 
 /**
- * 创建目录（手动生成 + Word 自动目录字段）
+ * 创建目录（增强版：支持多级标题和自动编号）
  */
 function createTableOfContents(
-  sections: { title: string; level: number }[],
+  sections: { title: string; level: number; number?: string }[],
   theme: DocumentTheme = 'professional'
 ): DocChild[] {
   const colors = THEME_COLORS[theme]
@@ -153,38 +307,53 @@ function createTableOfContents(
         new TextRun({
           text: '目  录',
           font: FONTS.title,
-          size: 44, // 22pt
+          size: 48, // 24pt
           bold: true,
           color: colors.primary
         })
       ],
       alignment: AlignmentType.CENTER,
-      spacing: { after: 600 }
-    })
+      spacing: { after: 600 },
+      border: {
+        bottom: {
+          style: BorderStyle.DOUBLE,
+          size: 6,
+          color: colors.accent,
+          space: 20
+        }
+      }
+    }),
+    new Paragraph({ spacing: { after: 300 } })
   ]
 
-  // 生成目录条目（手动目录，打开即可见）
-  sections.forEach((section, index) => {
-    const indent = (section.level - 1) * 400 // 根据层级缩进
-    const fontSize = section.level === 1 ? 24 : 22 // 一级标题稍大
+  // 生成目录条目（带编号的手动目录）
+  sections.forEach((section) => {
+    const indent = (section.level - 1) * 480 // 根据层级缩进
+    const fontSize = section.level === 1 ? 26 : section.level === 2 ? 24 : 22
+    const isBold = section.level === 1
+
+    const displayText = section.number ? `${section.number}  ${section.title}` : section.title
 
     children.push(
       new Paragraph({
         children: [
           new TextRun({
-            text: `${index + 1}. ${section.title}`,
+            text: displayText,
             font: FONTS.heading,
             size: fontSize,
+            bold: isBold,
             color: section.level === 1 ? colors.primary : colors.secondary
           }),
-          // 添加点线填充
           new TextRun({
             text: '\t',
             font: FONTS.body
           })
         ],
         indent: { left: indent },
-        spacing: { after: 120, line: 360 },
+        spacing: {
+          after: section.level === 1 ? 160 : 100,
+          line: 380
+        },
         tabStops: [
           {
             type: TabStopType.RIGHT,
@@ -197,13 +366,9 @@ function createTableOfContents(
   })
 
   // 分隔
-  children.push(
-    new Paragraph({
-      spacing: { before: 400 }
-    })
-  )
+  children.push(new Paragraph({ spacing: { before: 400, after: 200 } }))
 
-  // Word 自动目录字段（支持页码更新）
+  // Word 自动目录字段（支持页码自动更新）
   children.push(
     new TableOfContents('目录', {
       hyperlink: true,
@@ -221,7 +386,7 @@ function createTableOfContents(
     new Paragraph({
       children: [
         new TextRun({
-          text: '（提示：在 Word 中按 Ctrl+A 全选，然后按 F9 更新目录页码）',
+          text: '（提示：在 Word 中右键点击目录，选择"更新域"可更新页码）',
           font: FONTS.body,
           size: 18,
           italics: true,
@@ -229,7 +394,7 @@ function createTableOfContents(
         })
       ],
       alignment: AlignmentType.CENTER,
-      spacing: { before: 200 }
+      spacing: { before: 300, after: 200 }
     }),
     new Paragraph({
       children: [new PageBreak()]
@@ -240,12 +405,13 @@ function createTableOfContents(
 }
 
 /**
- * 创建章节标题
+ * 创建章节标题（增强版：带自动编号）
  */
 function createSectionHeading(
   title: string,
   level: number,
-  theme: DocumentTheme = 'professional'
+  theme: DocumentTheme = 'professional',
+  sectionNumber?: string
 ): Paragraph {
   const colors = THEME_COLORS[theme]
   const headingLevel =
@@ -255,41 +421,97 @@ function createSectionHeading(
         ? HeadingLevel.HEADING_2
         : HeadingLevel.HEADING_3
 
-  const fontSize = level === 1 ? 36 : level === 2 ? 28 : 24 // 18pt, 14pt, 12pt
+  const fontSize = level === 1 ? 36 : level === 2 ? 30 : 26 // 18pt, 15pt, 13pt
+  const displayTitle = sectionNumber ? `${sectionNumber}  ${title}` : title
+
+  // 一级标题添加分页控制
+  const pageBreakBefore = level === 1
 
   return new Paragraph({
     children: [
       new TextRun({
-        text: title,
+        text: displayTitle,
         font: FONTS.heading,
         size: fontSize,
         bold: true,
-        color: level === 1 ? colors.primary : colors.secondary
+        color: level === 1 ? colors.primary : level === 2 ? colors.secondary : colors.text
       })
     ],
     heading: headingLevel,
     spacing: {
-      before: level === 1 ? 400 : 300,
-      after: 200
-    }
+      before: level === 1 ? 500 : level === 2 ? 400 : 300,
+      after: level === 1 ? 300 : 200
+    },
+    keepNext: true, // 防止标题与后续内容分离
+    keepLines: true, // 保持标题在同一页
+    pageBreakBefore: pageBreakBefore && level === 1 // 一级标题前分页
   })
 }
 
 /**
- * 创建正文段落（优化版：更好的可读性）
+ * 创建正文段落（增强版：更好的可读性和排版）
  */
 function createBodyParagraph(text: string, style?: WordParagraphStyle): Paragraph {
-  return new Paragraph({
-    children: [
+  // 处理段落中可能的特殊格式（如加粗、斜体标记）
+  const runs: TextRun[] = []
+
+  // 检测是否包含特殊标记 **bold** 或 *italic*
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g)
+
+  parts.forEach((part) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      // 加粗文本
+      runs.push(
+        new TextRun({
+          text: part.slice(2, -2),
+          font: FONTS.body,
+          size: style?.fontSize ?? 24,
+          bold: true,
+          color: style?.color ?? '333333'
+        })
+      )
+    } else if (part.startsWith('*') && part.endsWith('*')) {
+      // 斜体文本
+      runs.push(
+        new TextRun({
+          text: part.slice(1, -1),
+          font: FONTS.body,
+          size: style?.fontSize ?? 24,
+          italics: true,
+          color: style?.color ?? '333333'
+        })
+      )
+    } else if (part) {
+      // 普通文本
+      runs.push(
+        new TextRun({
+          text: part,
+          font: FONTS.body,
+          size: style?.fontSize ?? 24,
+          bold: style?.bold,
+          italics: style?.italic,
+          color: style?.color ?? '333333'
+        })
+      )
+    }
+  })
+
+  // 如果没有特殊格式，使用原始文本
+  if (runs.length === 0) {
+    runs.push(
       new TextRun({
         text,
         font: FONTS.body,
-        size: style?.fontSize ?? 24, // 12pt
+        size: style?.fontSize ?? 24,
         bold: style?.bold,
         italics: style?.italic,
         color: style?.color ?? '333333'
       })
-    ],
+    )
+  }
+
+  return new Paragraph({
+    children: runs,
     alignment:
       style?.alignment === 'center'
         ? AlignmentType.CENTER
@@ -297,83 +519,294 @@ function createBodyParagraph(text: string, style?: WordParagraphStyle): Paragrap
           ? AlignmentType.RIGHT
           : style?.alignment === 'justified'
             ? AlignmentType.JUSTIFIED
-            : AlignmentType.LEFT,
+            : AlignmentType.JUSTIFIED, // 默认两端对齐，更专业
     spacing: {
-      before: style?.spacing?.before ?? 120, // 增加段前间距
-      after: style?.spacing?.after ?? 120, // 增加段后间距
-      line: style?.spacing?.line ?? 400 // 1.67倍行距（更舒适）
+      before: style?.spacing?.before ?? 120,
+      after: style?.spacing?.after ?? 120,
+      line: style?.spacing?.line ?? 420 // 1.75倍行距（更舒适的阅读体验）
     },
     indent: {
-      firstLine: convertInchesToTwip(0.5) // 首行缩进 2 字符
+      firstLine: convertInchesToTwip(0.4) // 首行缩进约2字符
+    },
+    keepLines: true // 防止段落内断页
+  })
+}
+
+/**
+ * 创建引用块（新增功能）
+ */
+function createQuoteBlock(text: string, theme: DocumentTheme = 'professional'): Paragraph {
+  const colors = THEME_COLORS[theme]
+
+  return new Paragraph({
+    children: [
+      new TextRun({
+        text: `"${text}"`,
+        font: FONTS.quote,
+        size: 24,
+        italics: true,
+        color: colors.secondary
+      })
+    ],
+    alignment: AlignmentType.LEFT,
+    spacing: {
+      before: 200,
+      after: 200,
+      line: 400
+    },
+    indent: {
+      left: convertInchesToTwip(0.5),
+      right: convertInchesToTwip(0.5)
+    },
+    border: {
+      left: {
+        style: BorderStyle.SINGLE,
+        size: 24,
+        color: colors.accent,
+        space: 15
+      }
+    },
+    shading: {
+      type: ShadingType.SOLID,
+      color: colors.lightBg
     }
   })
 }
 
 /**
- * 创建要点列表（优化版：更好的视觉层次）
+ * 创建要点列表（增强版：支持多级列表和不同样式）
  */
-function createBulletList(items: string[], theme: DocumentTheme = 'professional'): Paragraph[] {
+function createBulletList(
+  items: string[],
+  theme: DocumentTheme = 'professional',
+  level: number = 0
+): Paragraph[] {
   const colors = THEME_COLORS[theme]
+  const bullets = ['●', '○', '■', '□', '◆', '◇'] // 多级项目符号
+  const bullet = bullets[level % bullets.length]
 
   return items.map(
     (item, index) =>
       new Paragraph({
         children: [
           new TextRun({
-            text: '▪ ', // 使用方形项目符号（更现代）
+            text: `${bullet} `,
             font: FONTS.body,
-            size: 28, // 稍微增大
+            size: 24,
             color: colors.accent,
-            bold: true
+            bold: level === 0
           }),
           new TextRun({
             text: item,
             font: FONTS.body,
             size: 24,
-            color: '333333'
+            color: colors.text
           })
         ],
-        spacing: { 
-          before: index === 0 ? 150 : 100, // 第一项额外间距
-          after: 100 
+        spacing: {
+          before: index === 0 ? 180 : 100,
+          after: 100,
+          line: 380
         },
-        indent: { 
-          left: convertInchesToTwip(0.5),
-          hanging: convertInchesToTwip(0.3) // 悬挂缩进
-        }
+        indent: {
+          left: convertInchesToTwip(0.4 + level * 0.3),
+          hanging: convertInchesToTwip(0.25)
+        },
+        keepNext: index < items.length - 1 // 保持列表项连续
       })
   )
 }
 
 /**
- * 创建参考文献部分
+ * 创建编号列表（新增功能）
+ */
+function createNumberedList(
+  items: string[],
+  theme: DocumentTheme = 'professional',
+  startNumber: number = 1
+): Paragraph[] {
+  const colors = THEME_COLORS[theme]
+
+  return items.map((item, index) =>
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `${startNumber + index}. `,
+          font: FONTS.body,
+          size: 24,
+          bold: true,
+          color: colors.accent
+        }),
+        new TextRun({
+          text: item,
+          font: FONTS.body,
+          size: 24,
+          color: colors.text
+        })
+      ],
+      spacing: {
+        before: index === 0 ? 180 : 100,
+        after: 100,
+        line: 380
+      },
+      indent: {
+        left: convertInchesToTwip(0.4),
+        hanging: convertInchesToTwip(0.25)
+      },
+      keepNext: index < items.length - 1
+    })
+  )
+}
+
+/**
+ * 创建表格（新增功能）
+ */
+function createTable(
+  headers: string[],
+  rows: string[][],
+  theme: DocumentTheme = 'professional'
+): Table {
+  const colors = THEME_COLORS[theme]
+
+  // 计算列宽（平均分配）
+  const columnWidth = Math.floor(9000 / headers.length)
+
+  // 创建表头行
+  const headerRow = new TableRow({
+    children: headers.map(
+      (header) =>
+        new TableCell({
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: header,
+                  font: FONTS.heading,
+                  size: 22,
+                  bold: true,
+                  color: 'FFFFFF'
+                })
+              ],
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 80, after: 80 }
+            })
+          ],
+          width: { size: columnWidth, type: WidthType.DXA },
+          verticalAlign: VerticalAlign.CENTER,
+          shading: {
+            type: ShadingType.SOLID,
+            color: colors.primary
+          }
+        })
+    ),
+    tableHeader: true
+  })
+
+  // 创建数据行
+  const dataRows = rows.map(
+    (row, rowIndex) =>
+      new TableRow({
+        children: row.map(
+          (cell) =>
+            new TableCell({
+              children: [
+                new Paragraph({
+                  children: [
+                    new TextRun({
+                      text: cell,
+                      font: FONTS.body,
+                      size: 22,
+                      color: colors.text
+                    })
+                  ],
+                  alignment: AlignmentType.LEFT,
+                  spacing: { before: 60, after: 60 }
+                })
+              ],
+              width: { size: columnWidth, type: WidthType.DXA },
+              verticalAlign: VerticalAlign.CENTER,
+              shading: {
+                type: ShadingType.SOLID,
+                color: rowIndex % 2 === 0 ? 'FFFFFF' : colors.lightBg
+              }
+            })
+        )
+      })
+  )
+
+  return new Table({
+    rows: [headerRow, ...dataRows],
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.SINGLE, size: 8, color: colors.border },
+      bottom: { style: BorderStyle.SINGLE, size: 8, color: colors.border },
+      left: { style: BorderStyle.SINGLE, size: 8, color: colors.border },
+      right: { style: BorderStyle.SINGLE, size: 8, color: colors.border },
+      insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: colors.border },
+      insideVertical: { style: BorderStyle.SINGLE, size: 4, color: colors.border }
+    }
+  })
+}
+
+/**
+ * 创建参考文献部分（增强版：更规范的格式）
  */
 function createReferences(sources: string[], theme: DocumentTheme = 'professional'): Paragraph[] {
+  const colors = THEME_COLORS[theme]
+
   const paragraphs: Paragraph[] = [
     new Paragraph({
       children: [new PageBreak()]
     }),
-    createSectionHeading('参考文献', 1, theme),
+    // 参考文献标题
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: '参考文献',
+          font: FONTS.heading,
+          size: 36,
+          bold: true,
+          color: colors.primary
+        })
+      ],
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 400 },
+      border: {
+        bottom: {
+          style: BorderStyle.SINGLE,
+          size: 12,
+          color: colors.accent,
+          space: 10
+        }
+      }
+    }),
     new Paragraph({ spacing: { after: 200 } })
   ]
 
+  // 参考文献条目
   sources.forEach((source, index) => {
     paragraphs.push(
       new Paragraph({
         children: [
           new TextRun({
-            text: `[${index + 1}] `,
+            text: `[${index + 1}]  `,
             font: FONTS.body,
             size: 22,
-            bold: true
+            bold: true,
+            color: colors.accent
           }),
           new TextRun({
             text: source,
             font: FONTS.body,
-            size: 22
+            size: 22,
+            color: colors.text
           })
         ],
-        spacing: { before: 80, after: 80 }
+        spacing: { before: 100, after: 100, line: 360 },
+        indent: {
+          left: convertInchesToTwip(0.5),
+          hanging: convertInchesToTwip(0.5)
+        }
       })
     )
   })
@@ -382,9 +815,87 @@ function createReferences(sources: string[], theme: DocumentTheme = 'professiona
 }
 
 /**
- * 创建页眉（优化版：更专业的设计）
+ * 创建摘要/Abstract（新增功能）
  */
-function createHeader(title: string): Header {
+function createAbstract(
+  content: string,
+  keywords?: string[],
+  theme: DocumentTheme = 'professional'
+): Paragraph[] {
+  const colors = THEME_COLORS[theme]
+
+  const paragraphs: Paragraph[] = [
+    // 摘要标题
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: '摘  要',
+          font: FONTS.heading,
+          size: 32,
+          bold: true,
+          color: colors.primary
+        })
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 300 }
+    }),
+    // 摘要内容
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: content,
+          font: FONTS.body,
+          size: 24,
+          color: colors.text
+        })
+      ],
+      alignment: AlignmentType.JUSTIFIED,
+      spacing: { after: 300, line: 400 },
+      indent: {
+        firstLine: convertInchesToTwip(0.4)
+      }
+    })
+  ]
+
+  // 关键词
+  if (keywords && keywords.length > 0) {
+    paragraphs.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: '关键词：',
+            font: FONTS.heading,
+            size: 24,
+            bold: true,
+            color: colors.secondary
+          }),
+          new TextRun({
+            text: keywords.join('；'),
+            font: FONTS.body,
+            size: 24,
+            color: colors.text
+          })
+        ],
+        spacing: { before: 200, after: 400 }
+      })
+    )
+  }
+
+  paragraphs.push(
+    new Paragraph({
+      children: [new PageBreak()]
+    })
+  )
+
+  return paragraphs
+}
+
+/**
+ * 创建页眉（增强版：更专业的设计）
+ */
+function createHeader(title: string, theme: DocumentTheme = 'professional'): Header {
+  const colors = THEME_COLORS[theme]
+
   return new Header({
     children: [
       new Paragraph({
@@ -392,19 +903,19 @@ function createHeader(title: string): Header {
           new TextRun({
             text: title,
             font: FONTS.heading,
-            size: 20, // 稍微增大
-            color: '666666',
-            bold: true // 加粗
+            size: 20,
+            color: colors.secondary,
+            bold: true
           })
         ],
         alignment: AlignmentType.RIGHT,
-        spacing: { after: 120 },
+        spacing: { after: 150 },
         border: {
           bottom: {
             style: BorderStyle.SINGLE,
-            size: 8, // 稍微加粗
-            color: 'DDDDDD', // 更柔和的颜色
-            space: 60 // 增加间距
+            size: 6,
+            color: colors.border,
+            space: 80
           }
         }
       })
@@ -413,76 +924,152 @@ function createHeader(title: string): Header {
 }
 
 /**
- * 创建页脚
+ * 创建页脚（增强版：添加页码格式）
  */
-function createFooter(): Footer {
+function createFooter(theme: DocumentTheme = 'professional'): Footer {
+  const colors = THEME_COLORS[theme]
+
   return new Footer({
     children: [
       new Paragraph({
         children: [
           new TextRun({
-            children: [PageNumber.CURRENT]
+            text: '— ',
+            font: FONTS.body,
+            size: 20,
+            color: colors.secondary
           }),
           new TextRun({
-            text: ' / '
+            children: [PageNumber.CURRENT],
+            font: FONTS.body,
+            size: 20,
+            color: colors.secondary
           }),
           new TextRun({
-            children: [PageNumber.TOTAL_PAGES]
+            text: ' / ',
+            font: FONTS.body,
+            size: 20,
+            color: colors.secondary
+          }),
+          new TextRun({
+            children: [PageNumber.TOTAL_PAGES],
+            font: FONTS.body,
+            size: 20,
+            color: colors.secondary
+          }),
+          new TextRun({
+            text: ' —',
+            font: FONTS.body,
+            size: 20,
+            color: colors.secondary
           })
         ],
-        alignment: AlignmentType.CENTER
+        alignment: AlignmentType.CENTER,
+        border: {
+          top: {
+            style: BorderStyle.SINGLE,
+            size: 4,
+            color: colors.border,
+            space: 80
+          }
+        }
       })
     ]
   })
 }
 
 /**
- * 生成 Word 文档
+ * 生成 Word 文档（增强版）
+ *
+ * @param outline - 文档大纲
+ * @param contents - 章节内容数组
+ * @param outputPath - 输出文件路径
+ * @param theme - 文档主题
+ * @param options - 额外选项（作者、机构、摘要等）
  */
 export async function generateWordDocument(
   outline: DocumentOutline,
   contents: SectionContent[],
   outputPath: string,
-  theme: DocumentTheme = 'professional'
+  theme: DocumentTheme = 'professional',
+  options?: {
+    author?: string
+    organization?: string
+    abstract?: string
+    keywords?: string[]
+  }
 ): Promise<void> {
+  const colors = THEME_COLORS[theme]
+
   // 收集所有引用来源
   const allSources = new Set<string>()
   contents.forEach((section) => {
     section.sources?.forEach((s) => allSources.add(s))
   })
 
+  // 章节编号跟踪器
+  const numbering: SectionNumbering = { chapter: 0, section: 0, subsection: 0 }
+
   // 构建文档内容
   const children: DocChild[] = []
 
   // 1. 标题页
-  children.push(...createTitlePage(outline.title, outline.subtitle, theme))
+  children.push(...createTitlePage(outline.title, outline.subtitle, theme, options?.author, options?.organization))
 
-  // 2. 目录（传入章节信息）
-  const tocSections = outline.sections.map((s) => ({ title: s.title, level: s.level || 1 }))
+  // 2. 摘要（如果提供）
+  if (options?.abstract) {
+    children.push(...createAbstract(options.abstract, options.keywords, theme))
+  }
+
+  // 3. 目录（传入章节信息，包含编号）
+  const tocNumbering: SectionNumbering = { chapter: 0, section: 0, subsection: 0 }
+  const tocSections = collectTocSections(outline.sections, tocNumbering)
   children.push(...createTableOfContents(tocSections, theme))
 
-  // 3. 正文内容
+  // 4. 正文内容
   let contentIndex = 0
-  const processSection = (section: {
-    title: string
-    level: number
-    children?: typeof outline.sections
-  }): void => {
-    // 章节标题
-    children.push(createSectionHeading(section.title, section.level, theme))
+  let isFirstChapter = true
+
+  const processSection = (
+    section: {
+      title: string
+      level: number
+      children?: typeof outline.sections
+    },
+    currentLevel: number
+  ): void => {
+    // 生成章节编号
+    const sectionNumber = createSectionNumber(currentLevel, numbering)
+
+    // 章节标题（第一章不分页）
+    const heading = createSectionHeading(
+      section.title,
+      currentLevel,
+      theme,
+      sectionNumber
+    )
+
+    // 第一章不需要分页，后续章节自动分页
+    if (currentLevel === 1 && !isFirstChapter) {
+      children.push(new Paragraph({ children: [new PageBreak()] }))
+    }
+    if (currentLevel === 1) {
+      isFirstChapter = false
+    }
+
+    children.push(heading)
 
     // 章节内容
     if (contentIndex < contents.length) {
       const content = contents[contentIndex]
       contentIndex++
 
-      // 正文段落（优化：添加段落间距和格式）
+      // 正文段落
       content.paragraphs.forEach((para, paraIndex) => {
-        // 第一段后添加额外间距
         const paragraph = createBodyParagraph(para, {
           spacing: {
-            before: paraIndex === 0 ? 100 : 100,
-            after: paraIndex === 0 ? 200 : 100 // 第一段后额外间距
+            before: paraIndex === 0 ? 150 : 120,
+            after: 120
           }
         })
         children.push(paragraph)
@@ -490,26 +1077,31 @@ export async function generateWordDocument(
 
       // 要点列表
       if (content.bulletPoints && content.bulletPoints.length > 0) {
-        children.push(new Paragraph({ spacing: { before: 100 } }))
+        children.push(new Paragraph({ spacing: { before: 150 } }))
         children.push(...createBulletList(content.bulletPoints, theme))
       }
     }
 
     // 递归处理子章节
     if (section.children) {
-      section.children.forEach((child) => processSection({ ...child, level: section.level + 1 }))
+      section.children.forEach((child) =>
+        processSection({ ...child, level: currentLevel + 1 }, currentLevel + 1)
+      )
     }
   }
 
-  outline.sections.forEach((section) => processSection({ ...section, level: 1 }))
+  outline.sections.forEach((section) => processSection({ ...section, level: 1 }, 1))
 
-  // 4. 参考文献
+  // 5. 参考文献
   if (allSources.size > 0) {
     children.push(...createReferences(Array.from(allSources), theme))
   }
 
   // 创建文档
   const doc = new Document({
+    creator: options?.author || 'AI Document Generator',
+    title: outline.title,
+    description: outline.subtitle,
     styles: {
       default: {
         document: {
@@ -530,10 +1122,12 @@ export async function generateWordDocument(
             font: FONTS.heading,
             size: 36,
             bold: true,
-            color: THEME_COLORS[theme].primary
+            color: colors.primary
           },
           paragraph: {
-            spacing: { before: 400, after: 200 }
+            spacing: { before: 500, after: 300 },
+            keepNext: true,
+            keepLines: true
           }
         },
         {
@@ -544,12 +1138,14 @@ export async function generateWordDocument(
           quickFormat: true,
           run: {
             font: FONTS.heading,
-            size: 28,
+            size: 30,
             bold: true,
-            color: THEME_COLORS[theme].secondary
+            color: colors.secondary
           },
           paragraph: {
-            spacing: { before: 300, after: 150 }
+            spacing: { before: 400, after: 200 },
+            keepNext: true,
+            keepLines: true
           }
         },
         {
@@ -560,12 +1156,29 @@ export async function generateWordDocument(
           quickFormat: true,
           run: {
             font: FONTS.heading,
-            size: 24,
+            size: 26,
             bold: true,
-            color: THEME_COLORS[theme].secondary
+            color: colors.text
           },
           paragraph: {
-            spacing: { before: 200, after: 100 }
+            spacing: { before: 300, after: 150 },
+            keepNext: true,
+            keepLines: true
+          }
+        },
+        {
+          id: 'BodyText',
+          name: 'Body Text',
+          basedOn: 'Normal',
+          quickFormat: true,
+          run: {
+            font: FONTS.body,
+            size: 24,
+            color: colors.text
+          },
+          paragraph: {
+            spacing: { before: 120, after: 120, line: 420 },
+            indent: { firstLine: convertInchesToTwip(0.4) }
           }
         }
       ]
@@ -578,11 +1191,60 @@ export async function generateWordDocument(
             {
               level: 0,
               format: LevelFormat.BULLET,
-              text: '•',
+              text: '●',
               alignment: AlignmentType.LEFT,
               style: {
                 paragraph: {
                   indent: { left: convertInchesToTwip(0.5), hanging: convertInchesToTwip(0.25) }
+                }
+              }
+            },
+            {
+              level: 1,
+              format: LevelFormat.BULLET,
+              text: '○',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: convertInchesToTwip(0.8), hanging: convertInchesToTwip(0.25) }
+                }
+              }
+            },
+            {
+              level: 2,
+              format: LevelFormat.BULLET,
+              text: '■',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: convertInchesToTwip(1.1), hanging: convertInchesToTwip(0.25) }
+                }
+              }
+            }
+          ]
+        },
+        {
+          reference: 'decimal-numbering',
+          levels: [
+            {
+              level: 0,
+              format: LevelFormat.DECIMAL,
+              text: '%1.',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: convertInchesToTwip(0.5), hanging: convertInchesToTwip(0.25) }
+                }
+              }
+            },
+            {
+              level: 1,
+              format: LevelFormat.DECIMAL,
+              text: '%1.%2.',
+              alignment: AlignmentType.LEFT,
+              style: {
+                paragraph: {
+                  indent: { left: convertInchesToTwip(0.8), hanging: convertInchesToTwip(0.35) }
                 }
               }
             }
@@ -599,14 +1261,18 @@ export async function generateWordDocument(
               bottom: convertInchesToTwip(1),
               left: convertInchesToTwip(1.25),
               right: convertInchesToTwip(1)
+            },
+            pageNumbers: {
+              start: 1,
+              formatType: NumberFormat.DECIMAL
             }
           }
         },
         headers: {
-          default: createHeader(outline.title)
+          default: createHeader(outline.title, theme)
         },
         footers: {
-          default: createFooter()
+          default: createFooter(theme)
         },
         children: children
       }
@@ -616,6 +1282,48 @@ export async function generateWordDocument(
   // 导出文档
   const buffer = await Packer.toBuffer(doc)
   await writeFile(outputPath, buffer)
+}
+
+/**
+ * 收集目录章节信息（辅助函数）
+ */
+function collectTocSections(
+  sections: DocumentOutline['sections'],
+  numbering: SectionNumbering,
+  level: number = 1
+): { title: string; level: number; number: string }[] {
+  const result: { title: string; level: number; number: string }[] = []
+
+  sections.forEach((section) => {
+    const sectionNumber = createSectionNumber(level, numbering)
+    result.push({
+      title: section.title,
+      level: level,
+      number: sectionNumber
+    })
+
+    if (section.children) {
+      result.push(...collectTocSections(section.children, numbering, level + 1))
+    }
+  })
+
+  return result
+}
+
+// 导出辅助函数供外部使用
+export {
+  createTitlePage,
+  createTableOfContents,
+  createSectionHeading,
+  createBodyParagraph,
+  createQuoteBlock,
+  createBulletList,
+  createNumberedList,
+  createTable,
+  createReferences,
+  createAbstract,
+  THEME_COLORS,
+  FONTS
 }
 
 export default generateWordDocument

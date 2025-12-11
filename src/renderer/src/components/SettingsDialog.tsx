@@ -65,16 +65,20 @@ const MODEL_PRESETS: Record<ModelProvider, string[]> = {
 }
 
 // 本地嵌入模型（内置，自动下载）
-// 将多语言检索体验最佳的 multilingual-e5-small 设为首选
+// 多语言模型推荐用于中英文混合文档
 const LOCAL_EMBEDDING_MODELS = [
-  { value: 'multilingual-e5-small', label: 'E5 Small 多语言 (推荐)' },
-  { value: 'nomic-embed-text', label: 'Nomic Embed Text v1.5' },
-  { value: 'all-MiniLM-L6', label: 'All-MiniLM-L6 (轻量)' },
-  { value: 'bge-small-zh', label: 'BGE Small 中文 (中文优化)' }
+  { value: 'multilingual-e5-small', label: '🌍 E5 多语言 Small (推荐，100+语言)' },
+  { value: 'multilingual-e5-base', label: '🌍 E5 多语言 Base (更准确，较大)' },
+  { value: 'bge-m3', label: '🌍 BGE-M3 (BAAI最新多语言)' },
+  { value: 'paraphrase-multilingual', label: '🌍 释义多语言 (兼容性好)' },
+  { value: 'bge-small-zh', label: '🇨🇳 BGE Small 中文 (中文专用)' },
+  { value: 'bge-base-zh', label: '🇨🇳 BGE Base 中文 (中文专用，更大)' },
+  { value: 'nomic-embed-text', label: '🇺🇸 Nomic Embed (英文)' },
+  { value: 'all-MiniLM-L6', label: '🇺🇸 MiniLM-L6 (英文轻量)' }
 ]
 
 // Ollama 嵌入模型
-const OLLAMA_EMBEDDING_MODELS = ['nomic-embed-text', 'mxbai-embed-large', 'all-minilm', 'bge-m3']
+const OLLAMA_EMBEDDING_MODELS = ['nomic-embed-text', 'mxbai-embed-large', 'all-minilm', 'bge-m3', 'snowflake-arctic-embed']
 
 export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps): ReactElement {
   const [form] = Form.useForm<AppSettings>()

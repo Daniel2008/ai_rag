@@ -1,6 +1,6 @@
 {
   "name": "zhihui-rag",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "智汇 - AI 智能知识库助手，支持文档问答、知识检索、文档生成",
   "main": "./out/main/index.js",
   "author": "ZhiHui Team",
@@ -49,6 +49,7 @@
     "@langchain/ollama": "^1.0.3",
     "@langchain/openai": "^1.1.3",
     "@langchain/textsplitters": "^1.0.1",
+    "@orama/chunker": "^0.0.3",
     "antd": "^6.0.1",
     "apache-arrow": "^18.1.0",
     "better-sqlite3": "11.10.0",
@@ -62,7 +63,6 @@
     "onnxruntime-node": "^1.23.2",
     "pdf-parse": "^1.1.1",
     "pptxgenjs": "^4.0.1",
-    "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.4.0",
     "tesseract.js": "^6.0.1"
@@ -94,7 +94,6 @@
     "react-dom": "^19.2.1",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6",
-    "vitest": "^2.0.0"
+    "vite": "^7.2.6"
   }
 }
