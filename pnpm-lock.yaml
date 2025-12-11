@@ -38,6 +38,9 @@ importers:
       '@langchain/core':
         specifier: ^1.1.4
         version: 1.1.4(openai@6.10.0(ws@8.18.3)(zod@4.1.13))
+      '@langchain/langgraph':
+        specifier: ^1.0.4
+        version: 1.0.4(@langchain/core@1.1.4(openai@6.10.0(ws@8.18.3)(zod@4.1.13)))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod-to-json-schema@3.25.0(zod@4.1.13))(zod@4.1.13)
       '@langchain/ollama':
         specifier: ^1.0.3
         version: 1.0.3(@langchain/core@1.1.4(openai@6.10.0(ws@8.18.3)(zod@4.1.13)))
@@ -68,9 +71,6 @@ importers:
       electron-store:
         specifier: ^11.0.2
         version: 11.0.2
-      langchain:
-        specifier: ^1.1.5
-        version: 1.1.5(@langchain/core@1.1.4(openai@6.10.0(ws@8.18.3)(zod@4.1.13)))(openai@6.10.0(ws@8.18.3)(zod@4.1.13))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod-to-json-schema@3.25.0(zod@4.1.13))
       lucide-react:
         specifier: ^0.556.0
         version: 0.556.0(react@19.2.1)
@@ -4082,12 +4082,6 @@ packages:
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
-
-  langchain@1.1.5:
-    resolution: {integrity: sha512-tmJHdCsi4AQLEWDeTm9QTWgdwYgIaA4kfp14KFw6e1sUPxjsoHqdFqdf1ZJZxhs1h/n+hpIr3NBfGNBQnWxWEQ==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@langchain/core': 1.1.4
 
   langsmith@0.3.82:
     resolution: {integrity: sha512-RTcxtRm0zp2lV+pMesMW7EZSsIlqN7OmR2F6sZ/sOFQwmcLVl+VErMPV4VkX4Sycs4/EIAFT5hpr36EqiHoikQ==}
@@ -10017,7 +10011,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.13.2)
+      retry-axios: 2.6.0(axios@1.13.2(debug@4.4.3))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -10370,23 +10364,6 @@ snapshots:
   keyv@4.5.4:
     dependencies:
       json-buffer: 3.0.1
-
-  langchain@1.1.5(@langchain/core@1.1.4(openai@6.10.0(ws@8.18.3)(zod@4.1.13)))(openai@6.10.0(ws@8.18.3)(zod@4.1.13))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod-to-json-schema@3.25.0(zod@4.1.13)):
-    dependencies:
-      '@langchain/core': 1.1.4(openai@6.10.0(ws@8.18.3)(zod@4.1.13))
-      '@langchain/langgraph': 1.0.4(@langchain/core@1.1.4(openai@6.10.0(ws@8.18.3)(zod@4.1.13)))(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod-to-json-schema@3.25.0(zod@4.1.13))(zod@4.1.13)
-      '@langchain/langgraph-checkpoint': 1.0.0(@langchain/core@1.1.4(openai@6.10.0(ws@8.18.3)(zod@4.1.13)))
-      langsmith: 0.3.82(openai@6.10.0(ws@8.18.3)(zod@4.1.13))
-      uuid: 10.0.0
-      zod: 4.1.13
-    transitivePeerDependencies:
-      - '@opentelemetry/api'
-      - '@opentelemetry/exporter-trace-otlp-proto'
-      - '@opentelemetry/sdk-trace-base'
-      - openai
-      - react
-      - react-dom
-      - zod-to-json-schema
 
   langsmith@0.3.82(openai@6.10.0(ws@8.18.3)(zod@4.1.13)):
     dependencies:
@@ -11767,7 +11744,7 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.13.2):
+  retry-axios@2.6.0(axios@1.13.2(debug@4.4.3)):
     dependencies:
       axios: 1.13.2(debug@4.4.3)
 
