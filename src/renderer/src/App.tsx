@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } fro
 import type { ReactElement } from 'react'
 import { XProvider } from '@ant-design/x'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
-import { Form, FloatButton, message as antdMessage, theme as antdTheme, Spin } from 'antd'
+import { Form, FloatButton, message as antdMessage, theme as antdTheme, Skeleton } from 'antd'
+import { DatabaseOutlined, MenuOutlined } from '@ant-design/icons'
 
 import { getTheme } from './theme'
 import type { AppSettings } from './components/SettingsDialog'
@@ -62,6 +63,9 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   const [collectionForm] = Form.useForm()
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null)
   const [sidebarCollapsed] = useState(false)
+  const [initializing, setInitializing] = useState(true)
+  const [showKnowledgeBase, setShowKnowledgeBase] = useState(true)
+  const [showChatSidebar, setShowChatSidebar] = useState(true)
 
   // 全局进度管理
   const { progress } = useProgress()
@@ -161,9 +165,23 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         await loadConversations()
       } catch (error) {
         console.error('Failed to initialize app:', error)
+      } finally {
+        setInitializing(false)
       }
     })()
   }, [syncKnowledgeBase, setActiveDocument, setActiveCollectionId, loadConversations])
+
+  // 窄屏自动隐藏知识库，宽屏恢复显示
+  useEffect(() => {
+    const handleResize = (): void => {
+      const isNarrow = window.innerWidth < 1280
+      setShowKnowledgeBase(!isNarrow)
+      setShowChatSidebar(window.innerWidth >= 1100)
+    }
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // 滚动到底部 (仅当不是加载更多时)
   useEffect(() => {
@@ -366,6 +384,40 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     [messageApi, syncKnowledgeBase]
   )
 
+  if (initializing) {
+    return (
+      <div
+        className="flex flex-col h-screen overflow-hidden"
+        style={{ background: token.colorBgLayout }}
+      >
+        <div
+          className="h-10 px-4 flex items-center gap-2"
+          style={{ background: token.colorBgElevated }}
+        >
+          <Skeleton.Avatar active size="small" shape="square" />
+          <Skeleton.Input active size="small" style={{ width: 120 }} />
+        </div>
+        <div className="flex flex-1 overflow-hidden">
+          <div
+            className="w-72 border-r p-4"
+            style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}
+          >
+            <Skeleton active paragraph={{ rows: 6 }} title={false} />
+          </div>
+          <div className="flex-1 p-6 overflow-hidden">
+            <Skeleton active paragraph={{ rows: 10 }} title />
+          </div>
+          <div
+            className="w-80 border-l p-4"
+            style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}
+          >
+            <Skeleton active paragraph={{ rows: 6 }} title={false} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="flex flex-col h-screen overflow-hidden"
@@ -384,18 +436,20 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         {contextHolder}
 
         {/* 左侧：对话历史 */}
-        <ChatSidebar
-          themeMode={themeMode}
-          sidebarCollapsed={sidebarCollapsed}
-          conversationItems={conversationItems}
-          activeConversationKey={activeConversationKey}
-          readyDocuments={readyDocuments}
-          onThemeChange={onThemeChange}
-          onActiveConversationChange={handleActiveConversationChange}
-          onCreateNewConversation={createNewConversation}
-          onDeleteConversation={handleDeleteConversation}
-          onOpenSettings={() => setSettingsOpen(true)}
-        />
+        {showChatSidebar && (
+          <ChatSidebar
+            themeMode={themeMode}
+            sidebarCollapsed={sidebarCollapsed}
+            conversationItems={conversationItems}
+            activeConversationKey={activeConversationKey}
+            readyDocuments={readyDocuments}
+            onThemeChange={onThemeChange}
+            onActiveConversationChange={handleActiveConversationChange}
+            onCreateNewConversation={createNewConversation}
+            onDeleteConversation={handleDeleteConversation}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        )}
 
         {/* 中间：聊天区域 */}
         <section className="flex min-w-0 flex-1 flex-col">
@@ -445,54 +499,61 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         </section>
 
         {/* 右侧：知识库面板（懒加载） */}
-        <Suspense
-          fallback={
-            <div className="w-80 flex items-center justify-center">
-              <Spin />
-            </div>
-          }
-        >
-          <AppSidebar
-          collections={collections}
-          activeCollectionId={activeCollectionId}
-          activeDocument={activeDocument}
-          files={files}
-          onCollectionChange={(key) => setActiveCollectionId(key || undefined)}
-          onCreateCollection={openCreateCollection}
-          onEditCollection={openEditCollection}
-          onDeleteCollection={(id) => void handleDeleteCollection(id)}
-          onUpload={(targetCollectionId) => void handleUpload(targetCollectionId)}
-          onAddUrl={async (url, targetCollectionId) => {
-              const result = await window.api.processUrl(url)
-              if (result.success) {
-                // 将 URL 添加到文档集
-                const collection = collections.find((c) => c.id === targetCollectionId)
-                if (collection) {
-                  const snapshot = await window.api.updateCollection({
-                    id: targetCollectionId,
-                    files: [...collection.files, url]
-                  })
-                  syncKnowledgeBase(snapshot)
+        {showKnowledgeBase && (
+          <Suspense
+            fallback={
+              <div
+                className="w-80 h-full border-l px-4 py-6"
+                style={{
+                  background: token.colorBgContainer,
+                  borderColor: token.colorBorderSecondary
+                }}
+              >
+                <Skeleton active paragraph={{ rows: 8 }} title={false} />
+              </div>
+            }
+          >
+            <AppSidebar
+              collections={collections}
+              activeCollectionId={activeCollectionId}
+              activeDocument={activeDocument}
+              files={files}
+              onCollectionChange={(key) => setActiveCollectionId(key || undefined)}
+              onCreateCollection={openCreateCollection}
+              onEditCollection={openEditCollection}
+              onDeleteCollection={(id) => void handleDeleteCollection(id)}
+              onUpload={(targetCollectionId) => void handleUpload(targetCollectionId)}
+              onAddUrl={async (url, targetCollectionId) => {
+                const result = await window.api.processUrl(url)
+                if (result.success) {
+                  const collection = collections.find((c) => c.id === targetCollectionId)
+                  if (collection) {
+                    const snapshot = await window.api.updateCollection({
+                      id: targetCollectionId,
+                      files: [...collection.files, url]
+                    })
+                    syncKnowledgeBase(snapshot)
+                  }
+                } else {
+                  throw new Error(result.error || '导入失败')
                 }
-              } else {
-                throw new Error(result.error || '导入失败')
-              }
-            }}
-          onUpdateActiveDocument={setActiveDocument}
-          onReindexDocument={handleReindexDocument}
-          onRemoveDocument={handleRemoveDocument}
-          onRebuildAllIndex={async () => {
-              try {
-                const snapshot = await window.api.rebuildKnowledgeBase()
-                syncKnowledgeBase(snapshot)
-                messageApi.success('知识库索引重建完成')
-              } catch (error) {
-                console.error('Failed to rebuild knowledge base:', error)
-                messageApi.error('重建索引失败，请查看日志')
-              }
-            }}
-        />
-        </Suspense>
+              }}
+              onUpdateActiveDocument={setActiveDocument}
+              onReindexDocument={handleReindexDocument}
+              onRemoveDocument={handleRemoveDocument}
+              onRebuildAllIndex={async () => {
+                try {
+                  const snapshot = await window.api.rebuildKnowledgeBase()
+                  syncKnowledgeBase(snapshot)
+                  messageApi.success('知识库索引重建完成')
+                } catch (error) {
+                  console.error('Failed to rebuild knowledge base:', error)
+                  messageApi.error('重建索引失败，请查看日志')
+                }
+              }}
+            />
+          </Suspense>
+        )}
 
         {/* 文档集编辑弹窗 */}
         <CollectionModal
@@ -519,7 +580,29 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         )}
 
         {/* 浮动按钮 - 回到顶部 */}
-        <FloatButton.BackTop visibilityHeight={400} style={{ right: 340 }} />
+        <FloatButton.BackTop
+          visibilityHeight={400}
+          style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 1050 }}
+        />
+        {/* 浮动控制组：对话列表 & 知识库显隐 */}
+        <FloatButton.Group
+          shape="circle"
+          style={{ position: 'fixed', right: 24, bottom: 96, zIndex: 1050 }}
+          trigger="click"
+          icon={<MenuOutlined />}
+          tooltip="显示/隐藏侧栏"
+        >
+          <FloatButton
+            icon={<MenuOutlined />}
+            tooltip={showChatSidebar ? '隐藏对话列表' : '显示对话列表'}
+            onClick={() => setShowChatSidebar((v) => !v)}
+          />
+          <FloatButton
+            icon={<DatabaseOutlined />}
+            tooltip={showKnowledgeBase ? '隐藏知识库' : '显示知识库'}
+            onClick={() => setShowKnowledgeBase((v) => !v)}
+          />
+        </FloatButton.Group>
       </div>
     </div>
   )

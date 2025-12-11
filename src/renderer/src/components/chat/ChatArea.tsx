@@ -4,7 +4,7 @@ import { Bubble, ThoughtChain } from '@ant-design/x'
 import XMarkdown from '@ant-design/x-markdown'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
 import type { RoleType } from '@ant-design/x/es/bubble/interface'
-import { Avatar, Button, Tooltip, Progress, Tag, Collapse, theme as antdTheme } from 'antd'
+import { Avatar, Button, Tooltip, Progress, Tag, Collapse, theme as antdTheme, FloatButton } from 'antd'
 import {
   FileTextOutlined,
   FilePdfOutlined,
@@ -471,6 +471,7 @@ export function ChatArea({
   const needsInitialScrollRef = useRef(false)
   // 跟踪用户是否在底部附近（用于决定是否自动滚动）
   const isNearBottomRef = useRef(true)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 
   // 检测用户滚动位置
   useEffect(() => {
@@ -482,6 +483,7 @@ export function ChatArea({
       // 如果距离底部小于 150px，认为用户在底部
       const nearBottom = scrollHeight - scrollTop - clientHeight < 150
       isNearBottomRef.current = nearBottom
+      setShowScrollToBottom(!nearBottom)
     }
 
     container.addEventListener('scroll', checkScrollPosition, { passive: true })
@@ -588,6 +590,18 @@ export function ChatArea({
       setLoadingMore(false)
     }
   }, [onLoadMore, hasMore, loadingMore])
+
+  const scrollToBottom = useCallback(() => {
+    const lastKey = currentMessages[currentMessages.length - 1]?.key
+    requestAnimationFrame(() => {
+      if (bubbleListRef.current && lastKey) {
+        bubbleListRef.current.scrollTo({ key: lastKey, block: 'end', behavior: 'smooth' })
+      }
+      if (containerRef.current) {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight
+      }
+    })
+  }, [bubbleListRef, currentMessages])
 
   // 头像配置
   const userAvatar = useMemo(
@@ -762,6 +776,14 @@ export function ChatArea({
         )}
         <Bubble.List ref={bubbleListRef} role={roles} autoScroll={false} items={bubbleItems} />
       </div>
+      {showScrollToBottom && (
+        <FloatButton
+          type="primary"
+          onClick={scrollToBottom}
+          tooltip="回到底部"
+          style={{ position: 'fixed', right: 32, bottom: 168 }}
+        />
+      )}
     </div>
   )
 }
