@@ -43,6 +43,25 @@ let cachedEmbeddings: Embeddings | null = null
 let cachedEmbeddingsConfig: { provider: string; model: string; baseUrl?: string } | null = null
 // 并发控制：防止多个并发请求同时初始化
 let embeddingsInitPromise: Promise<Embeddings> | null = null
+// 进度抑制计数，避免聊天触发全局进度条
+let embeddingProgressSuppressionCount = 0
+
+function isEmbeddingProgressSuppressed(): boolean {
+  return embeddingProgressSuppressionCount > 0
+}
+
+export async function withEmbeddingProgressSuppressed<T>(fn: () => Promise<T>): Promise<T> {
+  embeddingProgressSuppressionCount++
+  try {
+    return await fn()
+  } finally {
+    embeddingProgressSuppressionCount = Math.max(0, embeddingProgressSuppressionCount - 1)
+  }
+}
+
+export function setEmbeddingProgressSuppressed(suppressed: boolean): void {
+  embeddingProgressSuppressionCount = Math.max(0, suppressed ? embeddingProgressSuppressionCount + 1 : embeddingProgressSuppressionCount - 1)
+}
 
 const TABLE_NAME = 'documents'
 
@@ -58,6 +77,29 @@ function getDbPath(): string {
 
 // 发送嵌入模型进度到渲染进程
 function sendEmbeddingProgress(progress: Parameters<ModelProgressCallback>[0]): void {
+  if (isEmbeddingProgressSuppressed()) {
+    // #region agent log
+    void fetch('http://127.0.0.1:7242/ingest/fe103cf3-70ae-473a-91de-9a32e06f1764', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'debug-session',
+        runId: 'pre-fix',
+        hypothesisId: 'H5',
+        location: 'store.ts:sendEmbeddingProgress',
+        message: 'embedding progress suppressed',
+        data: {
+          status: progress.status,
+          progress: progress.progress,
+          taskType: progress.taskType
+        },
+        timestamp: Date.now()
+      })
+    }).catch(() => {})
+    // #endregion
+    return
+  }
+
   // 兼容非Electron环境
   if (BrowserWindow?.getAllWindows) {
     const windows = BrowserWindow.getAllWindows()

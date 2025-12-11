@@ -3,7 +3,7 @@ import { ChatOpenAI } from '@langchain/openai'
 import { ChatAnthropic } from '@langchain/anthropic'
 import { StringOutputParser } from '@langchain/core/output_parsers'
 import { PromptTemplate } from '@langchain/core/prompts'
-import { searchSimilarDocumentsWithScores, getDocCount } from './store'
+import { searchSimilarDocumentsWithScores, getDocCount, withEmbeddingProgressSuppressed } from './store'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { Document } from '@langchain/core/documents'
 import { getSettings, type ModelProvider } from '../settings'
@@ -240,10 +240,12 @@ export async function chatWithRag(
   console.log('[chatWithRag] Question:', question)
   console.log('[chatWithRag] Sources filter:', options.sources)
 
-  const retrievedPairs = await searchSimilarDocumentsWithScores(question, {
-    k: 4,
-    sources: options.sources
-  })
+  const retrievedPairs = await withEmbeddingProgressSuppressed(() =>
+    searchSimilarDocumentsWithScores(question, {
+      k: 4,
+      sources: options.sources
+    })
+  )
   console.log('[chatWithRag] Retrieved pairs count:', retrievedPairs.length)
   if (retrievedPairs.length > 0) {
     console.log('[chatWithRag] First pair source:', retrievedPairs[0].doc.metadata?.source)
