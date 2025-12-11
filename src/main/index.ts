@@ -51,6 +51,7 @@ import {
   removeSourceFromStore
 } from './rag/store'
 import { chatWithRag } from './rag/chat'
+import { runLangGraphChat } from './rag/langgraphChat'
 import { getSettings, saveSettings, AppSettings } from './settings'
 import {
   getKnowledgeBaseSnapshot,
@@ -654,6 +655,25 @@ app.whenReady().then(async () => {
       return
     }
 
+    // 清洗 sources：空数组或无效传 undefined，避免误判为限定空来源
+    if (!normalized.sources || normalized.sources.length === 0) {
+      normalized.sources = undefined
+    }
+
+    // 进一步校验：仅保留当前 snapshot 中就绪的文件
+    if (normalized.sources) {
+      const snapshot = getKnowledgeBaseSnapshot()
+      const readySet = new Set(
+        snapshot.files.filter((f) => f.status === 'ready').map((f) => f.path.toLowerCase())
+      )
+      const filtered = normalized.sources.filter((s) => readySet.has(s.toLowerCase()))
+      if (filtered.length === 0) {
+        normalized.sources = undefined
+      } else {
+        normalized.sources = filtered
+      }
+    }
+
     try {
       console.log('Chat question:', normalized.question)
 
@@ -678,15 +698,21 @@ app.whenReady().then(async () => {
         return
       }
 
-      // 普通 RAG 聊天流程
-      const { stream, sources } = await chatWithRag(normalized.question, {
-        sources: normalized.sources
-      })
+      // 使用 LangGraph 版 RAG，保持流式回传
+      const result = await runLangGraphChat(
+        normalized.question,
+        normalized.sources,
+        (chunk) => event.reply('rag:chat-token', chunk)
+      )
 
-      event.reply('rag:chat-sources', sources)
+      if (result.error) {
+        event.reply('rag:chat-error', result.error)
+        return
+      }
 
-      for await (const chunk of stream) {
-        event.reply('rag:chat-token', chunk)
+      event.reply('rag:chat-sources', result.sources || [])
+      if (result.answer) {
+        event.reply('rag:chat-token', result.answer)
       }
       event.reply('rag:chat-done')
     } catch (error) {
@@ -701,6 +727,29 @@ app.whenReady().then(async () => {
     const title = question.trim().slice(0, 20) + (question.length > 20 ? '...' : '')
     updateConversationTimestamp(conversationKey, title)
     return title
+  })
+
+  // LangGraph 版 RAG（一次性响应，不流式）
+  ipcMain.handle('rag:chat-graph', async (_, payload) => {
+    const normalized =
+      typeof payload === 'string'
+        ? { question: payload, sources: undefined }
+        : { question: payload?.question, sources: payload?.sources }
+
+    if (!normalized.question) {
+      return { success: false, error: '问题内容不能为空' }
+    }
+
+    const result = await runLangGraphChat(normalized.question, normalized.sources)
+    if (result.error) {
+      return { success: false, error: result.error }
+    }
+
+    return {
+      success: true,
+      answer: result.answer,
+      sources: result.sources
+    }
   })
 
   // Document Generation IPC

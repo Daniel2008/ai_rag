@@ -56,6 +56,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
 
   // 输入状态
   const [inputValue, setInputValue] = useState('')
+  const [mentionedFiles, setMentionedFiles] = useState<{ token: string; path: string }[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [, setCurrentSettings] = useState<AppSettings | null>(null)
   const [collectionModalOpen, setCollectionModalOpen] = useState(false)
@@ -72,6 +73,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
 
   // Refs
   const bubbleListRef = useRef<BubbleListRef | null>(null)
+  const userChangedScopeRef = useRef(false)
 
   // 对话管理 Hook
   const {
@@ -105,6 +107,8 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     handleReindexDocument,
     handleRemoveDocument
   } = useKnowledgeBase({ messageApi })
+
+  const readyFiles = useMemo(() => files.filter((f) => f.status === 'ready'), [files])
 
   // 聊天流式响应 Hook - 使用 @ant-design/x-sdk
   const {
@@ -153,6 +157,12 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         ])
         setCurrentSettings(loadedSettings)
         syncKnowledgeBase(snapshot)
+
+        // 启动时清空选中文档，避免残留来源；仅在用户未手动切换范围时才重置为全库
+        setActiveDocument(undefined)
+        if (!userChangedScopeRef.current) {
+          setQuestionScope('all')
+        }
 
         if (snapshot.files.length > 0) {
           setActiveDocument(snapshot.files[0]?.path)
@@ -212,13 +222,8 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
 
         let selectedSources: string[] | undefined
 
-        if (questionScope === 'active') {
-          if (!activeDocument) {
-            messageApi.warning('请先选择一个文档')
-            return
-          }
-          selectedSources = [activeDocument]
-        } else if (questionScope === 'collection') {
+        // 文档集优先
+        if (questionScope === 'collection') {
           if (!resolvedCollectionId) {
             messageApi.warning('请先创建并选择一个文档集')
             return
@@ -233,9 +238,13 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             return
           }
           selectedSources = targetCollection.files
+        } else {
+          // 全库：若输入中有 # 选择的文件，则限定这些文件；否则全库
+          selectedSources = mentionedFiles.length > 0 ? mentionedFiles.map((m) => m.path) : undefined
         }
 
         setInputValue('')
+        setMentionedFiles([])
         // 使用 useChatWithXChat 的 sendMessage 发送消息
         sendMessage(trimmed, selectedSources)
       })()
@@ -244,9 +253,9 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
       isTyping,
       activeConversationKey,
       questionScope,
-      activeDocument,
       resolvedCollectionId,
       collections,
+      mentionedFiles,
       messageApi,
       createNewConversation,
       sendMessage
@@ -483,16 +492,25 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             isTyping={isTyping}
             readyDocuments={readyDocuments}
             questionScope={questionScope}
-            activeDocument={activeDocument}
-            activeFile={activeFile}
+          activeDocument={activeDocument}
             collections={collections}
             resolvedCollectionId={resolvedCollectionId}
             showQuickQuestions={displayMessages.length <= 1}
             hasReadyFiles={readyDocuments > 0}
-            onInputChange={setInputValue}
-            onSubmit={handleSend}
-            onQuestionScopeChange={setQuestionScope}
-            onCollectionChange={setActiveCollectionId}
+            readyFiles={readyFiles}
+          onMentionFilesChange={setMentionedFiles}
+          onInputChange={setInputValue}
+          onSubmit={handleSend}
+          onQuestionScopeChange={(scope) => {
+            userChangedScopeRef.current = true
+            setQuestionScope(scope)
+            if (scope === 'collection') {
+              if (!resolvedCollectionId && collections[0]) {
+                setActiveCollectionId((prev) => prev ?? collections[0].id)
+              }
+            }
+          }}
+          onCollectionChange={setActiveCollectionId}
             onStopGeneration={stopGeneration}
             onPromptClick={handlePromptClick}
           />

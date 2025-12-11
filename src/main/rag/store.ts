@@ -979,12 +979,12 @@ export async function removeSourceFromStore(source: string): Promise<void> {
   const normalizedSource = normalizePath(source)
   const originalSource = source
   
-  // 尝试多种路径格式和字段名
+  // 尝试多种路径格式和字段名（仅精确匹配，避免误删）
   const sourceVariants = [
-    originalSource,           // 原始路径
-    normalizedSource,         // 标准化路径
-    originalSource.replace(/\\/g, '/'),  // 统一斜杠
-    path.normalize(originalSource),      // 规范化路径
+    originalSource, // 原始路径
+    normalizedSource, // 标准化路径
+    originalSource.replace(/\\/g, '/'), // 统一斜杠
+    path.normalize(originalSource) // 规范化路径
   ]
   
   // 去重
@@ -1003,15 +1003,12 @@ export async function removeSourceFromStore(source: string): Promise<void> {
   for (const variant of uniqueVariants) {
     const escapedVariant = escapePredicateValue(variant)
     
-    // 尝试多种字段名和谓词格式
+    // 尝试多种字段名的精确匹配（不再使用 LIKE，避免误删）
     const predicates = [
       `source == "${escapedVariant}"`,
       `metadata.source == "${escapedVariant}"`,
       `path == "${escapedVariant}"`,
-      `url == "${escapedVariant}"`,
-      // 也尝试 LIKE 匹配（如果支持）
-      `source LIKE "%${escapedVariant.replace(/"/g, '')}%"`,
-      `metadata.source LIKE "%${escapedVariant.replace(/"/g, '')}%"`,
+      `url == "${escapedVariant}"`
     ]
 
     for (const predicate of predicates) {
@@ -1027,50 +1024,7 @@ export async function removeSourceFromStore(source: string): Promise<void> {
     }
   }
 
-  // 如果所有谓词都失败，尝试使用查询+删除的方式
-  if (deletedCount === 0) {
-    logWarn('All predicates failed, trying query-based deletion', 'VectorStore', { source })
-    try {
-      // 先查询匹配的记录数量
-      const allRows = await table.search([0]).limit(10000).toArray() // 使用虚拟向量查询所有记录
-      const matchingRows = allRows.filter((row: { source?: string; metadata?: { source?: string } }) => {
-        const rowSource = row.source || row.metadata?.source
-        if (!rowSource) return false
-        
-        const normalizedRowSource = normalizePath(String(rowSource))
-        return uniqueVariants.some(variant => {
-          const normalizedVariant = normalizePath(variant)
-          return normalizedRowSource === normalizedVariant || 
-                 normalizedRowSource.includes(normalizedVariant) ||
-                 normalizedVariant.includes(normalizedRowSource)
-        })
-      })
-
-      if (matchingRows.length > 0) {
-        logInfo(`Found ${matchingRows.length} matching records, attempting deletion`, 'VectorStore')
-        // 对每个匹配的记录尝试删除（通过唯一标识）
-        // 注意：这需要表有唯一 ID 字段，如果不存在则可能无法精确删除
-        for (const variant of uniqueVariants) {
-          const escapedVariant = escapePredicateValue(variant)
-          const finalPredicates = [
-            `source == "${escapedVariant}"`,
-            `metadata.source == "${escapedVariant}"`,
-          ]
-          for (const predicate of finalPredicates) {
-            try {
-              await (table as unknown as { delete: (where: string) => Promise<void> }).delete(predicate)
-              deletedCount++
-            } catch (e) {
-              // 忽略错误
-            }
-          }
-        }
-      }
-    } catch (queryError) {
-      logError('Query-based deletion also failed', 'VectorStore', { source }, queryError as Error)
-      lastError = queryError as Error
-    }
-  }
+  // 移除查询+模糊删除的兜底逻辑，防止误删全表
 
   // 清除文档数量缓存
   invalidateDocCountCache()

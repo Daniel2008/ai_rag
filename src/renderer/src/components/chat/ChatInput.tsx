@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { Sender } from '@ant-design/x'
 import { Divider, Select, Tag, Typography, theme as antdTheme } from 'antd'
 import { ThunderboltOutlined } from '@ant-design/icons'
@@ -14,12 +14,13 @@ interface ChatInputProps {
   readyDocuments: number
   questionScope: QuestionScope
   activeDocument: string | undefined
-  activeFile: IndexedFile | undefined
   collections: DocumentCollection[]
   resolvedCollectionId: string | undefined
   showQuickQuestions: boolean
   /** 是否有可用文件（用于启用"当前文档"选项） */
   hasReadyFiles: boolean
+  readyFiles: IndexedFile[]
+  onMentionFilesChange: (mentions: { token: string; path: string }[]) => void
   onInputChange: (value: string) => void
   onSubmit: (value: string) => void
   onQuestionScopeChange: (scope: QuestionScope) => void
@@ -35,11 +36,12 @@ export function ChatInput({
   readyDocuments,
   questionScope,
   activeDocument,
-  activeFile,
   collections,
   resolvedCollectionId,
   showQuickQuestions,
   hasReadyFiles,
+  readyFiles,
+  onMentionFilesChange,
   onInputChange,
   onSubmit,
   onQuestionScopeChange,
@@ -48,6 +50,53 @@ export function ChatInput({
   onPromptClick
 }: ChatInputProps): ReactElement {
   const { token } = antdTheme.useToken()
+  const [mentionVisible, setMentionVisible] = useState(false)
+  const [mentionKeyword, setMentionKeyword] = useState('')
+  const [mentioned, setMentioned] = useState<{ token: string; path: string }[]>([])
+
+  const filteredMentionOptions = useMemo(
+    () =>
+      readyFiles
+        .filter((f) => f.name.toLowerCase().includes(mentionKeyword.toLowerCase()))
+        .slice(0, 8),
+    [readyFiles, mentionKeyword]
+  )
+
+  const handleChange = useCallback(
+    (val: string) => {
+      onInputChange(val)
+      const remaining = mentioned.filter((m) => val.includes(m.token))
+      if (remaining.length !== mentioned.length) {
+        setMentioned(remaining)
+        onMentionFilesChange(remaining)
+      }
+      const match = /#([^\s#]*)$/.exec(val)
+      if (match) {
+        setMentionKeyword(match[1] || '')
+        setMentionVisible(true)
+      } else {
+        setMentionKeyword('')
+        setMentionVisible(false)
+      }
+    },
+    [mentioned, onInputChange, onMentionFilesChange]
+  )
+
+  const handleSelectMention = useCallback(
+    (path: string, name: string) => {
+      const token = `#${name}`
+      const next = inputValue.replace(/#([^\s#]*)$/, `${token} `)
+      onInputChange(next)
+      const nextMentions = mentioned.some((m) => m.path === path)
+        ? mentioned
+        : [...mentioned, { token, path }]
+      setMentioned(nextMentions)
+      onMentionFilesChange(nextMentions)
+      setMentionVisible(false)
+      setMentionKeyword('')
+    },
+    [inputValue, mentioned, onInputChange, onMentionFilesChange]
+  )
 
   // Sender 头部操作
   const senderHeader = useMemo(
@@ -59,7 +108,6 @@ export function ChatInput({
           onChange={onQuestionScopeChange}
           options={[
             { label: '🌐 全库检索', value: 'all', disabled: !hasReadyFiles },
-            { label: '📄 当前文档', value: 'active', disabled: !hasReadyFiles || !activeDocument },
             {
               label: '📁 文档集',
               value: 'collection',
@@ -85,11 +133,9 @@ export function ChatInput({
         )}
         <div className="flex-1" />
         <Typography.Text type="secondary" className="text-xs">
-          {questionScope === 'active'
-            ? `限定: ${activeFile?.name || '未选择'}`
-            : questionScope === 'collection'
-              ? `限定: ${collections.find((c) => c.id === resolvedCollectionId)?.name || '未选择'}`
-              : `全库 · ${readyDocuments} 个文档`}
+          {questionScope === 'collection'
+            ? `限定: ${collections.find((c) => c.id === resolvedCollectionId)?.name || '未选择'}`
+            : `全库 · ${readyDocuments} 个文档`}
         </Typography.Text>
       </div>
     ),
@@ -98,7 +144,6 @@ export function ChatInput({
       activeDocument,
       collections,
       resolvedCollectionId,
-      activeFile,
       readyDocuments,
       hasReadyFiles,
       onQuestionScopeChange,
@@ -148,17 +193,47 @@ export function ChatInput({
         <div className="relative">
           <Sender
             value={inputValue}
-            onChange={onInputChange}
+            onChange={handleChange}
             onSubmit={onSubmit}
             placeholder={
               readyDocuments > 0
-                ? '输入您的问题，我将从知识库中为您找到答案...'
+                ? '输入问题，输入 # 选择文件（可多选）...'
                 : '请先导入文档到知识库...'
             }
             loading={isTyping}
             onCancel={onStopGeneration}
             submitType="enter"
           />
+          {mentionVisible && filteredMentionOptions.length > 0 && (
+            <div
+              className="absolute left-0 right-0 z-50 shadow-lg rounded-md border max-h-60 overflow-auto mt-1"
+              // 位于输入框上方，避免靠底部时被裁剪
+              style={{
+                top: 'auto',
+                bottom: '100%',
+                marginBottom: 8,
+                background: token.colorBgContainer,
+                borderColor: token.colorBorderSecondary
+              }}
+            >
+              {filteredMentionOptions.map((opt) => (
+                <div
+                  key={opt.path}
+                  className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+                  style={{
+                    background: token.colorBgContainer
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault() // 防止失焦关闭弹层
+                    handleSelectMention(opt.path, opt.name)
+                  }}
+                >
+                  <div className="font-medium text-sm">{opt.name}</div>
+                  <div className="text-xs text-gray-500 truncate">{opt.path}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </footer>

@@ -31,6 +31,7 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
   const [collections, setCollections] = useState<DocumentCollection[]>([])
   const [activeDocument, setActiveDocumentState] = useState<string | undefined>(undefined)
   const [activeCollectionId, setActiveCollectionId] = useState<string | undefined>(undefined)
+  // 仅保留 all / collection
   const [questionScope, setQuestionScope] = useState<QuestionScope>('all')
 
   const readyDocuments = useMemo(

@@ -228,18 +228,30 @@ export function useChatWithXChat({
   // 将 xMessages 转换为 ChatMessage 格式用于渲染
   // 使用索引和内容生成唯一 key，避免 useXChat 的 msg_X ID 冲突
   const messages = useMemo<ChatMessage[]>(() => {
-    return xMessages.map((xMsg, index) => {
-      // 对于历史消息（非 msg_ 开头），使用原始 ID
-      // 对于新消息（msg_ 开头），使用索引+内容哈希确保唯一性
-      const originalId = String(xMsg.id)
-      const uniqueKey = originalId.startsWith('msg_')
+    // 1) 按 id 合并：保留同一条消息的最新内容（流式阶段会多次推送）
+    type Mapped = {
+      key: string
+      role: ChatMessage['role']
+      content: string
+      sources?: ChatMessage['sources']
+      typing: boolean
+      status: ChatMessage['status']
+      timestamp?: number
+      idx: number
+      id: string
+    }
+    const latestById = new Map<string, Mapped>()
+
+    xMessages.forEach((xMsg, index) => {
+      const id = String(xMsg.id)
+      const uniqueKey = id.startsWith('msg_')
         ? `render-${index}-${xMsg.message.content.slice(0, 20)}`
-        : originalId
+        : id
+      const timestamp = historyTimestampMap.get(id) ?? newMessageTimestamps.get(id)
 
-      // 获取时间戳：优先从历史消息查找，其次从新消息状态查找
-      const timestamp = historyTimestampMap.get(originalId) ?? newMessageTimestamps.get(originalId)
-
-      return {
+      latestById.set(id, {
+        id,
+        idx: index, // 用于保持顺序
         key: uniqueKey,
         role: xMsg.message.role === 'user' ? 'user' : 'ai',
         content: xMsg.message.content,
@@ -247,8 +259,30 @@ export function useChatWithXChat({
         typing: xMsg.status === 'loading' || xMsg.status === 'updating',
         status: mapStatus(xMsg.status),
         timestamp
-      }
+      })
     })
+
+    // 2) 还原为数组并按最后出现顺序排序
+    const merged = Array.from(latestById.values()).sort((a, b) => a.idx - b.idx)
+
+    // 3) 去重：相同 role+content 的连续重复只保留一条（防止流式重复帧）
+    const deduped: ChatMessage[] = []
+    for (const msg of merged) {
+      const last = deduped[deduped.length - 1]
+      if (last && last.role === msg.role && last.content === msg.content) {
+        continue
+      }
+      deduped.push({
+        key: msg.key,
+        role: msg.role,
+        content: msg.content,
+        sources: msg.sources,
+        typing: msg.typing,
+        status: msg.status,
+        timestamp: msg.timestamp
+      })
+    }
+    return deduped
   }, [xMessages, historyTimestampMap, newMessageTimestamps])
 
   // 发送消息
