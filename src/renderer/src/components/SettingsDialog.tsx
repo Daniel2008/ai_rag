@@ -65,11 +65,12 @@ const MODEL_PRESETS: Record<ModelProvider, string[]> = {
 }
 
 // 本地嵌入模型（内置，自动下载）
+// 将多语言检索体验最佳的 multilingual-e5-small 设为首选
 const LOCAL_EMBEDDING_MODELS = [
-  { value: 'nomic-embed-text', label: 'Nomic Embed Text v1.5 (推荐)' },
+  { value: 'multilingual-e5-small', label: 'E5 Small 多语言 (推荐)' },
+  { value: 'nomic-embed-text', label: 'Nomic Embed Text v1.5' },
   { value: 'all-MiniLM-L6', label: 'All-MiniLM-L6 (轻量)' },
-  { value: 'bge-small-zh', label: 'BGE Small 中文 (中文优化)' },
-  { value: 'multilingual-e5-small', label: 'E5 Small 多语言' }
+  { value: 'bge-small-zh', label: 'BGE Small 中文 (中文优化)' }
 ]
 
 // Ollama 嵌入模型
@@ -274,10 +275,10 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
             ]}
             onChange={(value: EmbeddingProvider) => {
               setEmbeddingProvider(value)
-              // 切换时重置为默认模型
+              // 切换时重置为推荐模型：本地优先 multilingual-e5-small，Ollama 默认 nomic-embed-text
               form.setFieldValue(
                 'embeddingModel',
-                value === 'local' ? 'nomic-embed-text' : 'nomic-embed-text'
+                value === 'local' ? 'multilingual-e5-small' : 'nomic-embed-text'
               )
             }}
           />
