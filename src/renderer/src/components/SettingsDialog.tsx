@@ -230,12 +230,12 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     <Drawer
       title="模型设置"
       open={isOpen}
-      width={480}
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={!saving}
       styles={{
-        body: { paddingBottom: 80 }
+        body: { paddingBottom: 80 },
+        wrapper: { width: 480 }
       }}
     >
       <Form form={form} layout="vertical" requiredMark={false} disabled={loading || saving}>

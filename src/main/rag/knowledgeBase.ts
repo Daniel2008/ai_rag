@@ -223,24 +223,42 @@ export async function deleteDocumentCollection(id: string): Promise<KnowledgeBas
   const collections = getDocumentCollections()
   const collectionToDelete = collections.find((c) => c.id === id)
   
-  if (collectionToDelete) {
-    // 删除集合中所有文件的向量索引
-    if (collectionToDelete.files && collectionToDelete.files.length > 0) {
-      logInfo(`Removing ${collectionToDelete.files.length} files from vector store for collection deletion`, 'KnowledgeBase', { collectionId: id })
-      
-      // 导入批量删除函数
-      const { removeSourcesFromStore } = await import('./store/index')
-      try {
-        await removeSourcesFromStore(collectionToDelete.files)
-      } catch (error) {
-        logWarn('Failed to remove collection files from vector store', 'KnowledgeBase', { collectionId: id }, error as Error)
-      }
+  if (collectionToDelete && collectionToDelete.files && collectionToDelete.files.length > 0) {
+    const filesToDelete = collectionToDelete.files
+    logInfo(`Removing ${filesToDelete.length} files from vector store and knowledge base for collection deletion`, 'KnowledgeBase', { 
+      collectionId: id,
+      files: filesToDelete.slice(0, 5) // 只记录前5个
+    })
+    
+    // 1. 删除向量索引
+    const { removeSourcesFromStore } = await import('./store/index')
+    try {
+      await removeSourcesFromStore(filesToDelete)
+    } catch (error) {
+      logWarn('Failed to remove collection files from vector store', 'KnowledgeBase', { collectionId: id }, error as Error)
+    }
+    
+    // 2. 删除知识库文件记录
+    const records = getIndexedFileRecords()
+    const filePathSet = new Set(filesToDelete.map(f => normalizePath(f)))
+    const remainingRecords = records.filter(record => {
+      const normalizedRecordPath = record.normalizedPath ?? normalizePath(record.path)
+      return !filePathSet.has(normalizedRecordPath)
+    })
+    
+    if (remainingRecords.length < records.length) {
+      saveIndexedFileRecords(remainingRecords)
+      logInfo(`Removed ${records.length - remainingRecords.length} file records from knowledge base`, 'KnowledgeBase', { collectionId: id })
     }
   }
   
-  // 删除集合本身
+  // 3. 删除集合本身
   const remainingCollections = collections.filter((collection) => collection.id !== id)
   saveDocumentCollections(remainingCollections)
+  
+  // 4. 清理其他集合中对已删除文件的引用
+  pruneCollectionsForMissingFiles()
+  
   return getSnapshot()
 }
 

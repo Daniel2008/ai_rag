@@ -34,7 +34,7 @@ export function CollectionModal({
       onOk={onSubmit}
       okText={editingCollection ? '保存' : '创建'}
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
       centered
       width={500}
     >

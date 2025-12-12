@@ -190,22 +190,25 @@ async function ensureTableWithDocuments(docs: Document[], appendMode: boolean = 
       const texts = docs.map(d => d.pageContent)
       const vectors = await embeddings.embedDocuments(texts)
       
-      // 准备要插入的数据
+      // 准备要插入的数据 - 只包含现有 schema 中的字段
+      // LanceDB 表 schema: vector, text, source, fileName, fileType, pageNumber, 
+      //                    position, sourceType, importedAt, chunkIndex, blockTypes,
+      //                    hasHeading, headingText, chunkingStrategy
       const records = docs.map((doc, i) => ({
         vector: vectors[i],
         text: doc.pageContent,
-        source: doc.metadata?.source,
-        fileName: doc.metadata?.fileName,
-        fileType: doc.metadata?.fileType,
-        pageNumber: doc.metadata?.pageNumber,
-        position: doc.metadata?.position,
-        sourceType: doc.metadata?.sourceType,
-        importedAt: doc.metadata?.importedAt,
-        title: doc.metadata?.title,
-        type: doc.metadata?.type,
-        fetchedAt: doc.metadata?.fetchedAt,
-        loc: doc.metadata?.loc,
-        author: doc.metadata?.author
+        source: doc.metadata?.source ?? null,
+        fileName: doc.metadata?.fileName ?? null,
+        fileType: doc.metadata?.fileType ?? null,
+        pageNumber: doc.metadata?.pageNumber ?? null,
+        position: doc.metadata?.position ?? null,
+        sourceType: doc.metadata?.sourceType ?? null,
+        importedAt: doc.metadata?.importedAt ?? null,
+        chunkIndex: doc.metadata?.chunkIndex ?? null,
+        blockTypes: doc.metadata?.blockTypes ?? [],
+        hasHeading: doc.metadata?.hasHeading ?? false,
+        headingText: doc.metadata?.headingText ?? '',
+        chunkingStrategy: doc.metadata?.chunkingStrategy ?? null
       }))
       
       // 使用 LanceDB 原生 add 方法追加数据
@@ -814,12 +817,21 @@ export async function removeSourceFromStore(source: string): Promise<void> {
     table = await conn.openTable(TABLE_NAME)
   }
 
+  // 生成多种路径变体以处理不同的存储格式
   const normalizedSource = normalizePath(source)
+  const forwardSlash = source.replace(/\\/g, '/')
+  const backSlash = source.replace(/\//g, '\\')
+  const pathNormalized = path.normalize(source)
+  
+  // 同时尝试保持原大小写和小写版本
   const sourceVariants = [
-    source,
-    normalizedSource,
-    source.replace(/\\/g, '/'),
-    path.normalize(source)
+    source,                              // 原始路径
+    normalizedSource,                    // 小写 + 正斜杠
+    forwardSlash,                        // 正斜杠（保持大小写）
+    backSlash,                           // 反斜杠（保持大小写）
+    pathNormalized,                      // path.normalize 结果
+    forwardSlash.toLowerCase(),          // 小写 + 正斜杠
+    backSlash.toLowerCase(),             // 小写 + 反斜杠
   ]
 
   const uniqueVariants = [...new Set(sourceVariants)]
@@ -830,48 +842,101 @@ export async function removeSourceFromStore(source: string): Promise<void> {
     variantsCount: uniqueVariants.length
   })
 
-  let deletedCount = 0
+  let successfulDeletes = 0
   let lastError: Error | null = null
 
+  // LanceDB 表结构中实际存在的字段: source (路径存储在这里)
+  // 注意: fileName 字段存储的是文件名，不是完整路径
   for (const variant of uniqueVariants) {
     const escapedVariant = escapePredicateValue(variant)
 
-    const predicates = [
-      `source == "${escapedVariant}"`,
-      `metadata.source == "${escapedVariant}"`,
-      `path == "${escapedVariant}"`,
-      `url == "${escapedVariant}"`
-    ]
+    // 只使用 source 字段进行删除（这是存储完整路径的字段）
+    const predicate = `source == "${escapedVariant}"`
 
-    for (const predicate of predicates) {
-      try {
-        await (table as unknown as { delete: (where: string) => Promise<void> }).delete(predicate)
-        deletedCount++
-        logDebug('Deleted records with predicate', 'VectorStore', { predicate })
-      } catch (e) {
-        lastError = e as Error
-        logDebug('Delete failed with predicate', 'VectorStore', { predicate, error: String(e) })
+    try {
+      await (table as unknown as { delete: (where: string) => Promise<void> }).delete(predicate)
+      successfulDeletes++
+      logDebug('Delete executed with predicate', 'VectorStore', { predicate })
+    } catch (e) {
+      lastError = e as Error
+      const errMsg = String(e)
+      // 忽略 "no rows affected" 类型的错误
+      if (!errMsg.includes('no rows') && !errMsg.includes('not found')) {
+        logDebug('Delete failed with predicate', 'VectorStore', { predicate, error: errMsg })
       }
     }
   }
 
   invalidateDocCountCache()
+  clearBM25Cache()
 
-  if (deletedCount > 0) {
-    logInfo('Successfully removed source from vector store', 'VectorStore', { source, deletedCount })
-  } else {
-    logWarn('No records deleted from vector store', 'VectorStore', {
-      source,
-      lastError: lastError?.message
-    })
-  }
+  logInfo('Source removal completed', 'VectorStore', { 
+    source, 
+    successfulDeletes,
+    lastError: lastError?.message 
+  })
 }
 
 export async function removeSourcesFromStore(sources: string[]): Promise<void> {
-  logInfo(`Removing ${sources.length} sources from vector store`, 'VectorStore')
-  for (const source of sources) {
-    await removeSourceFromStore(source)
+  if (sources.length === 0) return
+  
+  logInfo(`Removing ${sources.length} sources from vector store`, 'VectorStore', {
+    sources: sources.slice(0, 5) // 只记录前5个，避免日志过长
+  })
+
+  await initVectorStore()
+  if (!db || !table) {
+    logWarn('Database or table not initialized, falling back to individual removal', 'VectorStore')
+    for (const source of sources) {
+      await removeSourceFromStore(source)
+    }
+    return
   }
+
+  // 尝试批量删除（更高效）
+  try {
+    // 构建所有路径变体
+    const allVariants: string[] = []
+    for (const source of sources) {
+      const normalizedSource = normalizePath(source)
+      const forwardSlash = source.replace(/\\/g, '/')
+      allVariants.push(source, normalizedSource, forwardSlash)
+    }
+    const uniqueVariants = [...new Set(allVariants)]
+    const escapedVariants = uniqueVariants.map(v => `"${escapePredicateValue(v)}"`)
+    
+    // 只使用 source 字段进行批量删除（这是存储完整路径的字段）
+    const inClause = escapedVariants.join(', ')
+    const batchPredicate = `source IN (${inClause})`
+    
+    logDebug('Executing batch delete', 'VectorStore', { 
+      variantCount: uniqueVariants.length,
+      predicateLength: batchPredicate.length 
+    })
+    
+    await (table as unknown as { delete: (where: string) => Promise<void> }).delete(batchPredicate)
+    
+    invalidateDocCountCache()
+    clearBM25Cache()
+    
+    logInfo('Batch delete completed successfully', 'VectorStore', { sourceCount: sources.length })
+    return
+  } catch (batchError) {
+    logWarn('Batch delete failed, falling back to individual removal', 'VectorStore', undefined, batchError as Error)
+  }
+
+  // 回退：逐个删除
+  for (const source of sources) {
+    try {
+      await removeSourceFromStore(source)
+    } catch (e) {
+      logWarn('Failed to remove source', 'VectorStore', { source }, e as Error)
+    }
+  }
+  
+  // 确保缓存被清理
+  invalidateDocCountCache()
+  clearBM25Cache()
 }
 
 export async function clearEmbeddingsCache(): Promise<void> {

@@ -7,6 +7,21 @@ import { Document } from '@langchain/core/documents'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
 import { SemanticChunker, SemanticChunkConfig } from './semanticChunker'
 
+/**
+ * 从 URL 中安全地提取并解码文件名/标题
+ * 处理 URL 编码的中文字符（如 %E4%B8%AD%E5%8C%BB -> 中医）
+ */
+function extractTitleFromUrl(url: string): string {
+  try {
+    const lastPart = url.split('/').pop() || url
+    // 尝试解码 URL 编码的字符
+    return decodeURIComponent(lastPart)
+  } catch {
+    // 解码失败时返回原始字符串
+    return url.split('/').pop() || url
+  }
+}
+
 /** 分块策略类型 */
 export type ChunkingStrategy = 'semantic' | 'fixed'
 
@@ -454,10 +469,11 @@ function processContent(
 
   // Markdown 内容
   if (contentType.includes('text/markdown') || url.endsWith('.md')) {
+    const title = extractTitleFromUrl(url)
     return {
-      title: url.split('/').pop() || url,
+      title,
       content: rawContent,
-      meta: { title: url.split('/').pop() || url }
+      meta: { title }
     }
   }
 
@@ -479,10 +495,11 @@ function processContent(
 
   // 纯文本
   if (contentType.includes('text/plain')) {
+    const title = extractTitleFromUrl(url)
     return {
-      title: url.split('/').pop() || url,
+      title,
       content: rawContent,
-      meta: { title: url.split('/').pop() || url }
+      meta: { title }
     }
   }
 

@@ -297,7 +297,7 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
           background: token.colorFillAlter,
           borderRadius: token.borderRadius
         }}
-        expandIconPosition="end"
+        expandIconPlacement="end"
       />
     </div>
   )
@@ -1077,7 +1077,7 @@ function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
     }
   }, [items])
   return (
-    <Drawer title="检索指标" placement="right" width={420} onClose={onClose} open={open}>
+    <Drawer title="检索指标" placement="right" onClose={onClose} open={open} styles={{ wrapper: { width: 420 } }}>
       <div className="mb-4 flex gap-4">
         <Tag color="blue">Top-K均值: {summary.meanAvg}</Tag>
         <Tag color="green">平均延迟: {summary.meanLatency}ms</Tag>

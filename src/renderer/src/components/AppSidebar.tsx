@@ -444,7 +444,7 @@ export function AppSidebar({
                               <Tag
                                 icon={statusInfo.icon}
                                 color={statusInfo.color}
-                                bordered={false}
+                                variant="filled"
                                 style={{
                                   margin: 0,
                                   fontSize: 10,
@@ -632,7 +632,7 @@ export function AppSidebar({
                 onCollectionChange(newKey ? String(newKey) : '')
               }}
               items={collapseItems}
-              expandIconPosition="end"
+              expandIconPlacement="end"
               className="knowledge-collapse"
             />
             {!collectionQuery.trim() && collections.length > DEFAULT_VISIBLE_COUNT && (
@@ -739,7 +739,7 @@ export function AppSidebar({
         onOk={handleAddUrl}
         okText="导入"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="py-4">
           <Typography.Text type="secondary" className="block mb-3">

@@ -65,9 +65,16 @@ export function loadActiveConversationKey(): string | undefined {
   }
 }
 
-/** 从文件路径提取文件名 */
+/** 从文件路径提取文件名（支持 URL 解码） */
 export function extractFileName(filePath: string): string {
-  return filePath.split(/[\\/]/).pop() ?? filePath
+  const name = filePath.split(/[\\/]/).pop() ?? filePath
+  // 尝试解码 URL 编码的文件名（如中文字符 %E4%B8%AD%E5%8C%BB -> 中医）
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    // 如果解码失败，返回原始名称
+    return name
+  }
 }
 
 /** 合并文件记录与临时文件 */
