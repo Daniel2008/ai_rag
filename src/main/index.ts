@@ -3,6 +3,15 @@ import { normalizeError, isSchemaMismatchError as checkSchemaMismatch } from './
 import { join, basename, dirname, delimiter } from 'path'
 import Module from 'module'
 
+// 修复打包后滚轮失效问题（某些 GPU 驱动/配置下的兼容性问题）
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,WindowCaptureMacV2')
+// 确保输入事件正常工作
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+// 禁用 GPU 沙盒以避免某些驱动兼容性问题
+app.commandLine.appendSwitch('disable-gpu-sandbox')
+// 使用软件渲染作为备选（如果 GPU 问题持续）
+// app.commandLine.appendSwitch('disable-gpu')
+
 // 修复打包后原生模块路径解析问题
 if (app.isPackaged) {
   // 获取 app.asar.unpacked 路径
@@ -91,7 +100,9 @@ function createWindow(): BrowserWindow {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // 确保滚轮和输入事件正常工作
+      scrollBounce: true
     }
   })
 

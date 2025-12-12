@@ -93,10 +93,17 @@ async function loadLanceModules(): Promise<void> {
 }
 
 function getDbPath(): string {
+  let dbPath: string
   if (app?.getPath) {
-    return path.join(app.getPath('userData'), 'lancedb')
+    dbPath = path.join(app.getPath('userData'), 'lancedb')
+  } else {
+    dbPath = path.join(process.cwd(), '.lancedb')
   }
-  return path.join(process.cwd(), '.lancedb')
+  // 打印路径以便调试开发/生产环境差异
+  console.log('[LanceDB] Database path:', dbPath)
+  console.log('[LanceDB] app.isPackaged:', app?.isPackaged)
+  console.log('[LanceDB] userData:', app?.getPath?.('userData'))
+  return dbPath
 }
 
 async function getDocCountCached(): Promise<number> {
@@ -528,16 +535,23 @@ export async function searchSimilarDocumentsWithScores(
   const { k = 4, sources } = options
   const metrics: Record<string, number | string> = {}
 
+  // 增加调试日志
+  console.log('[Search] Starting search with query:', query.slice(0, 50))
+  console.log('[Search] Options:', { k, sourcesCount: sources?.length ?? 0 })
+
   logDebug('Starting search', 'Search', { query: query.slice(0, 50), sourcesCount: sources?.length ?? 0 })
 
   await initVectorStore()
 
   if (!vectorStore || !table) {
+    console.log('[Search] ERROR: vectorStore or table is null!')
     logWarn('vectorStore or table is null, returning empty', 'Search')
     return []
   }
 
   const docCount = await getDocCountCached()
+  console.log('[Search] Document count in store:', docCount)
+  
   const isGlobalSearch = !sources || sources.length === 0
   const complexity = estimateQueryComplexity(query)
   const intent = classifyQueryIntent(query)
