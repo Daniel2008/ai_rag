@@ -6,7 +6,7 @@ import { Form, FloatButton, message as antdMessage, theme as antdTheme, Skeleton
 import { DatabaseOutlined, MenuOutlined } from '@ant-design/icons'
 
 import { getTheme } from './theme'
-import type { AppSettings } from './components/SettingsDialog'
+import type { AppSettings } from '../../types/chat'
 import { ChatSidebar, WelcomeScreen, ChatArea, ChatInput, CollectionModal } from './components/chat'
 import { GlobalProgress } from './components/GlobalProgress'
 import { useConversations, useChatWithXChat, useKnowledgeBase, useProgress } from './hooks'

@@ -56,9 +56,11 @@ export function estimateQueryComplexity(query: string): number {
  */
 export function classifyQueryIntent(query: string): QueryIntent {
   const q = query.toLowerCase()
-  const defKw = ['是什么', '定义', '解释', 'meaning', 'definition', 'explain']
-  const sumKw = ['总结', '概括', '汇总', 'overview', 'summary']
+  const defKw = ['是什么', '定义', '解释', 'meaning', 'definition', 'explain', 'what is', 'define']
+  const sumKw = ['总结', '概括', '汇总', 'overview', 'summary', 'summarize']
   const cmpKw = ['比较', '对比', '差异', 'vs', 'difference', 'compare']
+  
+  // console.log('Checking intent for:', q)
   if (defKw.some((k) => q.includes(k))) return 'definition'
   if (sumKw.some((k) => q.includes(k))) return 'summary'
   if (cmpKw.some((k) => q.includes(k))) return 'comparison'

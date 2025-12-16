@@ -10,35 +10,16 @@ import {
   message,
   Select,
   Divider,
-  Collapse,
   AutoComplete,
-  Modal
+  Modal,
+  Slider,
+  InputNumber,
+  Row,
+  Col,
+  Tabs
 } from 'antd'
-import { ApiOutlined, RobotOutlined, KeyOutlined } from '@ant-design/icons'
-
-export type ModelProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek' | 'zhipu' | 'moonshot'
-
-export interface ProviderConfig {
-  apiKey?: string
-  baseUrl?: string
-  chatModel: string
-  embeddingModel?: string
-}
-
-export type EmbeddingProvider = 'local' | 'ollama'
-
-export interface AppSettings {
-  provider: ModelProvider
-  ollama: ProviderConfig
-  openai: ProviderConfig
-  anthropic: ProviderConfig
-  deepseek: ProviderConfig
-  zhipu: ProviderConfig
-  moonshot: ProviderConfig
-  embeddingProvider: EmbeddingProvider
-  embeddingModel: string
-  ollamaUrl: string
-}
+import { ApiOutlined, RobotOutlined, KeyOutlined, SettingOutlined, ToolOutlined } from '@ant-design/icons'
+import type { AppSettings, ModelProvider, EmbeddingProvider } from '../types/chat'
 
 interface SettingsDialogProps {
   isOpen: boolean
@@ -86,14 +67,28 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
   const [saving, setSaving] = useState(false)
   const [currentProvider, setCurrentProvider] = useState<ModelProvider>('ollama')
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>('local')
+  // 保存初始设置，用于在保存时合并那些未渲染在界面上的配置项（例如未选中的供应商配置）
+  const [initialSettings, setInitialSettings] = useState<AppSettings>()
 
   const loadSettings = useCallback(async (): Promise<void> => {
     setLoading(true)
     try {
       const current = await window.api.getSettings()
-      form.setFieldsValue(current)
-      setCurrentProvider(current.provider || 'ollama')
-      setEmbeddingProvider(current.embeddingProvider || 'local')
+
+      // 兜底：确保 RAG 参数始终有默认值（避免旧版本/异常数据导致表单为空）
+      const currentWithDefaults: AppSettings = {
+        ...current,
+        rag: {
+          searchLimit: current.rag?.searchLimit ?? 6,
+          maxSearchLimit: current.rag?.maxSearchLimit ?? 30,
+          minRelevance: current.rag?.minRelevance ?? 0.25
+        }
+      }
+
+      setInitialSettings(currentWithDefaults)
+      form.setFieldsValue(currentWithDefaults)
+      setCurrentProvider(currentWithDefaults.provider || 'ollama')
+      setEmbeddingProvider(currentWithDefaults.embeddingProvider || 'local')
     } catch (error) {
       console.error('Failed to load settings:', error)
       message.error('加载设置失败')
@@ -112,7 +107,11 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     try {
       const values = await form.validateFields()
       setSaving(true)
-      const result = await window.api.saveSettings(values)
+      
+      // 合并初始配置与当前表单值，防止未渲染的供应商配置丢失
+      const finalSettings = { ...initialSettings, ...values }
+      
+      const result = await window.api.saveSettings(finalSettings)
 
       if (result.embeddingChanged) {
         if (result.reindexingStarted) {
@@ -215,111 +214,195 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     )
   }
 
-  const collapseItems = PROVIDER_OPTIONS.filter((p) => p.value !== currentProvider).map((p) => ({
-    key: p.value,
-    label: (
-      <span>
-        <span className="mr-2">{p.icon}</span>
-        {p.label}
-      </span>
-    ),
-    children: renderProviderConfig(p.value as ModelProvider)
-  }))
-
   return (
     <Drawer
-      title="模型设置"
+      title="系统设置"
       open={isOpen}
       onClose={onClose}
       destroyOnHidden
       maskClosable={!saving}
       styles={{
         body: { paddingBottom: 80 },
-        wrapper: { width: 480 }
+        wrapper: { width: 520 }
       }}
     >
       <Form form={form} layout="vertical" requiredMark={false} disabled={loading || saving}>
-        {/* 当前供应商选择 */}
-        <Form.Item label="当前模型供应商" name="provider" rules={[{ required: true }]}>
-          <Select
-            options={PROVIDER_OPTIONS.map((p) => ({
-              value: p.value,
+        <Tabs
+          defaultActiveKey="basic"
+          items={[
+            {
+              key: 'basic',
               label: (
                 <span>
-                  <span className="mr-2">{p.icon}</span>
-                  {p.label}
+                  <SettingOutlined />
+                  基础模型
                 </span>
+              ),
+              children: (
+                <>
+                  {/* 当前供应商选择 */}
+                  <Form.Item label="当前模型供应商" name="provider" rules={[{ required: true }]}>
+                    <Select
+                      options={PROVIDER_OPTIONS.map((p) => ({
+                        value: p.value,
+                        label: (
+                          <span>
+                            <span className="mr-2">{p.icon}</span>
+                            {p.label}
+                          </span>
+                        )
+                      }))}
+                      onChange={handleProviderChange}
+                    />
+                  </Form.Item>
+
+                  {/* 当前供应商配置 */}
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                    <Typography.Text strong className="mb-3 block">
+                      {PROVIDER_OPTIONS.find((p) => p.value === currentProvider)?.icon}{' '}
+                      {PROVIDER_OPTIONS.find((p) => p.value === currentProvider)?.label} 配置
+                    </Typography.Text>
+                    {renderProviderConfig(currentProvider)}
+                  </div>
+
+                  <Divider />
+
+                  {/* 向量模型设置 */}
+                  <Typography.Text strong className="mb-3 block">
+                    📊 向量模型设置
+                  </Typography.Text>
+
+                  <Form.Item label="嵌入模式" name="embeddingProvider" rules={[{ required: true }]}>
+                    <Select
+                      options={[
+                        { value: 'local', label: '🚀 本地内置 (推荐，首次使用自动下载)' },
+                        { value: 'ollama', label: '🦙 Ollama (需要本地运行 Ollama)' }
+                      ]}
+                      onChange={(value: EmbeddingProvider) => {
+                        setEmbeddingProvider(value)
+                        // 切换时重置为推荐模型：本地优先 multilingual-e5-small，Ollama 默认 nomic-embed-text
+                        form.setFieldValue(
+                          'embeddingModel',
+                          value === 'local' ? 'multilingual-e5-small' : 'nomic-embed-text'
+                        )
+                      }}
+                    />
+                  </Form.Item>
+
+                  <Typography.Paragraph type="secondary" className="text-xs mb-3">
+                    {embeddingProvider === 'local'
+                      ? '本地模式：首次使用时自动下载模型（约 50-150MB），无需额外配置'
+                      : 'Ollama 模式：需要先在本地安装并运行 Ollama，然后拉取对应的嵌入模型'}
+                  </Typography.Paragraph>
+
+                  <Form.Item
+                    label="向量模型"
+                    name="embeddingModel"
+                    rules={[{ required: true, message: '请选择向量模型' }]}
+                  >
+                    {embeddingProvider === 'local' ? (
+                      <Select options={LOCAL_EMBEDDING_MODELS} placeholder="选择本地嵌入模型" />
+                    ) : (
+                      <AutoComplete
+                        allowClear
+                        placeholder="选择或输入向量模型"
+                        options={OLLAMA_EMBEDDING_MODELS.map((m) => ({ value: m, label: m }))}
+                        filterOption={(inputValue, option) =>
+                          option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
+                        }
+                      />
+                    )}
+                  </Form.Item>
+                </>
               )
-            }))}
-            onChange={handleProviderChange}
-          />
-        </Form.Item>
+            },
+            {
+              key: 'advanced',
+              label: (
+                <span>
+                  <ToolOutlined />
+                  高级设置
+                </span>
+              ),
+              children: (
+                <>
+                  {/* RAG 检索参数设置 */}
+                  <Typography.Text strong className="mb-3 block">
+                    🔎 RAG 检索参数
+                  </Typography.Text>
 
-        {/* 当前供应商配置 */}
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-          <Typography.Text strong className="mb-3 block">
-            {PROVIDER_OPTIONS.find((p) => p.value === currentProvider)?.icon}{' '}
-            {PROVIDER_OPTIONS.find((p) => p.value === currentProvider)?.label} 配置
-          </Typography.Text>
-          {renderProviderConfig(currentProvider)}
-        </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+                    <Form.Item label="单次检索数量 (K)">
+                      <Row gutter={16}>
+                        <Col span={12}>
+                          <Form.Item name={['rag', 'searchLimit']} noStyle>
+                            <Slider min={1} max={20} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={4}>
+                          <Form.Item name={['rag', 'searchLimit']} noStyle>
+                            <InputNumber min={1} max={20} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </Form.Item>
+                    <Typography.Text
+                      type="secondary"
+                      className="text-xs mb-4 block"
+                      style={{ marginTop: -10 }}
+                    >
+                      每次检索最相关的文档块数量，默认 6。增加可获取更多信息，但可能引入噪声。
+                    </Typography.Text>
 
-        <Divider />
+                    <Form.Item label="最大扩展数量 (Max K)">
+                      <Row gutter={16}>
+                        <Col span={12}>
+                          <Form.Item name={['rag', 'maxSearchLimit']} noStyle>
+                            <Slider min={10} max={100} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={4}>
+                          <Form.Item name={['rag', 'maxSearchLimit']} noStyle>
+                            <InputNumber min={10} max={100} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </Form.Item>
+                    <Typography.Text
+                      type="secondary"
+                      className="text-xs mb-4 block"
+                      style={{ marginTop: -10 }}
+                    >
+                      在复杂问题或多跳推理场景下，自动扩展检索的最大上限。
+                    </Typography.Text>
 
-        {/* 向量模型设置 */}
-        <Typography.Text strong className="mb-3 block">
-          📊 向量模型设置
-        </Typography.Text>
-
-        <Form.Item label="嵌入模式" name="embeddingProvider" rules={[{ required: true }]}>
-          <Select
-            options={[
-              { value: 'local', label: '🚀 本地内置 (推荐，首次使用自动下载)' },
-              { value: 'ollama', label: '🦙 Ollama (需要本地运行 Ollama)' }
-            ]}
-            onChange={(value: EmbeddingProvider) => {
-              setEmbeddingProvider(value)
-              // 切换时重置为推荐模型：本地优先 multilingual-e5-small，Ollama 默认 nomic-embed-text
-              form.setFieldValue(
-                'embeddingModel',
-                value === 'local' ? 'multilingual-e5-small' : 'nomic-embed-text'
+                    <Form.Item label="最低相关度 (Threshold)">
+                      <Row gutter={16}>
+                        <Col span={12}>
+                          <Form.Item name={['rag', 'minRelevance']} noStyle>
+                            <Slider min={0} max={1} step={0.05} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={4}>
+                          <Form.Item name={['rag', 'minRelevance']} noStyle>
+                            <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </Form.Item>
+                    <Typography.Text
+                      type="secondary"
+                      className="text-xs mb-0 block"
+                      style={{ marginTop: -10 }}
+                    >
+                      过滤低质量结果的阈值。值越高结果越精准但可能遗漏，值越低召回越多但可能有噪声。
+                    </Typography.Text>
+                  </div>
+                </>
               )
-            }}
-          />
-        </Form.Item>
-
-        <Typography.Paragraph type="secondary" className="text-xs mb-3">
-          {embeddingProvider === 'local'
-            ? '本地模式：首次使用时自动下载模型（约 50-150MB），无需额外配置'
-            : 'Ollama 模式：需要先在本地安装并运行 Ollama，然后拉取对应的嵌入模型'}
-        </Typography.Paragraph>
-
-        <Form.Item
-          label="向量模型"
-          name="embeddingModel"
-          rules={[{ required: true, message: '请选择向量模型' }]}
-        >
-          {embeddingProvider === 'local' ? (
-            <Select options={LOCAL_EMBEDDING_MODELS} placeholder="选择本地嵌入模型" />
-          ) : (
-            <AutoComplete
-              allowClear
-              placeholder="选择或输入向量模型"
-              options={OLLAMA_EMBEDDING_MODELS.map((m) => ({ value: m, label: m }))}
-              filterOption={(inputValue, option) =>
-                option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
-              }
-            />
-          )}
-        </Form.Item>
-
-        <Divider />
-
-        {/* 其他供应商配置（折叠） */}
-        <Typography.Text type="secondary" className="mb-3 block text-xs">
-          其他供应商配置（可选，方便切换）
-        </Typography.Text>
-        <Collapse items={collapseItems} bordered={false} size="small" expandIconPlacement="end" />
+            }
+          ]}
+        />
       </Form>
 
       <div className="absolute bottom-0 left-0 w-full border-t border-gray-200 bg-white px-6 py-4 text-right dark:border-gray-700 dark:bg-gray-900">

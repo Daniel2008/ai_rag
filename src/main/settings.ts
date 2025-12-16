@@ -11,6 +11,12 @@ export interface ProviderConfig {
 
 export type EmbeddingProvider = 'local' | 'ollama'
 
+export interface RagSettings {
+  searchLimit: number
+  minRelevance: number
+  maxSearchLimit: number
+}
+
 export interface AppSettings {
   // 当前选择的供应商
   provider: ModelProvider
@@ -30,6 +36,8 @@ export interface AppSettings {
   embeddingProvider: EmbeddingProvider
   embeddingModel: string
   ollamaUrl: string
+  // RAG 检索设置
+  rag: RagSettings
 }
 
 const defaults: AppSettings = {
@@ -65,7 +73,12 @@ const defaults: AppSettings = {
   },
   embeddingProvider: 'local',
   embeddingModel: 'multilingual-e5-small', // 默认使用多语言模型以支持跨语言检索
-  ollamaUrl: 'http://localhost:11434'
+  ollamaUrl: 'http://localhost:11434',
+  rag: {
+    searchLimit: 6,
+    maxSearchLimit: 30,
+    minRelevance: 0.25
+  }
 }
 
 const StoreConstructor = ((ElectronStore as unknown as { default?: typeof ElectronStore })
@@ -79,6 +92,22 @@ const storeConfig: Record<string, unknown> = {
 const store = new (StoreConstructor as new (
   config: Record<string, unknown>
 ) => ElectronStore<AppSettings>)(storeConfig)
+
+function normalizeRagSettings(input: Partial<RagSettings> | undefined, base: RagSettings): RagSettings {
+  const searchLimitRaw = typeof input?.searchLimit === 'number' ? input.searchLimit : base.searchLimit
+  const maxSearchLimitRaw = typeof input?.maxSearchLimit === 'number' ? input.maxSearchLimit : base.maxSearchLimit
+  const minRelevanceRaw = typeof input?.minRelevance === 'number' ? input.minRelevance : base.minRelevance
+
+  const searchLimit = Number.isFinite(searchLimitRaw) ? Math.max(1, Math.round(searchLimitRaw)) : base.searchLimit
+  const maxSearchLimit = Number.isFinite(maxSearchLimitRaw)
+    ? Math.max(searchLimit, Math.round(maxSearchLimitRaw))
+    : Math.max(searchLimit, base.maxSearchLimit)
+  const minRelevance = Number.isFinite(minRelevanceRaw)
+    ? Math.min(1, Math.max(0, minRelevanceRaw))
+    : base.minRelevance
+
+  return { searchLimit, maxSearchLimit, minRelevance }
+}
 
 // 合并供应商配置，确保所有字段都有值
 function mergeProviderConfig(
@@ -114,14 +143,21 @@ export function getSettings(): AppSettings {
     moonshot: mergeProviderConfig(store.get('moonshot'), defaults.moonshot),
     embeddingProvider: store.get('embeddingProvider') || defaults.embeddingProvider,
     embeddingModel: store.get('embeddingModel') || defaults.embeddingModel,
-    ollamaUrl: store.get('ollamaUrl') || defaults.ollamaUrl
+    ollamaUrl: store.get('ollamaUrl') || defaults.ollamaUrl,
+    rag: normalizeRagSettings(store.get('rag'), defaults.rag)
   }
 }
 
 export function saveSettings(settings: Partial<AppSettings>): void {
   for (const [key, value] of Object.entries(settings)) {
     if (value !== undefined) {
-      store.set(key as keyof AppSettings, value)
+      if (key === 'rag' && typeof value === 'object' && value) {
+        const existing = store.get('rag')
+        const merged = { ...defaults.rag, ...(existing ?? {}), ...(value as Partial<RagSettings>) }
+        store.set('rag', normalizeRagSettings(merged, defaults.rag))
+      } else {
+        store.set(key as keyof AppSettings, value)
+      }
     }
   }
 }

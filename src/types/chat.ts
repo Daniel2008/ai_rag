@@ -58,6 +58,13 @@ export interface EmbeddingProgress {
   percent?: number
 }
 
+/** RAG 检索参数设置 */
+export interface RagSettings {
+  searchLimit: number
+  maxSearchLimit: number
+  minRelevance: number
+}
+
 /** 应用设置 */
 export interface AppSettings {
   provider: ModelProvider
@@ -70,6 +77,7 @@ export interface AppSettings {
   embeddingProvider: EmbeddingProvider
   embeddingModel: string
   ollamaUrl: string
+  rag: RagSettings
 }
 
 /** 文件处理结果 */

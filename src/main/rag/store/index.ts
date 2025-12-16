@@ -35,6 +35,7 @@ import {
   diversifyBySource
 } from './utils'
 import { reciprocalRankFusion, mmrRerankByContent } from './algorithms'
+import { getSettings } from '../../settings'
 import {
   getEmbeddings,
   ensureEmbeddingsInitialized as ensureEmbeddingsInit,
@@ -556,14 +557,19 @@ export async function searchSimilarDocumentsWithScores(
   const complexity = estimateQueryComplexity(query)
   const intent = classifyQueryIntent(query)
 
+  // 获取设置
+  const settings = getSettings()
+  const maxSearchLimit = settings.rag?.maxSearchLimit ?? RAG_CONFIG.SEARCH.MAX_K
+  const defaultSearchLimit = settings.rag?.searchLimit ?? RAG_CONFIG.SEARCH.DEFAULT_K
+
   let baseK = k
   if (intent === 'definition') baseK = Math.max(3, Math.round(k * 0.8))
   if (intent === 'summary') baseK = Math.round(k * 1.5)
   if (intent === 'comparison') baseK = Math.round(k * 1.6)
   
   const adaptiveK = Math.min(
-    RAG_CONFIG.SEARCH.MAX_K,
-    Math.max(baseK, Math.round(baseK + complexity * RAG_CONFIG.SEARCH.DEFAULT_K))
+    maxSearchLimit,
+    Math.max(baseK, Math.round(baseK + complexity * defaultSearchLimit))
   )
   const fetchK = Math.round(calculateFetchK(adaptiveK, docCount, isGlobalSearch) * (1 + complexity * 0.5))
 
@@ -720,10 +726,11 @@ export async function searchSimilarDocumentsWithScores(
       score: distanceToScore(r.distance)
     }))
 
-    // 4. 相关性阈值过滤
+    // 4. 相关性阈值过滤（支持用户配置）
     const relevanceFilterStart = Date.now()
     const beforeRelevanceFilter = finalResultsRaw.length
-    finalResultsRaw = filterByRelevanceThreshold(finalResultsRaw, query)
+    const minRelevance = settings.rag?.minRelevance ?? RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
+    finalResultsRaw = filterByRelevanceThreshold(finalResultsRaw, query, minRelevance)
     metrics.relevanceFilterMs = Date.now() - relevanceFilterStart
 
     if (finalResultsRaw.length === 0) {

@@ -1,7 +1,16 @@
 import type { ReactElement } from 'react'
 
 // 从共享类型导入并重新导出
-export type { ChatSource, QuestionScope, ChatMessage } from '../../../types/chat'
+export type {
+  ChatSource,
+  QuestionScope,
+  ChatMessage,
+  AppSettings,
+  ModelProvider,
+  ProviderConfig,
+  EmbeddingProvider,
+  RagSettings
+} from '../../../types/chat'
 import type { ChatMessage } from '../../../types/chat'
 
 /** 对话 */

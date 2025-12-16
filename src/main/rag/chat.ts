@@ -239,9 +239,10 @@ export async function chatWithRag(
   })
 
   // 1. 检索相似文档 - 增加检索数量以获取更多样的来源
+  const searchLimit = settings.rag?.searchLimit ?? RAG_CONFIG.SEARCH.DEFAULT_K
   const retrievedPairs = await withEmbeddingProgressSuppressed(() =>
     searchSimilarDocumentsWithScores(question, {
-      k: 12, // 增加检索数量提高命中率
+      k: searchLimit, // 使用设置中的检索数量
       sources: options.sources
     })
   )
@@ -268,8 +269,8 @@ export async function chatWithRag(
   }
 
   // 3. 根据相关度阈值过滤文档 - 使用渐进式阈值策略
-  const RELEVANCE_THRESHOLD = RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
-  const RELEVANCE_THRESHOLD_LOW = RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD_LOW ?? 0.10
+  const RELEVANCE_THRESHOLD = settings.rag?.minRelevance ?? RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
+  const RELEVANCE_THRESHOLD_LOW = Math.max(0.1, RELEVANCE_THRESHOLD - 0.15) // 动态计算低阈值
   let effectivePairs = retrievedPairs
 
   if (retrievedPairs.length > 0) {

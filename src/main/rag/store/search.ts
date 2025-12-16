@@ -221,7 +221,7 @@ export function filterByRelevanceThreshold<T extends { score: number; doc: Docum
 
   // 如果过滤后结果太少，使用更低的阈值
   if (scoreFiltered.length < 3) {
-    const lowThreshold = RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD_LOW
+    const lowThreshold = Math.min(threshold, RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD_LOW)
     const relaxedResults = results.filter((r) => r.score >= lowThreshold)
     
     // 如果放宽后仍然太少，返回原始结果的前部分（按分数排序）
