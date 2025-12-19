@@ -112,12 +112,19 @@ export function ChatSidebar({
                 } as CSSProperties
               }
             >
-              <div className="cartoon-assistant__face">
-                <div className="cartoon-assistant__eye cartoon-assistant__eye--left" />
-                <div className="cartoon-assistant__eye cartoon-assistant__eye--right" />
-                <div className="cartoon-assistant__mouth" />
-                <div className="cartoon-assistant__cheek cartoon-assistant__cheek--left" />
-                <div className="cartoon-assistant__cheek cartoon-assistant__cheek--right" />
+              <div className="cartoon-assistant__arm cartoon-assistant__arm--left" />
+              <div className="cartoon-assistant__arm cartoon-assistant__arm--right" />
+              <div className="cartoon-assistant__body">
+                <div className="cartoon-assistant__chest" />
+              </div>
+              <div className="cartoon-assistant__head">
+                <div className="cartoon-assistant__face">
+                  <div className="cartoon-assistant__eye cartoon-assistant__eye--left" />
+                  <div className="cartoon-assistant__eye cartoon-assistant__eye--right" />
+                  <div className="cartoon-assistant__mouth" />
+                  <div className="cartoon-assistant__cheek cartoon-assistant__cheek--left" />
+                  <div className="cartoon-assistant__cheek cartoon-assistant__cheek--right" />
+                </div>
               </div>
               <div className="cartoon-assistant__dots" aria-hidden="true">
                 <span />

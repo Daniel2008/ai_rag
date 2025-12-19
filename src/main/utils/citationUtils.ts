@@ -97,7 +97,7 @@ export async function enhanceCitation(
         enhanced.tags = tags.map((t) => t.name)
         enhancedInfo.tagNames = tags.map((t) => t.name)
       }
-    } catch (error) {
+    } catch (_error) {
       // 标签获取失败不影响主流程
     }
   }

@@ -1,7 +1,7 @@
 {
   "name": "zhihui-rag",
   "version": "1.0.1",
-  "description": "智汇 - AI 智能知识库助手，支持文档问答、知识检索、文档生成",
+  "description": "RAG - AI 智能知识库助手，支持文档问答、知识检索、文档生成",
   "main": "./out/main/index.js",
   "author": "ZhiHui Team",
   "homepage": "https://github.com/zhihui-rag",

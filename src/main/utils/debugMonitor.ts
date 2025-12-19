@@ -243,7 +243,7 @@ export class DebugMonitor {
       ragStats.docCount = await getDocCount()
       ragStats.cacheStats = getQueryCacheStats()
       ragStats.embeddingsReady = true // 简化检查
-    } catch (e) {
+    } catch (_e) {
       ragStats.error = '无法获取RAG统计'
     }
 
@@ -350,7 +350,7 @@ export class DebugMonitor {
         issues.push('知识库为空')
         suggestions.push('请导入文档以构建知识库')
       }
-    } catch (e) {
+    } catch (_e) {
       issues.push('无法检查RAG状态')
     }
 

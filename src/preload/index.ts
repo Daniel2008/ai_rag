@@ -119,7 +119,6 @@ const api = {
     }) => void
   ): void => {
     ipcRenderer.removeAllListeners('rag:process-progress')
-    // @ts-ignore
     ipcRenderer.on('rag:process-progress', (_, progress) => callback(progress))
   },
   removeProcessProgressListener: (): void => {

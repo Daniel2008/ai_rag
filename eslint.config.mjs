@@ -6,10 +6,10 @@ import eslintPluginReactHooks from 'eslint-plugin-react-hooks'
 import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 
 export default defineConfig(
-  { 
+  {
     ignores: [
       '**/node_modules/**',
-      '**/dist/**', 
+      '**/dist/**',
       '**/out/**',
       '**/.git/**',
       '**/*.log',
@@ -24,6 +24,21 @@ export default defineConfig(
       react: {
         version: 'detect'
       }
+    }
+  },
+  {
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_'
+        }
+      ]
     }
   },
   {

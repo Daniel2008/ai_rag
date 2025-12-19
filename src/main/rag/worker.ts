@@ -380,7 +380,7 @@ parentPort.on('message', async (task) => {
                 break
 
               case 'download':
-              case 'progress':
+              case 'progress': {
                 // 更新下载进度
                 state.loaded = loaded || state.loaded
                 state.total = total || state.total
@@ -397,8 +397,9 @@ parentPort.on('message', async (task) => {
 
                 sendProgressUpdate(ProgressStatus.DOWNLOADING, message, file, currentFileProgress)
                 break
+              }
 
-              case 'done':
+              case 'done': {
                 // 文件下载完成
                 state.loaded = total || loaded || state.loaded
                 state.total = total || state.total
@@ -420,6 +421,7 @@ parentPort.on('message', async (task) => {
                   sendProgressUpdate(ProgressStatus.PROCESSING, `所有文件下载完成，模型正在初始化`)
                 }
                 break
+              }
             }
           }
 

@@ -35,7 +35,9 @@ import {
   FileOutlined,
   LoadingOutlined,
   LinkOutlined,
-  ClockCircleOutlined
+  ClockCircleOutlined,
+  SoundOutlined,
+  StopOutlined
 } from '@ant-design/icons'
 import { Drawer, List } from 'antd'
 import { BarChartOutlined } from '@ant-design/icons'
@@ -393,6 +395,17 @@ function parseContent(content: string): { think: string | null; realContent: str
   return { think, realContent }
 }
 
+function toSpeechText(markdown: string): string {
+  const withoutCodeBlocks = markdown.replace(/```[\s\S]*?```/g, ' ')
+  const withoutImages = withoutCodeBlocks.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+  const withLinkText = withoutImages.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+  const withoutInlineCode = withLinkText.replace(/`([^`]+)`/g, '$1')
+  const withoutQuotePrefix = withoutInlineCode.replace(/^\s{0,3}>\s?/gm, '')
+  const withoutListPrefix = withoutQuotePrefix.replace(/^\s{0,3}([*+-]|\d+\.)\s+/gm, '')
+  const withoutHeadings = withoutListPrefix.replace(/^\s{0,3}#{1,6}\s+/gm, '')
+  return withoutHeadings.replace(/\s+/g, ' ').trim()
+}
+
 interface MessageContentProps {
   message: ChatMessage
   isTyping: boolean
@@ -429,16 +442,31 @@ interface MessageActionsProps {
   onCopyMessage: (content: string, key: string) => void
   onRetryMessage: (content: string) => void
   isTyping: boolean
+  ttsSupported: boolean
+  isSpeaking: boolean
+  isTtsLoading: boolean
+  onToggleSpeech: (message: ChatMessage) => void
 }
 
 const MessageActions = memo(
-  ({ message, copiedMessageKey, onCopyMessage, onRetryMessage, isTyping }: MessageActionsProps) => {
+  ({
+    message,
+    copiedMessageKey,
+    onCopyMessage,
+    onRetryMessage,
+    isTyping,
+    ttsSupported,
+    isSpeaking,
+    isTtsLoading,
+    onToggleSpeech
+  }: MessageActionsProps) => {
     const { token } = antdTheme.useToken()
 
     if (message.role === 'system') return null
 
     const timeStr = formatTimestamp(message.timestamp)
     const isUserMessage = message.role === 'user'
+    const isAiMessage = message.role === 'ai'
 
     return (
       <div
@@ -455,6 +483,35 @@ const MessageActions = memo(
           >
             {timeStr}
           </span>
+        )}
+        {isAiMessage && (
+          <Tooltip
+            title={
+              ttsSupported
+                ? isTtsLoading
+                  ? '生成语音中...'
+                  : isSpeaking
+                    ? '停止朗读'
+                    : '朗读'
+                : '当前环境不支持语音'
+            }
+          >
+            <Button
+              type="text"
+              size="small"
+              icon={
+                isSpeaking ? (
+                  <StopOutlined />
+                ) : isTtsLoading ? (
+                  <LoadingOutlined />
+                ) : (
+                  <SoundOutlined />
+                )
+              }
+              onClick={() => onToggleSpeech(message)}
+              disabled={!ttsSupported || isTyping || message.typing || isTtsLoading}
+            />
+          </Tooltip>
         )}
         <Tooltip title={copiedMessageKey === message.key ? '已复制' : '复制'}>
           <Button
@@ -593,6 +650,78 @@ export function ChatArea({
   // 跟踪用户是否在底部附近（用于决定是否自动滚动）
   const isNearBottomRef = useRef(true)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [speakingMessageKey, setSpeakingMessageKey] = useState<string | null>(null)
+  const [ttsLoadingMessageKey, setTtsLoadingMessageKey] = useState<string | null>(null)
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
+  const ttsSupported = useMemo(() => {
+    return (
+      typeof window !== 'undefined' &&
+      'speechSynthesis' in window &&
+      typeof window.speechSynthesis?.speak === 'function' &&
+      typeof window.speechSynthesis?.cancel === 'function' &&
+      typeof (window as unknown as { SpeechSynthesisUtterance?: unknown })
+        .SpeechSynthesisUtterance === 'function'
+    )
+  }, [])
+
+  const stopSpeech = useCallback((): void => {
+    if (ttsSupported) {
+      window.speechSynthesis.cancel()
+    }
+    utteranceRef.current = null
+    setSpeakingMessageKey(null)
+    setTtsLoadingMessageKey(null)
+  }, [ttsSupported])
+
+  const speak = useCallback(
+    async (message: ChatMessage): Promise<void> => {
+      if (!ttsSupported) return
+
+      const { realContent } = parseContent(message.content)
+      const text = toSpeechText(realContent)
+      if (!text) return
+
+      stopSpeech()
+      setTtsLoadingMessageKey(null)
+      setSpeakingMessageKey(message.key)
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.lang = 'zh-CN'
+      utterance.rate = 1
+      utterance.pitch = 1
+      utterance.volume = 1
+      utterance.onend = () => stopSpeech()
+      utterance.onerror = () => stopSpeech()
+      utteranceRef.current = utterance
+      window.speechSynthesis.speak(utterance)
+    },
+    [stopSpeech, ttsSupported]
+  )
+
+  const toggleSpeech = useCallback(
+    (message: ChatMessage): void => {
+      if (!ttsSupported) return
+      if (speakingMessageKey === message.key) {
+        stopSpeech()
+        return
+      }
+      stopSpeech()
+      void speak(message)
+    },
+    [ttsSupported, speakingMessageKey, speak, stopSpeech]
+  )
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      stopSpeech()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [conversationKey, stopSpeech])
+
+  useEffect(() => {
+    return () => {
+      stopSpeech()
+    }
+  }, [stopSpeech])
 
   // 检测用户滚动位置
   useEffect(() => {
@@ -1030,6 +1159,10 @@ export function ChatArea({
                     onCopyMessage={onCopyMessage}
                     onRetryMessage={onRetryMessage}
                     isTyping={isTyping}
+                    ttsSupported={ttsSupported}
+                    isSpeaking={speakingMessageKey === message.key}
+                    isTtsLoading={ttsLoadingMessageKey === message.key}
+                    onToggleSpeech={toggleSpeech}
                   />
                 </div>
               )
@@ -1052,7 +1185,11 @@ export function ChatArea({
             copiedMessageKey,
             onCopyMessage,
             onRetryMessage,
-            setItemHeight
+            setItemHeight,
+            ttsSupported,
+            speakingMessageKey,
+            ttsLoadingMessageKey,
+            toggleSpeech
           ])}
         />
         {spacerHeights.bottom > 0 && <div style={{ height: spacerHeights.bottom }} />}

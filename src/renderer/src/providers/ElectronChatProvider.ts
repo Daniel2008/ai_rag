@@ -71,7 +71,7 @@ export class ElectronChatProvider extends AbstractChatProvider<
    */
   transformParams(
     requestParams: Partial<ElectronRequestInput>,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _options: XRequestOptions<ElectronRequestInput, ElectronRequestOutput>
   ): ElectronRequestInput {
     return {

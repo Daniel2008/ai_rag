@@ -1062,7 +1062,7 @@ export async function getVectorStoreStats(): Promise<VectorStoreStats> {
   try {
     const { getIndexedFileRecords } = await import('../knowledgeBase')
     knowledgeBaseFileCount = getIndexedFileRecords().length
-  } catch (e) {
+  } catch (_e) {
     // 忽略
   }
 
