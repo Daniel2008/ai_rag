@@ -20,13 +20,27 @@ export interface ChatSource {
   /** 内容在文档中的位置（字符偏移） */
   position?: number
   /** 来源类型 */
-  sourceType?: 'file' | 'url'
+  sourceType?: 'file' | 'url' | 'ocr'
   /** URL 来源的站点名称 */
   siteName?: string
   /** URL 来源的原始链接 */
   url?: string
   /** 抓取/导入时间 */
   fetchedAt?: string
+  /** OCR置信度 */
+  ocrConfidence?: number
+  /** 文档标签 */
+  tags?: string[]
+  /** 文档版本 */
+  version?: number
+  /** 段落索引 */
+  paragraphIndex?: number
+  /** 检索来源 */
+  searchSources?: string[]
+  /** 相关内容片段（用于上下文展示） */
+  relatedContent?: string[]
+  /** 文档元数据 */
+  metadata?: Record<string, any>
 }
 
 /** 问题检索范围 */
