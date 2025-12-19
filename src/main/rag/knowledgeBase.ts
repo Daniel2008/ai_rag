@@ -923,12 +923,6 @@ export async function restoreKnowledgeBase(backupFile: string): Promise<{
 
     // 恢复标签（如果存在）
     if (backupData.tags) {
-      const { getAllTags } = require('./tagManager')
-      const existingTags = getAllTags()
-      const newTags = backupData.tags.filter((t: any) => 
-        !existingTags.some(et => et.id === t.id)
-      )
-      
       // 标签恢复需要通过 tagManager 的内部 store，这里简化处理
       logInfo('标签数据已包含在备份中', 'KnowledgeBase', { tagCount: backupData.tags.length })
     }

@@ -148,6 +148,16 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     return false
   }, [activeConversationKey, displayMessages])
 
+  const assistantPhase = useMemo(() => {
+    const lastAi = [...displayMessages].reverse().find((m) => m.role === 'ai')
+    if (lastAi?.status === 'error') return 'error' as const
+    if (isTyping) {
+      if (lastAi?.typing && !lastAi.content.trim()) return 'thinking' as const
+      return 'answering' as const
+    }
+    return 'idle' as const
+  }, [displayMessages, isTyping])
+
   // 初始化
   useEffect(() => {
     void (async () => {
@@ -464,6 +474,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             conversationItems={conversationItems}
             activeConversationKey={activeConversationKey}
             readyDocuments={readyDocuments}
+            assistantPhase={assistantPhase}
             onThemeChange={onThemeChange}
             onActiveConversationChange={handleActiveConversationChange}
             onCreateNewConversation={createNewConversation}

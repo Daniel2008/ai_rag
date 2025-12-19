@@ -1,6 +1,5 @@
 import { Document } from '@langchain/core/documents'
 import { searchSimilarDocumentsWithScores } from './store/index'
-import { BM25Searcher } from './store/bm25'
 import { logInfo, logDebug, logWarn } from '../utils/logger'
 
 export interface HybridSearchConfig {
@@ -24,7 +23,6 @@ export interface SearchContext {
  */
 export class HybridSearcher {
   private config: HybridSearchConfig
-  private bm25: BM25Searcher
 
   constructor(config: HybridSearchConfig = {}) {
     this.config = {
@@ -35,7 +33,6 @@ export class HybridSearcher {
       minScore: 0.1,
       ...config
     }
-    this.bm25 = new BM25Searcher()
   }
 
   /**
@@ -119,7 +116,7 @@ export class HybridSearcher {
 
       // 3. 结果融合
       if (this.config.rerank) {
-        context.hybridResults = this.rerankResults(query, vectorResults, keywordDocs)
+        context.hybridResults = this.rerankResults(vectorResults, keywordDocs)
       } else {
         context.hybridResults = this.simpleFusion(vectorResults, keywordDocs)
       }
@@ -162,7 +159,6 @@ export class HybridSearcher {
    * 重新排序结果（使用多种策略）
    */
   private rerankResults(
-    query: string,
     vectorResults: { doc: Document; score: number }[],
     keywordResults: { doc: Document; score: number }[]
   ): { doc: Document; finalScore: number; sources: string[] }[] {
@@ -285,7 +281,7 @@ export class HybridSearcher {
    * 获取索引统计
    * 返回空统计，因为当前版本使用简化实现
    */
-  getIndexStats() {
+  getIndexStats(): { docCount: number; uniqueTerms: number; avgDocLength: number; message: string } {
     return {
       docCount: 0,
       uniqueTerms: 0,
@@ -477,7 +473,7 @@ export class AdvancedRetriever {
   /**
    * 获取检索器统计信息
    */
-  getStats() {
+  getStats(): { bm25: ReturnType<HybridSearcher['getIndexStats']>; config: HybridSearchConfig } {
     const bm25Stats = this.hybridSearcher.getIndexStats()
     return {
       bm25: bm25Stats,

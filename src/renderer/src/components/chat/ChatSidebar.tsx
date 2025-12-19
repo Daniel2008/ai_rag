@@ -1,19 +1,20 @@
-import type { ReactElement } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
 import { useCallback } from 'react'
 import { Conversations, type ConversationsProps } from '@ant-design/x'
-import { Avatar, Badge, Button, Flex, Space, Tooltip, Typography, theme as antdTheme } from 'antd'
+import { Badge, Button, Flex, Space, Tooltip, Typography, theme as antdTheme } from 'antd'
 import {
   SettingOutlined,
   DeleteOutlined,
   MoonFilled,
   SunFilled,
   PlusOutlined,
-  RobotOutlined,
   DatabaseOutlined,
   StarOutlined,
   EditOutlined
 } from '@ant-design/icons'
 import type { ConversationItem } from '../../types/chat'
+
+type AssistantPhase = 'idle' | 'thinking' | 'answering' | 'error'
 
 interface ChatSidebarProps {
   themeMode: 'light' | 'dark'
@@ -21,6 +22,7 @@ interface ChatSidebarProps {
   conversationItems: ConversationItem[]
   activeConversationKey: string | undefined
   readyDocuments: number
+  assistantPhase: AssistantPhase
   onThemeChange: (mode: 'light' | 'dark') => void
   onActiveConversationChange: (key: string | undefined) => void
   onCreateNewConversation: () => void
@@ -34,6 +36,7 @@ export function ChatSidebar({
   conversationItems,
   activeConversationKey,
   readyDocuments,
+  assistantPhase,
   onThemeChange,
   onActiveConversationChange,
   onCreateNewConversation,
@@ -41,6 +44,17 @@ export function ChatSidebar({
   onOpenSettings
 }: ChatSidebarProps): ReactElement {
   const { token } = antdTheme.useToken()
+
+  const assistantSubtitle =
+    assistantPhase === 'thinking'
+      ? '思考中…'
+      : assistantPhase === 'answering'
+        ? '回答中…'
+        : assistantPhase === 'error'
+          ? '出错了，点“重试”再试一次'
+          : readyDocuments > 0
+            ? '已就绪'
+            : '导入文档后开始问答'
 
   // Conversations 组件的菜单配置
   const conversationsMenuConfig: ConversationsProps['menu'] = useCallback(
@@ -88,23 +102,33 @@ export function ChatSidebar({
         className="px-4 pt-5 pb-4"
         style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}
       >
-        <Flex align="center" gap={12} className="mb-4">
+        <Flex align="center" gap={12} className="mb-4" style={{ margin: 20, marginLeft: 40 }}>
           <div className="avatar-glow" style={{ borderRadius: 12 }}>
-            <Avatar
-              size={44}
-              icon={<RobotOutlined style={{ fontSize: 24 }} />}
-              style={{
-                background: `linear-gradient(135deg, ${token.colorPrimary} 0%, #7c3aed 100%)`,
-                borderRadius: 12
-              }}
-            />
+            <div
+              className={`cartoon-assistant cartoon-assistant--${assistantPhase}`}
+              style={
+                {
+                  '--assistant-primary': token.colorPrimary
+                } as CSSProperties
+              }
+            >
+              <div className="cartoon-assistant__face">
+                <div className="cartoon-assistant__eye cartoon-assistant__eye--left" />
+                <div className="cartoon-assistant__eye cartoon-assistant__eye--right" />
+                <div className="cartoon-assistant__mouth" />
+                <div className="cartoon-assistant__cheek cartoon-assistant__cheek--left" />
+                <div className="cartoon-assistant__cheek cartoon-assistant__cheek--right" />
+              </div>
+              <div className="cartoon-assistant__dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+            </div>
           </div>
           <div>
-            <Typography.Title level={4} style={{ margin: 0, marginBottom: 2 }}>
-              RAG 助手
-            </Typography.Title>
             <Typography.Text type="secondary" className="text-xs">
-              本地知识库问答
+              {assistantSubtitle}
             </Typography.Text>
           </div>
         </Flex>

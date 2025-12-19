@@ -40,7 +40,7 @@ export interface ChatSource {
   /** 相关内容片段（用于上下文展示） */
   relatedContent?: string[]
   /** 文档元数据 */
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /** 问题检索范围 */

@@ -222,7 +222,12 @@ app.whenReady().then(async () => {
   ipcMain.handle('dialog:openFile', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Documents', extensions: ['pdf', 'docx', 'pptx', 'xlsx', 'odt', 'odp', 'ods', 'txt', 'md'] }]
+      filters: [
+        {
+          name: 'Documents',
+          extensions: ['pdf', 'docx', 'pptx', 'xlsx', 'odt', 'odp', 'ods', 'txt', 'md']
+        }
+      ]
     })
     if (canceled) return []
     return filePaths
@@ -231,7 +236,12 @@ app.whenReady().then(async () => {
   ipcMain.handle('rag:processFile', async (event, filePaths: string | string[]) => {
     const paths = Array.isArray(filePaths) ? filePaths : [filePaths]
     const results: { success: boolean; count?: number; preview?: string; error?: string }[] = []
-    const { toFrontendProgressFormat, createBatchProgress, createDocumentParseProgress, createDocumentParseComplete } = await import('./utils/progressHelper')
+    const {
+      toFrontendProgressFormat,
+      createBatchProgress,
+      createDocumentParseProgress,
+      createDocumentParseComplete
+    } = await import('./utils/progressHelper')
 
     // 总进度计算
     let processedCount = 0
@@ -241,7 +251,7 @@ app.whenReady().then(async () => {
     for (const filePath of paths) {
       console.log('Processing file:', filePath)
       const fileName = basename(filePath)
-      
+
       // 计算基础进度（每个文件占据 100/totalFiles 的进度空间）
       const fileProgressRange = 100 / totalFiles
       const basePercent = Math.round(processedCount * fileProgressRange)
@@ -298,13 +308,14 @@ app.whenReady().then(async () => {
           await addDocumentsToStore(docs, (progress) => {
             // 计算当前文件内的进度（向量化占据剩余 80% 的进度）
             const vectorProgress = (progress.progress || 0) / 100
-            const currentPercent = basePercent + Math.round(fileProgressRange * (0.15 + vectorProgress * 0.8))
-            
+            const currentPercent =
+              basePercent + Math.round(fileProgressRange * (0.15 + vectorProgress * 0.8))
+
             let stageMessage = progress.message
             if (isBatch) {
               stageMessage = `(${processedCount + 1}/${totalFiles}) ${progress.message}`
             }
-            
+
             event.sender.send('rag:process-progress', {
               stage: stageMessage,
               percent: Math.min(currentPercent, 99),
@@ -350,9 +361,8 @@ app.whenReady().then(async () => {
     }
 
     // 发送进度：完成
-    const completeMessage = totalFiles === 1
-      ? '文档已添加到知识库'
-      : `${totalFiles} 个文档已添加到知识库`
+    const completeMessage =
+      totalFiles === 1 ? '文档已添加到知识库' : `${totalFiles} 个文档已添加到知识库`
     event.sender.send('rag:process-progress', {
       stage: completeMessage,
       percent: 100,
@@ -486,7 +496,7 @@ app.whenReady().then(async () => {
       } else if (errorMessage.includes('404')) {
         errorMessage = '页面不存在'
       }
-      
+
       event.sender.send('rag:process-progress', {
         stage: errorMessage,
         percent: 0,
@@ -550,9 +560,15 @@ app.whenReady().then(async () => {
   ipcMain.handle('files:reindex', async (event, filePath: string) => {
     const isUrl = filePath.startsWith('http://') || filePath.startsWith('https://')
     const displayName = isUrl
-      ? (() => { try { return new URL(filePath).hostname } catch { return filePath } })()
+      ? (() => {
+          try {
+            return new URL(filePath).hostname
+          } catch {
+            return filePath
+          }
+        })()
       : basename(filePath)
-    
+
     try {
       event.sender.send('rag:process-progress', {
         stage: `准备重新索引: ${displayName}`,
@@ -734,20 +750,26 @@ app.whenReady().then(async () => {
       event.reply('rag:chat-error', '问题内容不能为空')
       return
     }
-    
+
     const { RAG_CONFIG } = await import('./utils/config')
     if (normalized.question.length > RAG_CONFIG.VALIDATION.MAX_QUERY_LENGTH) {
-      event.reply('rag:chat-error', `问题内容过长，最多支持 ${RAG_CONFIG.VALIDATION.MAX_QUERY_LENGTH} 个字符`)
+      event.reply(
+        'rag:chat-error',
+        `问题内容过长，最多支持 ${RAG_CONFIG.VALIDATION.MAX_QUERY_LENGTH} 个字符`
+      )
       return
     }
-    
+
     if (normalized.question.length < RAG_CONFIG.VALIDATION.MIN_QUERY_LENGTH) {
       event.reply('rag:chat-error', '问题内容不能为空')
       return
     }
-    
+
     if (normalized.sources && normalized.sources.length > RAG_CONFIG.VALIDATION.MAX_SOURCES) {
-      event.reply('rag:chat-error', `指定来源过多，最多支持 ${RAG_CONFIG.VALIDATION.MAX_SOURCES} 个文件`)
+      event.reply(
+        'rag:chat-error',
+        `指定来源过多，最多支持 ${RAG_CONFIG.VALIDATION.MAX_SOURCES} 个文件`
+      )
       return
     }
 
@@ -761,7 +783,7 @@ app.whenReady().then(async () => {
     // 因此先对路径做统一标准化再比较，避免因分隔符或大小写导致误判
     if (normalized.sources) {
       const snapshot = getKnowledgeBaseSnapshot()
-      const normalizePath = (p: string) => p.replace(/\\/g, '/').toLowerCase()
+      const normalizePath = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
       const readySet = new Set(
         snapshot.files.filter((f) => f.status === 'ready').map((f) => normalizePath(f.path))
       )
@@ -773,7 +795,9 @@ app.whenReady().then(async () => {
 
       // 如果过滤后为空，设为 undefined 表示全库检索；并打印日志以便诊断
       if (filtered.length === 0) {
-        console.debug('[rag:chat] sources filtered out (no ready files matched), fallback to full-scope')
+        console.debug(
+          '[rag:chat] sources filtered out (no ready files matched), fallback to full-scope'
+        )
         normalized.sources = undefined
       } else {
         if (filtered.length !== normalized.sources.length) {
@@ -808,10 +832,8 @@ app.whenReady().then(async () => {
       }
 
       // 使用 LangGraph 版 RAG，保持流式回传
-      const result = await runLangGraphChat(
-        normalized.question,
-        normalized.sources,
-        (chunk) => event.reply('rag:chat-token', chunk)
+      const result = await runLangGraphChat(normalized.question, normalized.sources, (chunk) =>
+        event.reply('rag:chat-token', chunk)
       )
 
       if (result.error) {
@@ -935,28 +957,30 @@ app.whenReady().then(async () => {
           percent: 2,
           taskType: 'index_rebuild'
         })
-        
+
         refreshKnowledgeBase((progress) => {
           event.sender.send('rag:process-progress', {
             stage: progress.message,
             percent: progress.progress || 0,
             taskType: progress.taskType
           })
-        }).then(() => {
-          event.sender.send('rag:process-progress', {
-            stage: '索引重建完成',
-            percent: 100,
-            taskType: 'completed'
-          })
-        }).catch((error) => {
-          console.error('Auto reindex failed:', error)
-          event.sender.send('rag:process-progress', {
-            stage: '索引重建失败',
-            percent: 0,
-            error: error instanceof Error ? error.message : String(error),
-            taskType: 'error'
-          })
         })
+          .then(() => {
+            event.sender.send('rag:process-progress', {
+              stage: '索引重建完成',
+              percent: 100,
+              taskType: 'completed'
+            })
+          })
+          .catch((error) => {
+            console.error('Auto reindex failed:', error)
+            event.sender.send('rag:process-progress', {
+              stage: '索引重建失败',
+              percent: 0,
+              error: error instanceof Error ? error.message : String(error),
+              taskType: 'error'
+            })
+          })
 
         return { success: true, embeddingChanged: true, reindexingStarted: true }
       }
@@ -964,7 +988,7 @@ app.whenReady().then(async () => {
 
     return { success: true }
   })
-  
+
   ipcMain.handle('metrics:getRecent', (_, count?: number) => {
     const entries = logger.getRecentEntries(typeof count === 'number' ? count : 100)
     return entries.map((e) => ({
@@ -1015,17 +1039,14 @@ app.on('window-all-closed', () => {
 // 清理资源：在应用退出前终止所有 Worker
 app.on('before-quit', async (event) => {
   event.preventDefault()
-  
+
   try {
     // 清理所有 Worker
     const { terminateDocumentWorker } = await import('./rag/workerManager')
     const { closeVectorStore } = await import('./rag/store/index')
-    
-    await Promise.all([
-      terminateDocumentWorker(),
-      closeVectorStore()
-    ])
-    
+
+    await Promise.all([terminateDocumentWorker(), closeVectorStore()])
+
     console.log('All workers and resources cleaned up')
   } catch (error) {
     console.error('Error during cleanup:', error)

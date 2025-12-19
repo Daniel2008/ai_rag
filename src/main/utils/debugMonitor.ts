@@ -1,6 +1,5 @@
 import { logInfo, logWarn, logError, logDebug } from './logger'
 import { getSettings } from '../settings'
-import { memoryMonitor } from './memoryMonitor'
 
 export interface PerformanceMetric {
   name: string
@@ -456,7 +455,6 @@ export class PerformanceAnalyzer {
  */
 export class EventPerformanceMonitor {
   private eventTimings: Map<string, { start: number; end: number }[]> = new Map()
-  private enabled: boolean = true
 
   /**
    * 开始记录事件

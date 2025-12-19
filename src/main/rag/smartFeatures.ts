@@ -3,8 +3,6 @@ import { createChatModel } from '../utils/createChatModel'
 import { getSettings } from '../settings'
 import { logInfo, logWarn, logDebug } from '../utils/logger'
 import { searchSimilarDocuments } from './store/index'
-import { normalizePath } from './pathUtils'
-import { getIndexedFileRecords } from './knowledgeBase'
 
 export interface SmartPromptOptions {
   /** 智能提示数量 */
@@ -41,7 +39,7 @@ export interface ContentAnalysis {
  * 智能提示生成器
  */
 export class SmartPromptGenerator {
-  private model: any
+  private model: unknown
 
   constructor() {
     const settings = getSettings()
@@ -57,21 +55,26 @@ export class SmartPromptGenerator {
   ): Promise<string[]> {
     const {
       count = 3,
-      basedOn = 'recent',
       length = 'medium',
       tone = 'professional'
     } = options
 
     try {
-      const prompt = this.buildPromptGenerationPrompt(context, count, length, tone, basedOn)
+      const prompt = this.buildPromptGenerationPrompt(context, count, length, tone)
       
       logDebug('生成智能提示', 'SmartPrompt', {
         contextLength: context.length,
         options
       })
 
-      const result = await this.model.invoke(prompt)
-      const prompts = this.parsePrompts(result.content || result)
+      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(prompt)
+      const resultContent =
+        typeof result === 'string'
+          ? result
+          : typeof (result as { content?: unknown })?.content === 'string'
+            ? String((result as { content?: unknown }).content)
+            : String(result)
+      const prompts = this.parsePrompts(resultContent)
 
       logInfo('智能提示生成完成', 'SmartPrompt', {
         count: prompts.length,
@@ -137,8 +140,14 @@ export class SmartPromptGenerator {
         options
       })
 
-      const result = await this.model.invoke(prompt)
-      const parsed = this.parseSummary(result.content || result)
+      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(prompt)
+      const resultContent =
+        typeof result === 'string'
+          ? result
+          : typeof (result as { content?: unknown })?.content === 'string'
+            ? String((result as { content?: unknown }).content)
+            : String(result)
+      const parsed = this.parseSummary(resultContent)
 
       logInfo('自动摘要生成完成', 'SmartPrompt', {
         summaryLength: parsed.summary.length,
@@ -166,8 +175,14 @@ export class SmartPromptGenerator {
         contentLength: content.length
       })
 
-      const result = await this.model.invoke(prompt)
-      const analysis = this.parseAnalysis(result.content || result)
+      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(prompt)
+      const resultContent =
+        typeof result === 'string'
+          ? result
+          : typeof (result as { content?: unknown })?.content === 'string'
+            ? String((result as { content?: unknown }).content)
+            : String(result)
+      const analysis = this.parseAnalysis(resultContent)
 
       logInfo('内容分析完成', 'SmartPrompt', {
         topic: analysis.topic,
@@ -213,8 +228,7 @@ export class SmartPromptGenerator {
     context: string,
     count: number,
     length: string,
-    tone: string,
-    basedOn: string
+    tone: string
   ): string {
     const lengthMap = {
       short: '简短的问题（10-20字）',
@@ -320,7 +334,7 @@ ${content}
     for (const line of lines) {
       const trimmed = line.trim()
       // 匹配 "1. " 或 "1. " 等格式
-      const match = trimmed.match(/^\d+[.\)]\s*(.*)/)
+      const match = trimmed.match(/^\d+[.)]\s*(.*)/)
       if (match) {
         const prompt = match[1].trim()
         if (prompt && prompt.length > 0) {
@@ -341,7 +355,7 @@ ${content}
     tags: string[]
   } {
     let summary = ''
-    let keyPoints: string[] = []
+    const keyPoints: string[] = []
     let tags: string[] = []
 
     // 提取摘要部分
@@ -355,7 +369,7 @@ ${content}
     if (keyPointsMatch) {
       const lines = keyPointsMatch[0].split('\n')
       for (const line of lines) {
-        const match = line.match(/^\d+[.\)]\s*(.*)/)
+        const match = line.match(/^\d+[.)]\s*(.*)/)
         if (match) {
           keyPoints.push(match[1].trim())
         }
@@ -384,7 +398,7 @@ ${content}
           suggestedQuestions: data.suggestedQuestions || []
         }
       }
-    } catch (e) {
+    } catch {
       // JSON解析失败，使用文本解析
     }
 
@@ -558,9 +572,6 @@ export class SmartQnAAssistant {
     sources: string[]
     relatedQuestions: string[]
   }> {
-    const settings = getSettings()
-    const model = createChatModel(settings.provider)
-
     const prompt = `基于以下上下文信息，回答用户的问题。
 
 上下文：

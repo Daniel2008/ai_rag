@@ -195,7 +195,7 @@ export function UpdateChecker(): ReactElement {
   }
 
   // 渲染状态标签
-  const renderStatusTag = () => {
+  const renderStatusTag = (): ReactElement => {
     if (state.error) {
       return <Tag color="error">错误</Tag>
     }
@@ -215,7 +215,7 @@ export function UpdateChecker(): ReactElement {
   }
 
   // 渲染操作按钮
-  const renderActions = () => {
+  const renderActions = (): ReactElement => {
     if (state.error) {
       return (
         <Space>
@@ -285,7 +285,7 @@ export function UpdateChecker(): ReactElement {
   }
 
   // 渲染进度信息
-  const renderProgress = () => {
+  const renderProgress = (): ReactElement | null => {
     if (!state.progress || !state.isDownloading) return null
 
     const { percent, bytesPerSecond, transferred, total } = state.progress
@@ -298,7 +298,7 @@ export function UpdateChecker(): ReactElement {
         <Progress 
           percent={percent} 
           status={state.error ? 'exception' : 'active'}
-          format={(p) => `${Math.round(p)}%`}
+          format={(p) => `${Math.round(p ?? percent)}%`}
         />
         <Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 0, fontSize: 12 }}>
           {speedMB} MB/s • {transferredMB} MB / {totalMB} MB
@@ -308,7 +308,7 @@ export function UpdateChecker(): ReactElement {
   }
 
   // 渲染错误信息
-  const renderError = () => {
+  const renderError = (): ReactElement | null => {
     if (!state.error) return null
     return (
       <Alert
@@ -322,7 +322,7 @@ export function UpdateChecker(): ReactElement {
   }
 
   // 渲染版本信息
-  const renderVersionInfo = () => {
+  const renderVersionInfo = (): ReactElement => {
     const versionText = state.availableVersion 
       ? `当前版本: ${state.currentVersion} → 新版本: ${state.availableVersion}`
       : `当前版本: ${state.currentVersion}`

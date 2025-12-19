@@ -4,7 +4,16 @@ import { Bubble, ThoughtChain } from '@ant-design/x'
 import XMarkdown from '@ant-design/x-markdown'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
 import type { RoleType } from '@ant-design/x/es/bubble/interface'
-import { Avatar, Button, Tooltip, Progress, Tag, Collapse, theme as antdTheme, FloatButton } from 'antd'
+import {
+  Avatar,
+  Button,
+  Tooltip,
+  Progress,
+  Tag,
+  Collapse,
+  theme as antdTheme,
+  FloatButton
+} from 'antd'
 import {
   FileTextOutlined,
   FilePdfOutlined,
@@ -158,11 +167,13 @@ function mergeSourcesByFile(sources: ChatSource[]): MergedSource[] {
         fetchedAt: source.fetchedAt,
         maxScore: source.score || 0,
         avgScore: 0,
-        chunks: [{
-          content: source.content || '',
-          pageNumber: source.pageNumber,
-          score: source.score || 0
-        }]
+        chunks: [
+          {
+            content: source.content || '',
+            pageNumber: source.pageNumber,
+            score: source.score || 0
+          }
+        ]
       })
     }
   }
@@ -234,19 +245,18 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
                 border: `1px solid ${token.colorBorderSecondary}`
               }}
             >
-              <div className="flex items-center gap-2 mb-1" style={{ color: token.colorTextTertiary }}>
+              <div
+                className="flex items-center gap-2 mb-1"
+                style={{ color: token.colorTextTertiary }}
+              >
                 {chunk.pageNumber && chunk.pageNumber > 0 && (
                   <Tag color="cyan" style={{ margin: 0, fontSize: 10 }}>
                     第 {chunk.pageNumber} 页
                   </Tag>
                 )}
-                <span className="ml-auto text-xs">
-                  相关度: {Math.round(chunk.score * 100)}%
-                </span>
+                <span className="ml-auto text-xs">相关度: {Math.round(chunk.score * 100)}%</span>
               </div>
-              <div style={{ color: token.colorTextSecondary }}>
-                {chunk.content}
-              </div>
+              <div style={{ color: token.colorTextSecondary }}>{chunk.content}</div>
             </div>
           ))}
         </div>
@@ -824,50 +834,85 @@ export function ChatArea({
   const OVERSCAN = 10
   const [visibleRange, setVisibleRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
   const heightMapRef = useRef<Map<string, number>>(new Map())
-  const roMapRef = useRef<WeakMap<HTMLElement, ResizeObserver>>(new WeakMap())
-  const heightKeysRef = useRef<string[]>([])
-  const lastVisibleKeysRef = useRef<string[]>([])
+  const [heightMapSnapshot, setHeightMapSnapshot] = useState<Map<string, number>>(new Map())
+  const activeElementsRef = useRef<Map<string, HTMLElement>>(new Map())
+  const elementToKeyRef = useRef<WeakMap<HTMLElement, string>>(new WeakMap())
+  const observerRef = useRef<ResizeObserver | null>(null)
   const MAX_HEIGHT_CACHE = 2000
-  const setItemHeight = useCallback((key: string, el: HTMLElement | null) => {
-    if (!el) return
-    const h = el.offsetHeight
-    if (h && h !== heightMapRef.current.get(key)) {
-      heightMapRef.current.set(key, h)
-      if (!heightKeysRef.current.includes(key)) {
-        heightKeysRef.current.push(key)
-      }
-      const visibleSet = new Set(lastVisibleKeysRef.current)
-      while (heightMapRef.current.size > MAX_HEIGHT_CACHE) {
-        const oldest = heightKeysRef.current.shift()
-        if (!oldest) break
-        if (!visibleSet.has(oldest)) {
-          heightMapRef.current.delete(oldest)
-        } else {
-          heightKeysRef.current.push(oldest)
-          break
+
+  useEffect(() => {
+    observerRef.current = new ResizeObserver((entries) => {
+      let needsUpdate = false
+      for (const entry of entries) {
+        const target = entry.target as HTMLElement
+        const key = elementToKeyRef.current.get(target)
+        if (key) {
+          const h = target.offsetHeight
+          if (h > 0 && h !== heightMapRef.current.get(key)) {
+            heightMapRef.current.set(key, h)
+            // Cache eviction using Map order (FIFO)
+            if (heightMapRef.current.size > MAX_HEIGHT_CACHE) {
+              const firstKey = heightMapRef.current.keys().next().value
+              if (firstKey) {
+                heightMapRef.current.delete(firstKey)
+              }
+            }
+            needsUpdate = true
+          }
         }
       }
-    }
-    if (!roMapRef.current.has(el)) {
-      const ro = new ResizeObserver(() => {
-        const nh = el.offsetHeight
-        if (nh && nh !== heightMapRef.current.get(key)) {
-          heightMapRef.current.set(key, nh)
-          setVisibleRange((r) => ({ ...r }))
-        }
-      })
-      ro.observe(el)
-      roMapRef.current.set(el, ro)
+      if (needsUpdate) {
+        setVisibleRange((prev) => ({ ...prev }))
+        setHeightMapSnapshot(new Map(heightMapRef.current))
+      }
+    })
+
+    return () => {
+      observerRef.current?.disconnect()
     }
   }, [])
-  const computeCumulative = useCallback((keys: string[]) => {
+
+  const setItemHeight = useCallback((key: string, el: HTMLElement | null) => {
+    if (el) {
+      const oldEl = activeElementsRef.current.get(key)
+      if (oldEl && oldEl !== el) {
+        observerRef.current?.unobserve(oldEl)
+      }
+      
+      activeElementsRef.current.set(key, el)
+      elementToKeyRef.current.set(el, key)
+      observerRef.current?.observe(el)
+      
+      const h = el.offsetHeight
+      if (h > 0 && h !== heightMapRef.current.get(key)) {
+        heightMapRef.current.set(key, h)
+        if (heightMapRef.current.size > MAX_HEIGHT_CACHE) {
+          const firstKey = heightMapRef.current.keys().next().value
+          if (firstKey) {
+            heightMapRef.current.delete(firstKey)
+          }
+        }
+      }
+    } else {
+      const oldEl = activeElementsRef.current.get(key)
+      if (oldEl) {
+        observerRef.current?.unobserve(oldEl)
+        activeElementsRef.current.delete(key)
+      }
+    }
+  }, [])
+  const calculateCumulativeHeights = (keys: string[], map: Map<string, number>): number[] => {
     const cum: number[] = new Array(keys.length + 1)
     cum[0] = 0
     for (let i = 0; i < keys.length; i++) {
-      const h = heightMapRef.current.get(keys[i]) || EST_ITEM_HEIGHT
+      const h = map.get(keys[i]) || EST_ITEM_HEIGHT
       cum[i + 1] = cum[i] + h
     }
     return cum
+  }
+
+  const computeCumulative = useCallback((keys: string[]): number[] => {
+    return calculateCumulativeHeights(keys, heightMapRef.current)
   }, [])
 
   useEffect(() => {
@@ -909,41 +954,30 @@ export function ChatArea({
       const start = visibleRange.start
       const end = visibleRange.end || Math.min(filtered.length, start + MAX_RENDERED_MESSAGES)
       const slice = filtered.slice(start, end)
-      lastVisibleKeysRef.current = slice.map(m => m.key)
       return slice
     }
     const fin = filtered.length > MAX_RENDERED_MESSAGES
       ? filtered.slice(-MAX_RENDERED_MESSAGES)
       : filtered
-    lastVisibleKeysRef.current = fin.map(m => m.key)
     return fin
   }, [currentMessages, visibleRange])
 
-  const topSpacerHeight = useMemo(() => {
-    const filtered = currentMessages.filter(
-      (m) => m.role !== 'system' || m.content.trim().length > 0
-    )
-    if (filtered.length > VIRTUAL_THRESHOLD) {
-      const keys = filtered.map((m) => m.key)
-      const cum = computeCumulative(keys)
-      return cum[visibleRange.start] || 0
+  const spacerHeights = useMemo(() => {
+    const filtered = currentMessages.filter((m) => m.role !== 'system' || m.content.trim().length > 0)
+    if (filtered.length <= VIRTUAL_THRESHOLD) {
+      return { top: 0, bottom: 0 }
     }
-    return 0
-  }, [currentMessages, visibleRange, computeCumulative])
 
-  const bottomSpacerHeight = useMemo(() => {
-    const filtered = currentMessages.filter(
-      (m) => m.role !== 'system' || m.content.trim().length > 0
-    )
-    if (filtered.length > VIRTUAL_THRESHOLD) {
-      const keys = filtered.map((m) => m.key)
-      const cum = computeCumulative(keys)
-      const total = cum[cum.length - 1] || 0
-      const used = cum[visibleRange.end || 0] || 0
-      return Math.max(0, total - used)
-    }
-    return 0
-  }, [currentMessages, visibleRange, computeCumulative])
+    const keys = filtered.map((m) => m.key)
+    const cum = calculateCumulativeHeights(keys, heightMapSnapshot)
+    const top = cum[visibleRange.start] || 0
+    const endIndex = visibleRange.end ?? Math.min(filtered.length, visibleRange.start + MAX_RENDERED_MESSAGES)
+    const total = cum[cum.length - 1] || 0
+    const used = cum[endIndex] || 0
+    const bottom = Math.max(0, total - used)
+
+    return { top, bottom }
+  }, [currentMessages, visibleRange, heightMapSnapshot])
 
   return (
     <div
@@ -961,7 +995,7 @@ export function ChatArea({
             仅显示最近 {MAX_RENDERED_MESSAGES} 条消息
           </div>
         )}
-        {topSpacerHeight > 0 && <div style={{ height: topSpacerHeight }} />}
+        {spacerHeights.top > 0 && <div style={{ height: spacerHeights.top }} />}
         <Bubble.List
           ref={bubbleListRef}
           role={roles}
@@ -1002,7 +1036,7 @@ export function ChatArea({
             })
           }, [filteredMessagesForRender, isTyping, copiedMessageKey, onCopyMessage, onRetryMessage, setItemHeight])}
         />
-        {bottomSpacerHeight > 0 && <div style={{ height: bottomSpacerHeight }} />}
+        {spacerHeights.bottom > 0 && <div style={{ height: spacerHeights.bottom }} />}
       </div>
       {showScrollToBottom && (
         <FloatButton
@@ -1059,15 +1093,21 @@ function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
   const summary = useMemoReact(() => {
     const metrics = items.filter(i => i.message === 'Search metrics')
     const completed = items.filter(i => i.message === 'Search completed')
-    const avgScores = metrics.map(i => Number((i.metadata as any)?.avgTopScore || 0)).filter(n => !Number.isNaN(n))
+    const avgScores = metrics
+      .map((i) => Number(i.metadata?.['avgTopScore'] ?? 0))
+      .filter((n) => !Number.isNaN(n))
     const meanAvg = avgScores.length ? (avgScores.reduce((a, b) => a + b, 0) / avgScores.length) : 0
-    const latencies = completed.map(i => Number((i.metadata as any)?.latencyMs || 0)).filter(n => !Number.isNaN(n))
+    const latencies = completed
+      .map((i) => Number(i.metadata?.['latencyMs'] ?? 0))
+      .filter((n) => !Number.isNaN(n))
     const meanLatency = latencies.length ? (latencies.reduce((a, b) => a + b, 0) / latencies.length) : 0
     const coverage = new Set<string>()
     for (const c of completed) {
-      const src = (c.metadata as any)?.sources || []
-      for (const s of src) {
-        if (s) coverage.add(String(s))
+      const sources = c.metadata?.['sources']
+      if (Array.isArray(sources)) {
+        for (const s of sources) {
+          if (s) coverage.add(String(s))
+        }
       }
     }
     return {

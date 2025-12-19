@@ -6,7 +6,16 @@ import eslintPluginReactHooks from 'eslint-plugin-react-hooks'
 import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 
 export default defineConfig(
-  { ignores: ['**/*'] },
+  { 
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**', 
+      '**/out/**',
+      '**/.git/**',
+      '**/*.log',
+      '**/.eslintcache'
+    ] 
+  },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],

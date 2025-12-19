@@ -15,6 +15,7 @@ interface ChatGraphState {
   usedSources?: ChatSource[]
   error?: string
   onToken?: (chunk: string) => void
+  [key: string]: unknown
 }
 
 /**
@@ -47,7 +48,7 @@ const stateChannels = {
 }
 
 // 简化的图结构：直接执行 generate 节点（内部包含检索和生成）
-const chatGraph = new StateGraph({ channels: stateChannels })
+const chatGraph = new StateGraph<ChatGraphState>({ channels: stateChannels as unknown as Record<string, unknown> })
   .addNode('generate', generate)
   .addEdge(START, 'generate')
   .addEdge('generate', END)

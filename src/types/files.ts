@@ -45,7 +45,7 @@ export interface IndexedFileRecord {
   /** 文档创建时间 */
   createdAt?: number
   /** 文档元数据（如作者、标题等） */
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   /** 文档格式（如 PDF、Word 等） */
   format?: string
 }

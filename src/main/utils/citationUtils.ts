@@ -1,9 +1,7 @@
 import { ChatSource } from '../../types/chat'
-import { IndexedFile } from '../../types/files'
 import { getTagsForFile } from '../rag/tagManager'
 import { getIndexedFileRecords } from '../rag/knowledgeBase'
 import { normalizePath } from '../rag/pathUtils'
-import { logDebug, logInfo } from './logger'
 
 /**
  * 引用溯源工具 - 增强引用信息的完整性和可视化支持

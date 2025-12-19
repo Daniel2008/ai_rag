@@ -3,7 +3,6 @@ import fs from 'fs/promises'
 import path from 'path'
 import { Document } from '@langchain/core/documents'
 import { logInfo, logWarn, logDebug } from '../utils/logger'
-import { ProgressMessage, ProgressStatus, TaskType } from './progressTypes'
 
 export interface OCRConfig {
   languages: string[]
@@ -163,7 +162,7 @@ export class OCRProcessor {
    */
   async processPDF(
     pdfPath: string,
-    onProgress?: (progress: OCRProgress) => void
+    _onProgress?: (progress: OCRProgress) => void
   ): Promise<OCRResult> {
     const errorMsg = 'PDF处理需要额外的依赖库，请先安装 pdf2image 或其他PDF转图像库'
     logWarn('PDF OCR未实现', 'OCRProcessor', { pdf: pdfPath })
