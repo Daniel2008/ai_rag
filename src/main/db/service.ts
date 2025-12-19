@@ -142,3 +142,21 @@ export function updateMessage(messageKey: string, updates: Partial<ChatMessage>)
   const stmt = db.prepare(`UPDATE messages SET ${sets} WHERE id = ?`)
   stmt.run(...values, messageKey)
 }
+
+export function getConversationMemory(conversationKey: string): string | null {
+  const db = getDB()
+  const stmt = db.prepare('SELECT memory FROM conversation_memory WHERE conversation_key = ?')
+  const row = stmt.get(conversationKey) as { memory: string | null } | undefined
+  return row?.memory ?? null
+}
+
+export function upsertConversationMemory(conversationKey: string, memory: string): void {
+  const db = getDB()
+  const now = Date.now()
+  const stmt = db.prepare(`
+    INSERT INTO conversation_memory (conversation_key, memory, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(conversation_key) DO UPDATE SET memory = excluded.memory, updated_at = excluded.updated_at
+  `)
+  stmt.run(conversationKey, memory, now)
+}

@@ -50,7 +50,8 @@
 }
 
 /* 确保 html 和 body 允许滚动 */
-html, body {
+html,
+body {
   height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
@@ -577,22 +578,14 @@ body.dark {
   transform: translateX(-50%);
   border-radius: 999px;
   z-index: 2;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.92) 0%,
-    rgba(255, 255, 255, 0.76) 100%
-  );
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.76) 100%);
   box-shadow:
     0 10px 18px rgba(0, 0, 0, 0.18),
     inset 0 0 0 1px rgba(255, 255, 255, 0.6);
 }
 
 .dark .cartoon-assistant__head {
-  background: linear-gradient(
-    180deg,
-    rgba(15, 23, 42, 0.88) 0%,
-    rgba(15, 23, 42, 0.7) 100%
-  );
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88) 0%, rgba(15, 23, 42, 0.7) 100%);
   box-shadow:
     0 14px 22px rgba(0, 0, 0, 0.5),
     inset 0 0 0 1px rgba(255, 255, 255, 0.2);
@@ -620,22 +613,14 @@ body.dark {
   transform: translateX(-50%);
   border-radius: 16px 16px 18px 18px;
   z-index: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.92) 0%,
-    rgba(255, 255, 255, 0.7) 100%
-  );
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.7) 100%);
   box-shadow:
     0 8px 16px rgba(0, 0, 0, 0.16),
     inset 0 0 0 1px rgba(255, 255, 255, 0.55);
 }
 
 .dark .cartoon-assistant__body {
-  background: linear-gradient(
-    180deg,
-    rgba(15, 23, 42, 0.85) 0%,
-    rgba(15, 23, 42, 0.62) 100%
-  );
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.85) 0%, rgba(15, 23, 42, 0.62) 100%);
   box-shadow:
     0 10px 18px rgba(0, 0, 0, 0.45),
     inset 0 0 0 1px rgba(255, 255, 255, 0.18);
@@ -665,11 +650,7 @@ body.dark {
   height: 9px;
   border-radius: 999px;
   z-index: 1;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.92) 0%,
-    rgba(255, 255, 255, 0.7) 100%
-  );
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.7) 100%);
   box-shadow:
     0 8px 14px rgba(0, 0, 0, 0.16),
     inset 0 0 0 1px rgba(255, 255, 255, 0.55);
@@ -677,11 +658,7 @@ body.dark {
 }
 
 .dark .cartoon-assistant__arm {
-  background: linear-gradient(
-    180deg,
-    rgba(15, 23, 42, 0.85) 0%,
-    rgba(15, 23, 42, 0.62) 100%
-  );
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.85) 0%, rgba(15, 23, 42, 0.62) 100%);
   box-shadow:
     0 10px 18px rgba(0, 0, 0, 0.45),
     inset 0 0 0 1px rgba(255, 255, 255, 0.18);

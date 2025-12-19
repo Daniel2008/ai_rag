@@ -81,7 +81,7 @@ declare global {
         preview?: string
         error?: string
       }>
-      chat: (payload: { question: string; sources?: string[] }) => void
+      chat: (payload: { conversationKey: string; question: string; sources?: string[] }) => void
       getKnowledgeBase: () => Promise<KnowledgeBaseSnapshot>
       rebuildKnowledgeBase: () => Promise<KnowledgeBaseSnapshot>
       removeIndexedFile: (filePath: string) => Promise<KnowledgeBaseSnapshot>

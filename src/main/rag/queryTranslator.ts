@@ -36,7 +36,7 @@ export function detectLanguage(text: string): 'zh' | 'en' | 'mixed' {
 /**
  * 使用 LLM 翻译查询
  */
-async function translateQuery(query: string, targetLang: 'zh' | 'en'): Promise<string> {
+export async function translateQuery(query: string, targetLang: 'zh' | 'en'): Promise<string> {
   // 检查缓存
   const cached = getCachedTranslation(query, targetLang)
   if (cached) {

@@ -20,6 +20,23 @@ interface ChatOptions {
   sources?: string[]
 }
 
+export interface RagContextBuildResult {
+  context: string
+  sources: ChatSource[]
+  isGlobalSearch: boolean
+  emptyIndexMessage?: string
+  metrics: {
+    searchLimit: number
+    retrievedCount: number
+    effectiveCount: number
+    uniqueSourceCount: number
+    topScore?: number
+    thresholdUsed?: number
+    usedFallback: boolean
+    durationMs: number
+  }
+}
+
 // ==================== 辅助函数 ====================
 
 /** 根据文件名推断文件类型 */
@@ -226,86 +243,184 @@ async function* streamDeepSeekReasoner(
   }
 }
 
-// ==================== 主要导出函数 ====================
+function asAsyncGenerator(stream: AsyncIterable<string>): AsyncGenerator<string> {
+  return (async function* () {
+    for await (const chunk of stream) {
+      yield chunk
+    }
+  })()
+}
 
-export async function chatWithRag(
+export async function streamAnswer(
+  question: string,
+  context: string,
+  isGlobalSearch: boolean,
+  memory?: string
+): Promise<AsyncGenerator<string>> {
+  const settings = getSettings()
+  const memoryBlock = memory?.trim()
+    ? `会话记忆（可能有用，若与检索冲突以检索为准）：\n${memory.trim()}\n\n`
+    : ''
+  const fullContext = memoryBlock + context
+  const promptText = buildPrompt(fullContext, question, isGlobalSearch)
+
+  if (settings.provider === 'deepseek' && settings.deepseek.chatModel.includes('reasoner')) {
+    logInfo('Using DeepSeek Reasoner', 'Chat')
+    const config = settings.deepseek
+    if (!config.apiKey) {
+      throw new Error('DeepSeek API Key 未设置，请在设置中配置')
+    }
+    return streamDeepSeekReasoner(
+      config.apiKey,
+      config.baseUrl || 'https://api.deepseek.com',
+      config.chatModel,
+      promptText
+    )
+  }
+
+  const template = buildPrompt('{context}', '{question}', isGlobalSearch)
+
+  const prompt = PromptTemplate.fromTemplate(template)
+  const model = createChatModel(settings.provider)
+  const chain = RunnableSequence.from([prompt, model, new StringOutputParser()])
+
+  const stream = await chain.stream({ context: fullContext, question })
+  return asAsyncGenerator(stream)
+}
+
+export async function updateConversationMemory(
+  prevMemory: string | null,
+  question: string,
+  answer: string
+): Promise<string> {
+  const settings = getSettings()
+  const model = createChatModel(settings.provider)
+  const template = `你是对话记忆压缩器。将已有会话记忆与本轮对话融合为新的会话记忆。
+要求：
+1) 只保留：用户目标/偏好、已确认事实、重要约束、关键结论/决定、待办事项。
+2) 删除无关细节、客套话、重复内容。
+3) 输出中文，尽量精炼，不超过200字。
+4) 只输出记忆文本，不要加标题、列表符号或其它说明。
+
+已有会话记忆：
+{memory}
+
+本轮用户问题：
+{question}
+
+本轮助手回答：
+{answer}
+
+新的会话记忆：`
+
+  const prompt = PromptTemplate.fromTemplate(template)
+  const chain = RunnableSequence.from([prompt, model, new StringOutputParser()])
+  const next = await chain.invoke({
+    memory: (prevMemory || '').slice(0, 800),
+    question: question.slice(0, 800),
+    answer: answer.slice(0, 1200)
+  })
+  return next.trim().slice(0, 400)
+}
+
+export async function buildRagContext(
   question: string,
   options: ChatOptions = {}
-): Promise<ChatResult> {
+): Promise<RagContextBuildResult> {
+  const startTime = Date.now()
   const settings = getSettings()
   const isGlobalSearch = !options.sources || options.sources.length === 0
 
-  logDebug('Starting RAG chat', 'Chat', {
+  logDebug('Starting RAG context build', 'Chat', {
     question: question.slice(0, 50),
     sourcesCount: options.sources?.length ?? 0
   })
 
-  // 1. 检索相似文档 - 增加检索数量以获取更多样的来源
   const searchLimit = settings.rag?.searchLimit ?? RAG_CONFIG.SEARCH.DEFAULT_K
-  const retrievedPairs = await withEmbeddingProgressSuppressed(() =>
-    searchSimilarDocumentsWithScores(question, {
-      k: searchLimit, // 使用设置中的检索数量
-      sources: options.sources
-    })
-  )
+
+  let retrievedPairs: { doc: Document; score: number }[] = []
+  try {
+    const useHybrid =
+      /[a-zA-Z0-9]/.test(question) || question.includes(' ') || question.length >= 20
+    if (useHybrid && isGlobalSearch) {
+      const { HybridSearcher } = await import('./hybridSearch')
+      const searcher = new HybridSearcher({ topK: searchLimit })
+      const ctx = await searcher.search(question, { sources: options.sources, limit: searchLimit })
+      const hybrid = ctx.hybridResults ?? []
+      retrievedPairs = hybrid.map((r) => ({ doc: r.doc, score: r.finalScore }))
+    } else {
+      retrievedPairs = await withEmbeddingProgressSuppressed(() =>
+        searchSimilarDocumentsWithScores(question, {
+          k: searchLimit,
+          sources: options.sources
+        })
+      )
+    }
+  } catch (e) {
+    logWarn('Hybrid search failed, fallback to vector search', 'Chat', undefined, e as Error)
+    retrievedPairs = await withEmbeddingProgressSuppressed(() =>
+      searchSimilarDocumentsWithScores(question, {
+        k: searchLimit,
+        sources: options.sources
+      })
+    )
+  }
 
   logDebug('Retrieved documents', 'Chat', {
     count: retrievedPairs.length,
     topScore: retrievedPairs[0]?.score.toFixed(3)
   })
 
-  // 检查来源多样性
   const uniqueSourcCount = new Set(retrievedPairs.map((p) => p.doc.metadata?.source)).size
   logDebug('Source diversity', 'Chat', { uniqueSources: uniqueSourcCount })
 
-  // 2. 检查索引状态
   if (retrievedPairs.length === 0) {
     const docCount = await getDocCount()
     if (docCount === 0) {
       const msg =
         '知识库索引为空或已丢失。如果您刚刚切换了嵌入模型，请等待后台索引重建完成；否则请在侧边栏中点击"重建索引"。'
       return {
-        stream: (async function* () {
-          yield msg
-        })(),
-        sources: []
+        context: '',
+        sources: [],
+        isGlobalSearch,
+        emptyIndexMessage: msg,
+        metrics: {
+          searchLimit,
+          retrievedCount: 0,
+          effectiveCount: 0,
+          uniqueSourceCount: 0,
+          usedFallback: false,
+          durationMs: Date.now() - startTime
+        }
       }
     }
   }
 
-  // 3. 根据相关度阈值过滤文档 - 使用渐进式阈值策略
   const RELEVANCE_THRESHOLD = settings.rag?.minRelevance ?? RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
-  const RELEVANCE_THRESHOLD_LOW = Math.max(0.1, RELEVANCE_THRESHOLD - 0.15) // 动态计算低阈值
+  const RELEVANCE_THRESHOLD_LOW = Math.max(0.1, RELEVANCE_THRESHOLD - 0.15)
   let effectivePairs = retrievedPairs
+  let effectiveThreshold: number | undefined
 
   if (retrievedPairs.length > 0) {
     const topScore = retrievedPairs[0]?.score ?? 0
     const topSource = retrievedPairs[0]?.doc.metadata?.source || ''
-
-    // 提取查询关键词（人名通常2-3字）
     const queryKeywords = question.match(/[\u4e00-\u9fa5]{2,4}/g) || []
     const fileNameMatchesQuery = queryKeywords.some((kw) =>
       topSource.toLowerCase().includes(kw.toLowerCase())
     )
 
-    // 渐进式阈值策略：
-    // 1. 如果最高分 >= 阈值，保留所有高于低阈值的结果
-    // 2. 如果最高分 < 阈值但有结果，使用低阈值兜底
-    // 3. 文件名匹配时使用最低阈值
-    let effectiveThreshold: number
     if (fileNameMatchesQuery) {
       effectiveThreshold = RELEVANCE_THRESHOLD_LOW
     } else if (topScore >= RELEVANCE_THRESHOLD) {
-      effectiveThreshold = RELEVANCE_THRESHOLD_LOW // 有高分时也放宽低分限制
+      effectiveThreshold = RELEVANCE_THRESHOLD_LOW
     } else if (topScore >= RELEVANCE_THRESHOLD_LOW) {
-      effectiveThreshold = RELEVANCE_THRESHOLD_LOW // 使用低阈值兜底
+      effectiveThreshold = RELEVANCE_THRESHOLD_LOW
     } else {
-      effectiveThreshold = 0 // 实在太低就全部保留让模型判断
+      effectiveThreshold = 0
     }
 
     effectivePairs = retrievedPairs.filter((p) => {
-      if (p.score >= effectiveThreshold) return true
-      // 检查该文档的文件名是否匹配查询
+      if (p.score >= (effectiveThreshold || 0)) return true
       const source = p.doc.metadata?.source || ''
       return queryKeywords.some((kw) => source.toLowerCase().includes(kw.toLowerCase()))
     })
@@ -319,12 +434,12 @@ export async function chatWithRag(
     })
   }
 
-  // 4. 兜底：针对指定来源的查询，尝试直接加载文档
+  let usedFallback = false
   if (effectivePairs.length === 0 && options.sources && options.sources.length > 0) {
+    usedFallback = true
     effectivePairs = await loadFallbackContext(options.sources)
   }
 
-  // 5. 确保来源多样性并构建上下文
   const diversePairs = ensureSourceDiversity(effectivePairs)
   const effectiveDocs = diversePairs.map((p) => p.doc)
   const effectiveScores = diversePairs.map((p) => p.score)
@@ -340,35 +455,41 @@ export async function chatWithRag(
 
   logDebug('Context built', 'Chat', { docCount: effectiveDocs.length })
 
-  // 6. 生成回答
-  const promptText = buildPrompt(context, question, isGlobalSearch)
-
-  // 检查是否是 DeepSeek Reasoner 模型
-  if (settings.provider === 'deepseek' && settings.deepseek.chatModel.includes('reasoner')) {
-    logInfo('Using DeepSeek Reasoner', 'Chat')
-    const config = settings.deepseek
-    if (!config.apiKey) {
-      throw new Error('DeepSeek API Key 未设置，请在设置中配置')
+  return {
+    context,
+    sources: uniqueSources,
+    isGlobalSearch,
+    metrics: {
+      searchLimit,
+      retrievedCount: retrievedPairs.length,
+      effectiveCount: effectiveDocs.length,
+      uniqueSourceCount: uniqueSources.length,
+      topScore: retrievedPairs[0]?.score,
+      thresholdUsed: effectiveThreshold,
+      usedFallback,
+      durationMs: Date.now() - startTime
     }
-    const stream = streamDeepSeekReasoner(
-      config.apiKey,
-      config.baseUrl || 'https://api.deepseek.com',
-      config.chatModel,
-      promptText
-    )
-    return { stream, sources: uniqueSources }
+  }
+}
+
+// ==================== 主要导出函数 ====================
+
+export async function chatWithRag(
+  question: string,
+  options: ChatOptions = {}
+): Promise<ChatResult> {
+  const built = await buildRagContext(question, options)
+  if (built.emptyIndexMessage) {
+    return {
+      stream: (async function* () {
+        yield built.emptyIndexMessage!
+      })(),
+      sources: []
+    }
   }
 
-  // 其他模型使用 LangChain
-  const template = buildPrompt('{context}', '{question}', isGlobalSearch)
-
-  const prompt = PromptTemplate.fromTemplate(template)
-  const model = createChatModel(settings.provider)
-  const chain = RunnableSequence.from([prompt, model, new StringOutputParser()])
-
-  const stream = await chain.stream({ context, question })
-
-  return { stream, sources: uniqueSources }
+  const stream = await streamAnswer(question, built.context, built.isGlobalSearch)
+  return { stream, sources: built.sources }
 }
 
 /** 加载兜底上下文（当检索失败时） */

@@ -75,6 +75,7 @@ export class ElectronChatProvider extends AbstractChatProvider<
     _options: XRequestOptions<ElectronRequestInput, ElectronRequestOutput>
   ): ElectronRequestInput {
     return {
+      conversationKey: requestParams.conversationKey ?? '',
       question: requestParams.question ?? '',
       sources: requestParams.sources ?? this.config.defaultSources
     }

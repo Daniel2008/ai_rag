@@ -43,5 +43,13 @@ function initSchema(): void {
     
     -- 性能优化：复合索引，用于按会话查询并按时间排序
     CREATE INDEX IF NOT EXISTS idx_messages_conv_timestamp ON messages(conversation_key, timestamp DESC);
+
+    -- 会话记忆表
+    CREATE TABLE IF NOT EXISTS conversation_memory (
+      conversation_key TEXT PRIMARY KEY,
+      memory TEXT,
+      updated_at INTEGER,
+      FOREIGN KEY(conversation_key) REFERENCES conversations(key) ON DELETE CASCADE
+    );
   `)
 }

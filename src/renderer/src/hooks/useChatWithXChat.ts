@@ -298,7 +298,7 @@ export function useChatWithXChat({
       isSendingRef.current = true
 
       // 使用 onRequest 发送消息
-      onRequest({ question: question.trim(), sources })
+      onRequest({ conversationKey, question: question.trim(), sources })
     },
     [conversationKey, isRequesting, messageApi, onRequest]
   )

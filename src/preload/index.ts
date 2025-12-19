@@ -66,7 +66,7 @@ const api = {
     preview?: string
     error?: string
   }> => ipcRenderer.invoke('rag:processUrl', url),
-  chat: (payload: { question: string; sources?: string[] }): void =>
+  chat: (payload: { conversationKey: string; question: string; sources?: string[] }): void =>
     ipcRenderer.send('rag:chat', payload),
   getKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:list'),
   rebuildKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:rebuild'),

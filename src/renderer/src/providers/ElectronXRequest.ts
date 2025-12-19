@@ -7,6 +7,7 @@ import { AbstractXRequestClass, type XRequestOptions } from '@ant-design/x-sdk'
 import type { ChatSource } from '../types/chat'
 
 export interface ElectronRequestInput {
+  conversationKey: string
   question: string
   sources?: string[]
 }
@@ -178,6 +179,7 @@ export class ElectronXRequest extends AbstractXRequestClass<
     // 发送请求
     if (typeof window.api.chat === 'function') {
       window.api.chat({
+        conversationKey: params.conversationKey,
         question: params.question,
         sources: params.sources
       })

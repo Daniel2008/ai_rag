@@ -1214,7 +1214,7 @@ function MetricsButton(): ReactElement {
       <FloatButton
         icon={<BarChartOutlined />}
         onClick={() => setOpen(true)}
-        tooltip="检索指标"
+        tooltip="指标"
         style={{ position: 'fixed', right: 24, bottom: 224 }}
       />
       <MetricsPanel open={open} onClose={() => setOpen(false)} />
@@ -1243,7 +1243,7 @@ function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
     try {
       const res = await window.api.getMetricsRecent?.(200)
       const list = Array.isArray(res) ? res : []
-      setItems(list.filter((e) => e?.context === 'Search'))
+      setItems(list.filter((e) => e?.context === 'Search' || e?.context === 'LangGraph'))
     } finally {
       setLoading(false)
     }
@@ -1254,20 +1254,20 @@ function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
     }
   }, [open, load])
   const summary = useMemoReact(() => {
-    const metrics = items.filter((i) => i.message === 'Search metrics')
-    const completed = items.filter((i) => i.message === 'Search completed')
-    const avgScores = metrics
+    const searchMetrics = items.filter((i) => i.message === 'Search metrics')
+    const searchCompleted = items.filter((i) => i.message === 'Search completed')
+    const avgScores = searchMetrics
       .map((i) => Number(i.metadata?.['avgTopScore'] ?? 0))
       .filter((n) => !Number.isNaN(n))
     const meanAvg = avgScores.length ? avgScores.reduce((a, b) => a + b, 0) / avgScores.length : 0
-    const latencies = completed
+    const latencies = searchCompleted
       .map((i) => Number(i.metadata?.['latencyMs'] ?? 0))
       .filter((n) => !Number.isNaN(n))
     const meanLatency = latencies.length
       ? latencies.reduce((a, b) => a + b, 0) / latencies.length
       : 0
     const coverage = new Set<string>()
-    for (const c of completed) {
+    for (const c of searchCompleted) {
       const sources = c.metadata?.['sources']
       if (Array.isArray(sources)) {
         for (const s of sources) {
@@ -1275,15 +1275,29 @@ function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
         }
       }
     }
+    const langSteps = items.filter(
+      (i) =>
+        i.context === 'LangGraph' &&
+        i.message === 'LangGraph step' &&
+        i.metadata?.['phase'] === 'end'
+    )
+    const stepLatencies = langSteps
+      .map((i) => Number(i.metadata?.['ms'] ?? 0))
+      .filter((n) => !Number.isNaN(n) && n > 0)
+    const stepMeanLatency = stepLatencies.length
+      ? stepLatencies.reduce((a, b) => a + b, 0) / stepLatencies.length
+      : 0
     return {
       meanAvg: Number(meanAvg.toFixed(3)),
       meanLatency: Math.round(meanLatency),
-      coverageCount: coverage.size
+      coverageCount: coverage.size,
+      stepCount: langSteps.length,
+      stepMeanLatency: Math.round(stepMeanLatency)
     }
   }, [items])
   return (
     <Drawer
-      title="检索指标"
+      title="指标"
       placement="right"
       onClose={onClose}
       open={open}
@@ -1293,6 +1307,8 @@ function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
         <Tag color="blue">Top-K均值: {summary.meanAvg}</Tag>
         <Tag color="green">平均延迟: {summary.meanLatency}ms</Tag>
         <Tag color="purple">来源覆盖: {summary.coverageCount}</Tag>
+        <Tag color="orange">步骤: {summary.stepCount}</Tag>
+        <Tag color="geekblue">步骤均耗: {summary.stepMeanLatency}ms</Tag>
         <Button size="small" loading={loading} onClick={load}>
           刷新
         </Button>

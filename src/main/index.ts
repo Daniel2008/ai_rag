@@ -84,7 +84,6 @@ import {
 import {
   generateDocument,
   setLLMChatFunction,
-  handleDocumentGenerationIfNeeded,
   type DocumentGenerateRequest
 } from './document'
 
@@ -743,7 +742,11 @@ app.whenReady().then(async () => {
     const normalized =
       typeof payload === 'string'
         ? { question: payload, sources: undefined }
-        : { question: payload?.question, sources: payload?.sources }
+        : {
+            question: payload?.question,
+            sources: payload?.sources,
+            conversationKey: payload?.conversationKey
+          }
 
     // 输入验证
     if (!normalized.question) {
@@ -810,30 +813,12 @@ app.whenReady().then(async () => {
     try {
       console.log('Chat question:', normalized.question)
 
-      // 检查是否是文档生成意图
-      const docGenerator = handleDocumentGenerationIfNeeded(normalized.question, normalized.sources)
-
-      if (docGenerator) {
-        // 使用文档生成流程
-        console.log('Detected document generation intent')
-        event.reply('rag:chat-sources', []) // 文档生成自己管理来源
-
-        try {
-          for await (const chunk of docGenerator) {
-            event.reply('rag:chat-token', chunk)
-          }
-          event.reply('rag:chat-done')
-        } catch (docError) {
-          const errorInfo = normalizeError(docError)
-          console.error('Document generation error:', errorInfo.message, errorInfo.details)
-          event.reply('rag:chat-error', errorInfo.userFriendly || '文档生成失败')
-        }
-        return
-      }
-
-      // 使用 LangGraph 版 RAG，保持流式回传
-      const result = await runLangGraphChat(normalized.question, normalized.sources, (chunk) =>
-        event.reply('rag:chat-token', chunk)
+      // 使用 LangGraph 版 RAG，保持流式回传（内部已包含文档生成路由）
+      const result = await runLangGraphChat(
+        normalized.question,
+        normalized.sources,
+        normalized.conversationKey,
+        (chunk) => event.reply('rag:chat-token', chunk)
       )
 
       if (result.error) {
@@ -864,13 +849,21 @@ app.whenReady().then(async () => {
     const normalized =
       typeof payload === 'string'
         ? { question: payload, sources: undefined }
-        : { question: payload?.question, sources: payload?.sources }
+        : {
+            question: payload?.question,
+            sources: payload?.sources,
+            conversationKey: payload?.conversationKey
+          }
 
     if (!normalized.question) {
       return { success: false, error: '问题内容不能为空' }
     }
 
-    const result = await runLangGraphChat(normalized.question, normalized.sources)
+    const result = await runLangGraphChat(
+      normalized.question,
+      normalized.sources,
+      normalized.conversationKey
+    )
     if (result.error) {
       return { success: false, error: result.error }
     }
