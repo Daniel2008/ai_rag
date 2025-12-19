@@ -106,10 +106,10 @@ export class OCRProcessor {
       }
 
       // 使用Tesseract进行OCR识别
-      logDebug('开始OCR处理', 'OCRProcessor', { 
-        image: imagePath, 
+      logDebug('开始OCR处理', 'OCRProcessor', {
+        image: imagePath,
         languages: this.config.languages,
-        quality: this.config.quality 
+        quality: this.config.quality
       })
 
       const result = await Tesseract.recognize(imageBuffer, workerConfig)
@@ -121,7 +121,7 @@ export class OCRProcessor {
 
       // 提取文本
       let text = result.data.text || ''
-      
+
       // 如果需要保留布局，添加额外的格式化
       if (this.config.preserveLayout && result.data.blocks) {
         text = this.formatTextWithLayout(result.data.blocks, text)
@@ -141,7 +141,6 @@ export class OCRProcessor {
         pageCount: 1,
         processingTime
       }
-
     } catch (error) {
       const errorMsg = `OCR处理失败: ${(error as Error).message}`
       logWarn('OCR处理失败', 'OCRProcessor', { image: imagePath }, error as Error)
@@ -166,7 +165,7 @@ export class OCRProcessor {
   ): Promise<OCRResult> {
     const errorMsg = 'PDF处理需要额外的依赖库，请先安装 pdf2image 或其他PDF转图像库'
     logWarn('PDF OCR未实现', 'OCRProcessor', { pdf: pdfPath })
-    
+
     return {
       success: false,
       text: '',
@@ -207,10 +206,7 @@ export class OCRProcessor {
   /**
    * 创建LangChain文档
    */
-  createDocumentsFromOCR(
-    ocrResult: OCRResult,
-    metadata: Record<string, any> = {}
-  ): Document[] {
+  createDocumentsFromOCR(ocrResult: OCRResult, metadata: Record<string, any> = {}): Document[] {
     if (!ocrResult.success || !ocrResult.text) {
       return []
     }
@@ -218,8 +214,8 @@ export class OCRProcessor {
     // 分割文本（按段落）
     const paragraphs = ocrResult.text
       .split(/\n\s*\n/)
-      .map(p => p.trim())
-      .filter(p => p.length > 0)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
 
     return paragraphs.map((paragraph, index) => {
       return new Document({
@@ -259,7 +255,7 @@ export class OCRProcessor {
     let currentY = -1
     let currentLine: string[] = []
 
-    sortedBlocks.forEach(block => {
+    sortedBlocks.forEach((block) => {
       if (!block.text) return
 
       const y = block.bbox?.y0 || 0
@@ -333,7 +329,7 @@ export async function processImageToDocuments(
 ): Promise<Document[]> {
   const processor = createOCRProcessor(config)
   const result = await processor.processImage(imagePath, onProgress)
-  
+
   if (!result.success) {
     throw new Error(result.error || 'OCR处理失败')
   }

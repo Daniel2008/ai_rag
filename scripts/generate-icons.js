@@ -36,26 +36,26 @@ log('─'.repeat(60), 'cyan')
 try {
   // 使用 electron-icon-builder 生成图标
   log('\n📦 使用 electron-icon-builder 生成图标...', 'blue')
-  
+
   const command = `npx electron-icon-builder --input=${iconPng} --output=${buildDir} --flatten`
-  
+
   log(`执行命令: ${command}`, 'yellow')
-  
+
   execSync(command, {
     stdio: 'inherit',
     cwd: path.join(__dirname, '..')
   })
-  
+
   log('\n✅ 图标生成完成！', 'green')
   log('─'.repeat(60), 'cyan')
-  
+
   // 检查生成的文件
   const files = {
     'Windows (.ico)': path.join(buildDir, 'icon.ico'),
     'macOS (.icns)': path.join(buildDir, 'icon.icns'),
     'Linux (.png)': iconPng
   }
-  
+
   log('\n📋 生成的图标文件:', 'cyan')
   for (const [platform, filePath] of Object.entries(files)) {
     if (fs.existsSync(filePath)) {
@@ -66,14 +66,13 @@ try {
       log(`  ⚠️  ${platform}: 未生成`, 'yellow')
     }
   }
-  
+
   log('\n💡 提示:', 'cyan')
   log('  1. 如果某些图标未生成，请检查 electron-icon-builder 是否正确安装', 'yellow')
   log('  2. 确保源图标 (icon.png) 至少为 1024x1024 像素', 'yellow')
   log('  3. 可以手动使用在线工具生成缺失的图标格式', 'yellow')
   log('  4. 重新构建应用以应用新图标: pnpm run build:win:fast', 'yellow')
   log('─'.repeat(60) + '\n', 'cyan')
-  
 } catch (error) {
   log('\n❌ 图标生成失败！', 'red')
   log(`错误: ${error.message}`, 'red')
@@ -85,4 +84,3 @@ try {
   log('  3. 确保文件名为 icon.ico (Windows) 和 icon.icns (macOS)', 'yellow')
   process.exit(1)
 }
-

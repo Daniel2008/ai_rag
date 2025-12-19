@@ -48,7 +48,10 @@ export function estimateQueryComplexity(query: string): number {
     1,
     new Set(query.toLowerCase().split(/\s+/).filter(Boolean)).size / 30
   )
-  return Math.min(1, 0.4 * lengthScore + 0.3 * tokenScore + 0.2 * distinctScore + 0.1 * punctuationScore)
+  return Math.min(
+    1,
+    0.4 * lengthScore + 0.3 * tokenScore + 0.2 * distinctScore + 0.1 * punctuationScore
+  )
 }
 
 /**
@@ -59,7 +62,7 @@ export function classifyQueryIntent(query: string): QueryIntent {
   const defKw = ['是什么', '定义', '解释', 'meaning', 'definition', 'explain', 'what is', 'define']
   const sumKw = ['总结', '概括', '汇总', 'overview', 'summary', 'summarize']
   const cmpKw = ['比较', '对比', '差异', 'vs', 'difference', 'compare']
-  
+
   // console.log('Checking intent for:', q)
   if (defKw.some((k) => q.includes(k))) return 'definition'
   if (sumKw.some((k) => q.includes(k))) return 'summary'
@@ -122,11 +125,9 @@ export function diversifyBySource(
     arr.push(r)
     bySource.set(s, arr)
   }
-  
-  const groups = Array.from(bySource.values()).map((arr) =>
-    arr.sort((a, b) => b.score - a.score)
-  )
-  
+
+  const groups = Array.from(bySource.values()).map((arr) => arr.sort((a, b) => b.score - a.score))
+
   const diversified: Array<{ doc: Document; score: number }> = []
   let idx = 0
   while (diversified.length < targetCount) {

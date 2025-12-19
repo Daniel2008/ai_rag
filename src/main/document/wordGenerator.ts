@@ -1,7 +1,7 @@
 /**
  * Word 文档生成器 - 增强版
  * 使用 docx 库生成专业格式的 Word 文档
- * 
+ *
  * 优化功能:
  * - 自动章节编号系统 (1, 1.1, 1.1.1 格式)
  * - 专业的目录生成（支持自动更新）
@@ -627,34 +627,35 @@ function createNumberedList(
 ): Paragraph[] {
   const colors = THEME_COLORS[theme]
 
-  return items.map((item, index) =>
-    new Paragraph({
-      children: [
-        new TextRun({
-          text: `${startNumber + index}. `,
-          font: FONTS.body,
-          size: 24,
-          bold: true,
-          color: colors.accent
-        }),
-        new TextRun({
-          text: item,
-          font: FONTS.body,
-          size: 24,
-          color: colors.text
-        })
-      ],
-      spacing: {
-        before: index === 0 ? 180 : 100,
-        after: 100,
-        line: 380
-      },
-      indent: {
-        left: convertInchesToTwip(0.4),
-        hanging: convertInchesToTwip(0.25)
-      },
-      keepNext: index < items.length - 1
-    })
+  return items.map(
+    (item, index) =>
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `${startNumber + index}. `,
+            font: FONTS.body,
+            size: 24,
+            bold: true,
+            color: colors.accent
+          }),
+          new TextRun({
+            text: item,
+            font: FONTS.body,
+            size: 24,
+            color: colors.text
+          })
+        ],
+        spacing: {
+          before: index === 0 ? 180 : 100,
+          after: 100,
+          line: 380
+        },
+        indent: {
+          left: convertInchesToTwip(0.4),
+          hanging: convertInchesToTwip(0.25)
+        },
+        keepNext: index < items.length - 1
+      })
   )
 }
 
@@ -1014,7 +1015,15 @@ export async function generateWordDocument(
   const children: DocChild[] = []
 
   // 1. 标题页
-  children.push(...createTitlePage(outline.title, outline.subtitle, theme, options?.author, options?.organization))
+  children.push(
+    ...createTitlePage(
+      outline.title,
+      outline.subtitle,
+      theme,
+      options?.author,
+      options?.organization
+    )
+  )
 
   // 2. 摘要（如果提供）
   if (options?.abstract) {
@@ -1042,12 +1051,7 @@ export async function generateWordDocument(
     const sectionNumber = createSectionNumber(currentLevel, numbering)
 
     // 章节标题（第一章不分页）
-    const heading = createSectionHeading(
-      section.title,
-      currentLevel,
-      theme,
-      sectionNumber
-    )
+    const heading = createSectionHeading(section.title, currentLevel, theme, sectionNumber)
 
     // 第一章不需要分页，后续章节自动分页
     if (currentLevel === 1 && !isFirstChapter) {

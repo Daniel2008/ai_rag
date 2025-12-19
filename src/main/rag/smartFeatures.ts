@@ -49,25 +49,20 @@ export class SmartPromptGenerator {
   /**
    * 生成智能提示问题
    */
-  async generatePrompts(
-    context: string,
-    options: SmartPromptOptions = {}
-  ): Promise<string[]> {
-    const {
-      count = 3,
-      length = 'medium',
-      tone = 'professional'
-    } = options
+  async generatePrompts(context: string, options: SmartPromptOptions = {}): Promise<string[]> {
+    const { count = 3, length = 'medium', tone = 'professional' } = options
 
     try {
       const prompt = this.buildPromptGenerationPrompt(context, count, length, tone)
-      
+
       logDebug('生成智能提示', 'SmartPrompt', {
         contextLength: context.length,
         options
       })
 
-      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(prompt)
+      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(
+        prompt
+      )
       const resultContent =
         typeof result === 'string'
           ? result
@@ -82,10 +77,9 @@ export class SmartPromptGenerator {
       })
 
       return prompts.slice(0, count)
-
     } catch (error) {
       logWarn('智能提示生成失败', 'SmartPrompt', {}, error as Error)
-      
+
       // 降级：返回通用提示
       return this.generateFallbackPrompts(count, length)
     }
@@ -103,14 +97,14 @@ export class SmartPromptGenerator {
     }
 
     // 提取文本内容
-    const content = documents.map(d => d.pageContent).join('\n\n')
-    
+    const content = documents.map((d) => d.pageContent).join('\n\n')
+
     // 生成基于内容的提示
     const prompts = await this.generatePrompts(content, options)
-    
+
     // 如果有文档元数据，进一步优化提示
     const metadataPrompts = this.enrichWithMetadata(prompts, documents)
-    
+
     return metadataPrompts
   }
 
@@ -125,22 +119,19 @@ export class SmartPromptGenerator {
     keyPoints: string[]
     tags: string[]
   }> {
-    const {
-      length = 'medium',
-      keyPoints = 5,
-      language = 'auto',
-      format = 'paragraph'
-    } = options
+    const { length = 'medium', keyPoints = 5, language = 'auto', format = 'paragraph' } = options
 
     try {
       const prompt = this.buildSummaryPrompt(content, length, keyPoints, language, format)
-      
+
       logDebug('生成自动摘要', 'SmartPrompt', {
         contentLength: content.length,
         options
       })
 
-      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(prompt)
+      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(
+        prompt
+      )
       const resultContent =
         typeof result === 'string'
           ? result
@@ -155,10 +146,9 @@ export class SmartPromptGenerator {
       })
 
       return parsed
-
     } catch (error) {
       logWarn('自动摘要生成失败', 'SmartPrompt', {}, error as Error)
-      
+
       // 降级：简单摘要
       return this.generateFallbackSummary(content, length)
     }
@@ -170,12 +160,14 @@ export class SmartPromptGenerator {
   async analyzeContent(content: string): Promise<ContentAnalysis> {
     try {
       const prompt = this.buildAnalysisPrompt(content)
-      
+
       logDebug('分析文档内容', 'SmartPrompt', {
         contentLength: content.length
       })
 
-      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(prompt)
+      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(
+        prompt
+      )
       const resultContent =
         typeof result === 'string'
           ? result
@@ -190,10 +182,9 @@ export class SmartPromptGenerator {
       })
 
       return analysis
-
     } catch (error) {
       logWarn('内容分析失败', 'SmartPrompt', {}, error as Error)
-      
+
       // 降级：简单分析
       return this.fallbackAnalysis(content)
     }
@@ -208,17 +199,17 @@ export class SmartPromptGenerator {
   ): Promise<string[]> {
     // 检索相关文档
     const relatedDocs = await searchSimilarDocuments(query, { k: 3 })
-    
+
     if (relatedDocs.length === 0) {
       return this.generateFallbackPrompts(options.count || 3, options.length || 'medium')
     }
 
     // 提取相关内容
-    const relatedContent = relatedDocs.map(d => d.pageContent).join('\n\n')
-    
+    const relatedContent = relatedDocs.map((d) => d.pageContent).join('\n\n')
+
     // 生成基于检索结果的提示
     const fullContext = `相关文档内容：\n${relatedContent}\n\n用户查询：${query}`
-    
+
     return this.generatePrompts(fullContext, options)
   }
 
@@ -275,11 +266,15 @@ ${context}
       long: '500-800字'
     }
 
-    const langInstruction = language === 'auto' ? '使用中文' : 
-                           language === 'zh' ? '使用中文' : '使用英文'
+    const langInstruction =
+      language === 'auto' ? '使用中文' : language === 'zh' ? '使用中文' : '使用英文'
 
-    const formatInstruction = format === 'bullet' ? '使用项目符号列表' :
-                             format === 'outline' ? '使用大纲格式' : '使用段落格式'
+    const formatInstruction =
+      format === 'bullet'
+        ? '使用项目符号列表'
+        : format === 'outline'
+          ? '使用大纲格式'
+          : '使用段落格式'
 
     return `请为以下内容生成一个${lengthMap[length]}的摘要，并提取 ${keyPoints} 个关键点。
 
@@ -299,7 +294,6 @@ ${content}
 1. [关键点1]
 2. [关键点2]
 ...`
-
   }
 
   private buildAnalysisPrompt(content: string): string {
@@ -410,7 +404,7 @@ ${content}
     // 简单的关键词提取
     const words = content.toLowerCase().match(/[\u4e00-\u9fa5]{2,4}|[a-zA-Z]{3,10}/g) || []
     const wordFreq: Record<string, number> = {}
-    words.forEach(w => {
+    words.forEach((w) => {
       wordFreq[w] = (wordFreq[w] || 0) + 1
     })
     const keywords = Object.entries(wordFreq)
@@ -430,7 +424,7 @@ ${content}
       entities,
       sentiment: 'neutral',
       complexity,
-      suggestedQuestions: keywords.slice(0, 3).map(k => `关于${k}有什么信息？`)
+      suggestedQuestions: keywords.slice(0, 3).map((k) => `关于${k}有什么信息？`)
     }
   }
 
@@ -463,7 +457,10 @@ ${content}
     return pool.slice(0, count)
   }
 
-  private generateFallbackSummary(content: string, length: string | undefined): {
+  private generateFallbackSummary(
+    content: string,
+    length: string | undefined
+  ): {
     summary: string
     keyPoints: string[]
     tags: string[]
@@ -471,7 +468,7 @@ ${content}
     // 简单截取作为摘要
     const maxLength = length === 'short' ? 200 : length === 'long' ? 800 : 500
     const summary = content.length > maxLength ? content.substring(0, maxLength) + '...' : content
-    const sentences = content.split(/[。！？.!?]/).filter(s => s.trim().length > 0)
+    const sentences = content.split(/[。！？.!?]/).filter((s) => s.trim().length > 0)
     const keyPoints = sentences.slice(0, 3)
     const words = content.match(/[\u4e00-\u9fa5]{2,4}|[a-zA-Z]{3,10}/g) || []
     const tags = [...new Set(words)].slice(0, 5)
@@ -484,7 +481,7 @@ ${content}
     const sources = new Set<string>()
     const tags = new Set<string>()
 
-    documents.forEach(doc => {
+    documents.forEach((doc) => {
       if (doc.metadata?.source) {
         sources.add(doc.metadata.source)
       }
@@ -500,11 +497,11 @@ ${content}
     const metadataContext = [
       sources.size > 0 ? `相关文档：${Array.from(sources).slice(0, 3).join(', ')}` : '',
       tags.size > 0 ? `相关标签：${Array.from(tags).slice(0, 5).join(', ')}` : ''
-    ].filter(Boolean).join('；')
+    ]
+      .filter(Boolean)
+      .join('；')
 
-    return prompts.map(prompt => 
-      metadataContext ? `${prompt} （${metadataContext}）` : prompt
-    )
+    return prompts.map((prompt) => (metadataContext ? `${prompt} （${metadataContext}）` : prompt))
   }
 }
 
@@ -533,9 +530,7 @@ export async function generateAutoSummary(
 /**
  * 便捷函数：分析内容
  */
-export async function analyzeContent(
-  content: string
-): Promise<ContentAnalysis> {
+export async function analyzeContent(content: string): Promise<ContentAnalysis> {
   const generator = new SmartPromptGenerator()
   return generator.analyzeContent(content)
 }
@@ -607,7 +602,7 @@ ${question}
       } else {
         content = String(result)
       }
-      
+
       // 解析回答和相关问题
       const parts = content.split(/相关问题：/i)
       const answer = parts[0].trim()
@@ -624,10 +619,9 @@ ${question}
         sources: [], // 可以通过RAG检索获取
         relatedQuestions
       }
-
     } catch (error) {
       logWarn('智能问答失败', 'SmartQnA', {}, error as Error)
-      
+
       // 降级回答
       return {
         answer: '抱歉，我无法基于当前上下文回答这个问题。请尝试提供更具体的问题或补充相关文档。',
@@ -640,15 +634,13 @@ ${question}
   /**
    * 生成文档学习总结
    */
-  async generateLearningSummary(
-    documents: Document[]
-  ): Promise<{
+  async generateLearningSummary(documents: Document[]): Promise<{
     summary: string
     learningPoints: string[]
     studyQuestions: string[]
   }> {
-    const content = documents.map(d => d.pageContent).join('\n\n')
-    
+    const content = documents.map((d) => d.pageContent).join('\n\n')
+
     const analysis = await this.generator.analyzeContent(content)
     const summary = await this.generator.generateSummary(content, {
       length: 'medium',

@@ -20,7 +20,7 @@ export function normalizeError(error: unknown): ErrorInfo {
       userFriendly: getUserFriendlyMessage(error.message)
     }
   }
-  
+
   if (typeof error === 'object' && error && 'message' in error) {
     const errObj = error as { message?: unknown; code?: string }
     return {
@@ -29,14 +29,14 @@ export function normalizeError(error: unknown): ErrorInfo {
       userFriendly: getUserFriendlyMessage(String(errObj.message || ''))
     }
   }
-  
+
   if (typeof error === 'string') {
     return {
       message: error,
       userFriendly: getUserFriendlyMessage(error)
     }
   }
-  
+
   return {
     message: '未知错误',
     userFriendly: '发生未知错误，请稍后重试'
@@ -48,31 +48,35 @@ export function normalizeError(error: unknown): ErrorInfo {
  */
 function getUserFriendlyMessage(message: string): string {
   const lowerMessage = message.toLowerCase()
-  
+
   if (lowerMessage.includes('api key') || lowerMessage.includes('authentication')) {
     return 'API 密钥配置错误，请检查设置中的 API 密钥'
   }
-  
-  if (lowerMessage.includes('network') || lowerMessage.includes('timeout') || lowerMessage.includes('fetch')) {
+
+  if (
+    lowerMessage.includes('network') ||
+    lowerMessage.includes('timeout') ||
+    lowerMessage.includes('fetch')
+  ) {
     return '网络连接失败，请检查网络设置或稍后重试'
   }
-  
+
   if (lowerMessage.includes('model') || lowerMessage.includes('provider')) {
     return '模型配置错误，请检查设置中的模型配置'
   }
-  
+
   if (lowerMessage.includes('not found') || lowerMessage.includes('404')) {
     return '请求的资源不存在，请检查文件路径或 URL'
   }
-  
+
   if (lowerMessage.includes('permission') || lowerMessage.includes('access')) {
     return '权限不足，请检查文件或目录的访问权限'
   }
-  
+
   if (lowerMessage.includes('schema') || lowerMessage.includes('field not in schema')) {
     return '数据库结构不匹配，可能需要重建索引'
   }
-  
+
   // 默认返回原始消息，但截断过长内容
   return message.length > 100 ? message.slice(0, 100) + '...' : message
 }
@@ -100,7 +104,7 @@ export function withErrorHandling<T extends (...args: any[]) => Promise<any>>(
  */
 export function isSchemaMismatchError(error: unknown): boolean {
   const errorInfo = normalizeError(error)
-  return errorInfo.message.includes('Found field not in schema') || 
-         errorInfo.message.includes('schema')
+  return (
+    errorInfo.message.includes('Found field not in schema') || errorInfo.message.includes('schema')
+  )
 }
-

@@ -1,6 +1,10 @@
 import { StringOutputParser } from '@langchain/core/output_parsers'
 import { PromptTemplate } from '@langchain/core/prompts'
-import { searchSimilarDocumentsWithScores, getDocCount, withEmbeddingProgressSuppressed } from './store/index'
+import {
+  searchSimilarDocumentsWithScores,
+  getDocCount,
+  withEmbeddingProgressSuppressed
+} from './store/index'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { Document } from '@langchain/core/documents'
 import { getSettings } from '../settings'
@@ -29,9 +33,9 @@ function inferFileType(fileName: string): ChatSource['fileType'] {
     md: 'markdown',
     markdown: 'markdown'
   }
-  
+
   if (ext && typeMap[ext]) return typeMap[ext]
-  
+
   // 检查是否是 URL
   if (fileName.startsWith('http://') || fileName.startsWith('https://')) {
     return 'url'
@@ -47,7 +51,7 @@ function isUrlPath(path: string): boolean {
 /** 从文件路径提取文件名 */
 function extractFileName(filePath: string, title?: string): string {
   if (title) return title
-  
+
   const pathPart = filePath.split(/[\\/]/).pop() || 'Unknown'
   try {
     return decodeURIComponent(pathPart)
@@ -83,30 +87,28 @@ function ensureSourceDiversity(
   _maxPerSource: number = 20
 ): { doc: Document; score: number }[] {
   if (pairs.length === 0) return pairs
-  
+
   // 直接按分数降序排序返回所有结果，不限制每个来源的数量
   return [...pairs].sort((a, b) => b.score - a.score)
 }
 
 /** 将检索到的文档转换为来源信息 */
-function convertDocsToSources(
-  docs: Document[],
-  scores: number[]
-): ChatSource[] {
+function convertDocsToSources(docs: Document[], scores: number[]): ChatSource[] {
   return docs.map((doc, index) => {
     const metadata = doc.metadata || {}
     const filePath = typeof metadata.source === 'string' ? metadata.source : undefined
     const isUrl = filePath ? isUrlPath(filePath) : false
     const fileName = extractFileName(filePath || '', metadata.title || metadata.fileName)
-    
-    const rawPageNumber = typeof metadata.pageNumber === 'number'
-      ? metadata.pageNumber
-      : typeof metadata.loc?.pageNumber === 'number'
-        ? metadata.loc.pageNumber
-        : undefined
+
+    const rawPageNumber =
+      typeof metadata.pageNumber === 'number'
+        ? metadata.pageNumber
+        : typeof metadata.loc?.pageNumber === 'number'
+          ? metadata.loc.pageNumber
+          : undefined
 
     const fileType = metadata.fileType || metadata.type || (isUrl ? 'url' : inferFileType(fileName))
-    const score = scores[index] ?? (1 - index * 0.15)
+    const score = scores[index] ?? 1 - index * 0.15
 
     return {
       content: doc.pageContent.slice(0, 300) + (doc.pageContent.length > 300 ? '...' : ''),
@@ -253,16 +255,19 @@ export async function chatWithRag(
   })
 
   // 检查来源多样性
-  const uniqueSourcCount = new Set(retrievedPairs.map(p => p.doc.metadata?.source)).size
+  const uniqueSourcCount = new Set(retrievedPairs.map((p) => p.doc.metadata?.source)).size
   logDebug('Source diversity', 'Chat', { uniqueSources: uniqueSourcCount })
 
   // 2. 检查索引状态
   if (retrievedPairs.length === 0) {
     const docCount = await getDocCount()
     if (docCount === 0) {
-      const msg = '知识库索引为空或已丢失。如果您刚刚切换了嵌入模型，请等待后台索引重建完成；否则请在侧边栏中点击"重建索引"。'
+      const msg =
+        '知识库索引为空或已丢失。如果您刚刚切换了嵌入模型，请等待后台索引重建完成；否则请在侧边栏中点击"重建索引"。'
       return {
-        stream: (async function* () { yield msg })(),
+        stream: (async function* () {
+          yield msg
+        })(),
         sources: []
       }
     }
@@ -276,13 +281,13 @@ export async function chatWithRag(
   if (retrievedPairs.length > 0) {
     const topScore = retrievedPairs[0]?.score ?? 0
     const topSource = retrievedPairs[0]?.doc.metadata?.source || ''
-    
+
     // 提取查询关键词（人名通常2-3字）
     const queryKeywords = question.match(/[\u4e00-\u9fa5]{2,4}/g) || []
-    const fileNameMatchesQuery = queryKeywords.some(kw => 
+    const fileNameMatchesQuery = queryKeywords.some((kw) =>
       topSource.toLowerCase().includes(kw.toLowerCase())
     )
-    
+
     // 渐进式阈值策略：
     // 1. 如果最高分 >= 阈值，保留所有高于低阈值的结果
     // 2. 如果最高分 < 阈值但有结果，使用低阈值兜底
@@ -297,14 +302,14 @@ export async function chatWithRag(
     } else {
       effectiveThreshold = 0 // 实在太低就全部保留让模型判断
     }
-    
+
     effectivePairs = retrievedPairs.filter((p) => {
       if (p.score >= effectiveThreshold) return true
       // 检查该文档的文件名是否匹配查询
       const source = p.doc.metadata?.source || ''
-      return queryKeywords.some(kw => source.toLowerCase().includes(kw.toLowerCase()))
+      return queryKeywords.some((kw) => source.toLowerCase().includes(kw.toLowerCase()))
     })
-    
+
     logDebug('Filtered by relevance threshold', 'Chat', {
       before: retrievedPairs.length,
       after: effectivePairs.length,
@@ -324,13 +329,13 @@ export async function chatWithRag(
   const effectiveDocs = diversePairs.map((p) => p.doc)
   const effectiveScores = diversePairs.map((p) => p.score)
   const context = effectiveDocs.map((doc) => doc.pageContent).join('\n\n')
-  
+
   const sources = convertDocsToSources(effectiveDocs, effectiveScores)
   const uniqueSources = deduplicateSources(sources)
 
   logDebug('Final sources', 'Chat', {
     sourceCount: uniqueSources.length,
-    fileNames: uniqueSources.map(s => s.fileName).join(', ')
+    fileNames: uniqueSources.map((s) => s.fileName).join(', ')
   })
 
   logDebug('Context built', 'Chat', { docCount: effectiveDocs.length })
@@ -367,12 +372,10 @@ export async function chatWithRag(
 }
 
 /** 加载兜底上下文（当检索失败时） */
-async function loadFallbackContext(
-  sources: string[]
-): Promise<{ doc: Document; score: number }[]> {
+async function loadFallbackContext(sources: string[]): Promise<{ doc: Document; score: number }[]> {
   try {
     const fallbackDocs: Document[] = []
-    
+
     for (const s of sources) {
       if (isUrlPath(s)) {
         const { loadFromUrl } = await import('./urlLoader')
@@ -386,7 +389,7 @@ async function loadFallbackContext(
         fallbackDocs.push(...docs.slice(0, 2))
       }
     }
-    
+
     // 兜底文档使用较低的分数
     return fallbackDocs.slice(0, 4).map((doc, i) => ({
       doc,

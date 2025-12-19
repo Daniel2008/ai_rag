@@ -34,13 +34,13 @@ export function getTaskTypeLabel(taskType: TaskType): string {
 function formatFileName(fileName: string, maxLength: number = 30): string {
   if (!fileName) return ''
   if (fileName.length <= maxLength) return fileName
-  
+
   const ext = fileName.includes('.') ? fileName.split('.').pop() : ''
   const nameWithoutExt = ext ? fileName.slice(0, -(ext.length + 1)) : fileName
   const availableLength = maxLength - (ext ? ext.length + 4 : 3) // 4 = "..." + "."
-  
+
   if (availableLength <= 0) return fileName.slice(0, maxLength - 3) + '...'
-  
+
   return nameWithoutExt.slice(0, availableLength) + '...' + (ext ? '.' + ext : '')
 }
 
@@ -85,7 +85,7 @@ export function createDownloadProgress(
 ): ProgressMessage {
   const formattedFileName = formatFileName(fileName, 25)
   const defaultMessage = `下载模型文件: ${formattedFileName} (${Math.round(progress)}%)`
-  
+
   return createProgressMessage(
     TaskType.MODEL_DOWNLOAD,
     ProgressStatus.DOWNLOADING,
@@ -108,22 +108,17 @@ export function createDocumentParseProgress(
 ): ProgressMessage {
   const formattedFileName = formatFileName(fileName, 20)
   let message = `正在解析: ${formattedFileName}`
-  
+
   if (options?.currentFile && options?.totalFiles) {
     message = `正在解析 (${options.currentFile}/${options.totalFiles}): ${formattedFileName}`
   }
-  
-  return createProgressMessage(
-    TaskType.DOCUMENT_PARSE,
-    ProgressStatus.PROCESSING,
-    message,
-    {
-      progress,
-      fileName,
-      processedCount: options?.currentFile,
-      totalCount: options?.totalFiles
-    }
-  )
+
+  return createProgressMessage(TaskType.DOCUMENT_PARSE, ProgressStatus.PROCESSING, message, {
+    progress,
+    fileName,
+    processedCount: options?.currentFile,
+    totalCount: options?.totalFiles
+  })
 }
 
 /**
@@ -137,13 +132,10 @@ export function createDocumentParseComplete(
   const message = formattedFileName
     ? `${formattedFileName} 解析完成，共 ${chunkCount} 个片段`
     : `文档解析完成，共 ${chunkCount} 个片段`
-  
-  return createProgressMessage(
-    TaskType.DOCUMENT_PARSE,
-    ProgressStatus.PROCESSING,
-    message,
-    { progress: 30 }
-  )
+
+  return createProgressMessage(TaskType.DOCUMENT_PARSE, ProgressStatus.PROCESSING, message, {
+    progress: 30
+  })
 }
 
 /**
@@ -169,10 +161,7 @@ export function createEmbeddingProgress(
 /**
  * 创建索引重建进度消息
  */
-export function createIndexRebuildProgress(
-  progress: number,
-  message?: string
-): ProgressMessage {
+export function createIndexRebuildProgress(progress: number, message?: string): ProgressMessage {
   return createProgressMessage(
     TaskType.INDEX_REBUILD,
     ProgressStatus.PROCESSING,
@@ -194,26 +183,18 @@ export function createProcessingProgress(
     totalCount?: number
   }
 ): ProgressMessage {
-  return createProgressMessage(
-    taskType,
-    ProgressStatus.PROCESSING,
-    message,
-    {
-      progress,
-      fileName: options?.fileName,
-      processedCount: options?.processedCount,
-      totalCount: options?.totalCount
-    }
-  )
+  return createProgressMessage(taskType, ProgressStatus.PROCESSING, message, {
+    progress,
+    fileName: options?.fileName,
+    processedCount: options?.processedCount,
+    totalCount: options?.totalCount
+  })
 }
 
 /**
  * 创建完成消息
  */
-export function createCompletedMessage(
-  taskType: TaskType,
-  message?: string
-): ProgressMessage {
+export function createCompletedMessage(taskType: TaskType, message?: string): ProgressMessage {
   const defaultMessages: Record<string, string> = {
     [TaskType.MODEL_DOWNLOAD]: '模型下载完成',
     [TaskType.DOCUMENT_PARSE]: '文档解析完成',
@@ -222,7 +203,7 @@ export function createCompletedMessage(
     [TaskType.INDEX_REBUILD]: '索引重建完成',
     [TaskType.KNOWLEDGE_BASE_BUILD]: '知识库构建完成'
   }
-  
+
   return createProgressMessage(
     taskType,
     ProgressStatus.COMPLETED,
@@ -241,7 +222,7 @@ export function createErrorMessage(
 ): ProgressMessage {
   // 优化错误消息，避免显示过于技术化的内容
   let userFriendlyMessage = message
-  
+
   if (message.includes('ENOENT') || message.includes('no such file')) {
     userFriendlyMessage = '文件未找到'
   } else if (message.includes('EACCES') || message.includes('permission denied')) {
@@ -251,21 +232,14 @@ export function createErrorMessage(
   } else if (message.includes('timeout')) {
     userFriendlyMessage = '操作超时，请重试'
   }
-  
-  return createProgressMessage(
-    taskType,
-    ProgressStatus.ERROR,
-    userFriendlyMessage,
-    { progress: 0 }
-  )
+
+  return createProgressMessage(taskType, ProgressStatus.ERROR, userFriendlyMessage, { progress: 0 })
 }
 
 /**
  * 将 ProgressMessage 转换为前端期望的格式（兼容旧代码）
  */
-export function toFrontendProgressFormat(
-  progress: ProgressMessage
-): {
+export function toFrontendProgressFormat(progress: ProgressMessage): {
   stage: string
   percent: number
   taskType?: string
@@ -291,10 +265,10 @@ export function createBatchProgress(
   innerProgress: number = 0
 ): ProgressMessage {
   const overallProgress = Math.round(
-    ((currentFile - 1) / totalFiles) * 100 + (innerProgress / totalFiles)
+    ((currentFile - 1) / totalFiles) * 100 + innerProgress / totalFiles
   )
   const formattedFileName = formatFileName(currentFileName, 18)
-  
+
   return createProgressMessage(
     taskType,
     ProgressStatus.PROCESSING,
@@ -307,4 +281,3 @@ export function createBatchProgress(
     }
   )
 }
-

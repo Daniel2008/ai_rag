@@ -45,7 +45,7 @@ function getTaskIcon(taskType?: string, isError?: boolean): ReactElement {
   }
 
   const type = taskType?.toLowerCase()
-  
+
   switch (type) {
     case 'completed':
       return <CheckCircleOutlined />
@@ -82,22 +82,22 @@ const TASK_TITLES: Record<string, string> = {
   [TaskTypeMap.EMBEDDING_GENERATION]: '生成向量',
   [TaskTypeMap.INDEX_REBUILD]: '重建索引',
   [TaskTypeMap.KNOWLEDGE_BASE_BUILD]: '构建知识库',
-  'completed': '处理完成',
-  'error': '处理失败',
-  'downloading': '下载模型'
+  completed: '处理完成',
+  error: '处理失败',
+  downloading: '下载模型'
 }
 
 /** 获取任务类型对应的标题 */
 function getTaskTitle(taskType?: string): string {
   if (!taskType) return '正在处理'
-  
+
   const type = taskType.toLowerCase()
-  
+
   // 精确匹配
   if (TASK_TITLES[type]) {
     return TASK_TITLES[type]
   }
-  
+
   // 模糊匹配（兼容旧格式）
   if (type.includes('model') || type.includes('download')) {
     return '下载嵌入模型'
@@ -117,37 +117,54 @@ function getTaskTitle(taskType?: string): string {
   if (type.includes('knowledge')) {
     return '构建知识库'
   }
-  
+
   return '正在处理'
 }
 
 /** 获取进度条颜色 */
-function getProgressColor(token: ReturnType<typeof antdTheme.useToken>['token'], taskType?: string): string | { from: string; to: string } {
+function getProgressColor(
+  token: ReturnType<typeof antdTheme.useToken>['token'],
+  taskType?: string
+): string | { from: string; to: string } {
   const type = taskType?.toLowerCase()
-  
+
   // 完成状态：绿色
   if (type === 'completed') {
     return '#52c41a'
   }
-  
+
   // 模型下载：蓝色渐变
-  if (type === TaskTypeMap.MODEL_DOWNLOAD || type?.includes('model') || type?.includes('download')) {
+  if (
+    type === TaskTypeMap.MODEL_DOWNLOAD ||
+    type?.includes('model') ||
+    type?.includes('download')
+  ) {
     return { from: token.colorInfo, to: '#3b82f6' }
   }
-  
+
   // 文档解析/分割：橙色渐变
-  if (type === TaskTypeMap.DOCUMENT_PARSE || type === TaskTypeMap.DOCUMENT_SPLIT ||
-      type?.includes('parse') || type?.includes('split')) {
+  if (
+    type === TaskTypeMap.DOCUMENT_PARSE ||
+    type === TaskTypeMap.DOCUMENT_SPLIT ||
+    type?.includes('parse') ||
+    type?.includes('split')
+  ) {
     return { from: '#faad14', to: '#ffc107' }
   }
-  
+
   // 向量生成/索引重建/知识库构建：绿色渐变
-  if (type === TaskTypeMap.EMBEDDING_GENERATION || type === TaskTypeMap.INDEX_REBUILD ||
-      type === TaskTypeMap.KNOWLEDGE_BASE_BUILD ||
-      type?.includes('embed') || type?.includes('index') || type?.includes('vector') || type?.includes('knowledge')) {
+  if (
+    type === TaskTypeMap.EMBEDDING_GENERATION ||
+    type === TaskTypeMap.INDEX_REBUILD ||
+    type === TaskTypeMap.KNOWLEDGE_BASE_BUILD ||
+    type?.includes('embed') ||
+    type?.includes('index') ||
+    type?.includes('vector') ||
+    type?.includes('knowledge')
+  ) {
     return { from: '#52c41a', to: '#87d068' }
   }
-  
+
   // 默认：紫色渐变
   return { from: token.colorPrimary, to: '#7c3aed' }
 }
@@ -205,10 +222,7 @@ export function GlobalProgress({ progress }: GlobalProgressProps): ReactElement 
       {/* 标题和详情 */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <Typography.Text
-            className="text-xs font-medium"
-            style={styles.title}
-          >
+          <Typography.Text className="text-xs font-medium" style={styles.title}>
             {isError ? '处理失败' : getTaskTitle(progress.taskType)}
           </Typography.Text>
           <Typography.Text
@@ -244,4 +258,3 @@ export function GlobalProgress({ progress }: GlobalProgressProps): ReactElement 
 }
 
 export default GlobalProgress
-

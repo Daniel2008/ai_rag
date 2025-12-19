@@ -1,6 +1,11 @@
 import { useState, useEffect, type ReactElement } from 'react'
 import { Button, Progress, Space, Typography, Alert, Tag, Tooltip } from 'antd'
-import { DownloadOutlined, CheckCircleOutlined, SyncOutlined, InfoCircleOutlined } from '@ant-design/icons'
+import {
+  DownloadOutlined,
+  CheckCircleOutlined,
+  SyncOutlined,
+  InfoCircleOutlined
+} from '@ant-design/icons'
 
 const { Text, Paragraph } = Typography
 
@@ -71,7 +76,7 @@ export function UpdateChecker(): ReactElement {
     // 保留原有的事件监听器作为备用
     if (typeof window.api.onUpdateAvailable === 'function') {
       const unsubscribe = window.api.onUpdateAvailable((info) => {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           isChecking: false,
           availableVersion: info.version
@@ -82,7 +87,7 @@ export function UpdateChecker(): ReactElement {
 
     if (typeof window.api.onUpdateNotAvailable === 'function') {
       const unsubscribe = window.api.onUpdateNotAvailable(() => {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           isChecking: false,
           availableVersion: undefined
@@ -93,7 +98,7 @@ export function UpdateChecker(): ReactElement {
 
     if (typeof window.api.onDownloadProgress === 'function') {
       const unsubscribe = window.api.onDownloadProgress((progress) => {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           isDownloading: true,
           progress
@@ -104,7 +109,7 @@ export function UpdateChecker(): ReactElement {
 
     if (typeof window.api.onUpdateDownloaded === 'function') {
       const unsubscribe = window.api.onUpdateDownloaded((info) => {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           isDownloading: false,
           isDownloaded: true,
@@ -116,7 +121,7 @@ export function UpdateChecker(): ReactElement {
 
     if (typeof window.api.onUpdateError === 'function') {
       const unsubscribe = window.api.onUpdateError((error) => {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           isChecking: false,
           isDownloading: false,
@@ -128,7 +133,7 @@ export function UpdateChecker(): ReactElement {
 
     // 清理函数
     return () => {
-      listeners.forEach(unsubscribe => unsubscribe())
+      listeners.forEach((unsubscribe) => unsubscribe())
       if (typeof window.api.removeAllUpdateListeners === 'function') {
         window.api.removeAllUpdateListeners()
       }
@@ -137,60 +142,60 @@ export function UpdateChecker(): ReactElement {
 
   const handleCheckUpdate = async (): Promise<void> => {
     if (!window.api || typeof window.api.checkForUpdates !== 'function') {
-      setState(prev => ({ ...prev, error: '更新功能不可用' }))
+      setState((prev) => ({ ...prev, error: '更新功能不可用' }))
       return
     }
 
-    setState(prev => ({ ...prev, isChecking: true, error: undefined }))
+    setState((prev) => ({ ...prev, isChecking: true, error: undefined }))
     try {
       await window.api.checkForUpdates()
     } catch (error) {
-      setState(prev => ({ ...prev, isChecking: false, error: String(error) }))
+      setState((prev) => ({ ...prev, isChecking: false, error: String(error) }))
     }
   }
 
   const handleDownloadUpdate = async (): Promise<void> => {
     if (!window.api || typeof window.api.downloadUpdate !== 'function') {
-      setState(prev => ({ ...prev, error: '下载功能不可用' }))
+      setState((prev) => ({ ...prev, error: '下载功能不可用' }))
       return
     }
 
-    setState(prev => ({ ...prev, isDownloading: true, error: undefined }))
+    setState((prev) => ({ ...prev, isDownloading: true, error: undefined }))
     try {
       const result = await window.api.downloadUpdate()
       if (!result.success) {
-        setState(prev => ({ ...prev, isDownloading: false, error: result.error || '下载失败' }))
+        setState((prev) => ({ ...prev, isDownloading: false, error: result.error || '下载失败' }))
       }
     } catch (error) {
-      setState(prev => ({ ...prev, isDownloading: false, error: String(error) }))
+      setState((prev) => ({ ...prev, isDownloading: false, error: String(error) }))
     }
   }
 
   const handleInstallUpdate = async (): Promise<void> => {
     if (!window.api || typeof window.api.installUpdate !== 'function') {
-      setState(prev => ({ ...prev, error: '安装功能不可用' }))
+      setState((prev) => ({ ...prev, error: '安装功能不可用' }))
       return
     }
 
     try {
       await window.api.installUpdate()
     } catch (error) {
-      setState(prev => ({ ...prev, error: String(error) }))
+      setState((prev) => ({ ...prev, error: String(error) }))
     }
   }
 
   const handleForceCheckDev = async (): Promise<void> => {
     if (!window.api || typeof window.api.forceCheckUpdateDev !== 'function') {
-      setState(prev => ({ ...prev, error: '开发环境检查功能不可用' }))
+      setState((prev) => ({ ...prev, error: '开发环境检查功能不可用' }))
       return
     }
 
-    setState(prev => ({ ...prev, isChecking: true, error: undefined }))
+    setState((prev) => ({ ...prev, isChecking: true, error: undefined }))
     try {
       await window.api.forceCheckUpdateDev()
-      setState(prev => ({ ...prev, isChecking: false }))
+      setState((prev) => ({ ...prev, isChecking: false }))
     } catch (error) {
-      setState(prev => ({ ...prev, isChecking: false, error: String(error) }))
+      setState((prev) => ({ ...prev, isChecking: false, error: String(error) }))
     }
   }
 
@@ -266,11 +271,7 @@ export function UpdateChecker(): ReactElement {
 
     return (
       <Space>
-        <Button 
-          onClick={handleCheckUpdate} 
-          icon={<SyncOutlined />} 
-          loading={state.isChecking}
-        >
+        <Button onClick={handleCheckUpdate} icon={<SyncOutlined />} loading={state.isChecking}>
           检查更新
         </Button>
         {process.env.NODE_ENV === 'development' && (
@@ -295,8 +296,8 @@ export function UpdateChecker(): ReactElement {
 
     return (
       <div style={{ marginTop: 12 }}>
-        <Progress 
-          percent={percent} 
+        <Progress
+          percent={percent}
           status={state.error ? 'exception' : 'active'}
           format={(p) => `${Math.round(p ?? percent)}%`}
         />
@@ -323,7 +324,7 @@ export function UpdateChecker(): ReactElement {
 
   // 渲染版本信息
   const renderVersionInfo = (): ReactElement => {
-    const versionText = state.availableVersion 
+    const versionText = state.availableVersion
       ? `当前版本: ${state.currentVersion} → 新版本: ${state.availableVersion}`
       : `当前版本: ${state.currentVersion}`
 
@@ -343,21 +344,19 @@ export function UpdateChecker(): ReactElement {
 
   return (
     <div style={{ padding: '16px 0' }}>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        marginBottom: 12 
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 12
+        }}
+      >
         <Space>
           <Text strong>自动更新</Text>
           {renderStatusTag()}
         </Space>
-        <Button 
-          size="small" 
-          type="text"
-          onClick={() => setShowDetails(!showDetails)}
-        >
+        <Button size="small" type="text" onClick={() => setShowDetails(!showDetails)}>
           {showDetails ? '隐藏详情' : '查看详情'}
         </Button>
       </div>
@@ -368,7 +367,7 @@ export function UpdateChecker(): ReactElement {
           {renderActions()}
           {renderProgress()}
           {renderError()}
-          
+
           <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
             <Text type="secondary" style={{ fontSize: 11 }}>
               提示：应用会在启动时自动检查更新，也可以手动检查并安装。

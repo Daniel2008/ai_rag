@@ -76,7 +76,12 @@ export default defineConfig({
           manualChunks: {
             'react-vendor': ['react', 'react-dom'],
             'antd-vendor': ['antd', '@ant-design/icons'],
-            'langchain-vendor': ['@langchain/core', '@langchain/community', '@langchain/openai', '@langchain/ollama']
+            'langchain-vendor': [
+              '@langchain/core',
+              '@langchain/community',
+              '@langchain/openai',
+              '@langchain/ollama'
+            ]
           }
         }
       }

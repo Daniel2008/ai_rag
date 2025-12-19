@@ -180,14 +180,16 @@ export async function* streamDocumentGeneration(
 
     const settings = getSettings()
     console.log('[DocumentChat] Using model provider:', settings.provider)
-    
+
     let model: BaseChatModel
     try {
       model = createChatModel(settings.provider)
       console.log('[DocumentChat] Model created successfully')
     } catch (modelError) {
       console.error('[DocumentChat] Failed to create model:', modelError)
-      throw new Error(`无法创建语言模型: ${modelError instanceof Error ? modelError.message : '未知错误'}`)
+      throw new Error(
+        `无法创建语言模型: ${modelError instanceof Error ? modelError.message : '未知错误'}`
+      )
     }
 
     const outlinePrompt = `你是一位专业的文档规划专家。请根据用户需求和参考资料，为${typeLabel}设计一个结构清晰、逻辑严谨的大纲。
@@ -224,9 +226,11 @@ ${ragContext.slice(0, 3000) || '（无参考资料，请基于通用知识规划
       console.log('[DocumentChat] Model response received')
     } catch (invokeError) {
       console.error('[DocumentChat] Model invoke error:', invokeError)
-      throw new Error(`模型调用失败: ${invokeError instanceof Error ? invokeError.message : '未知错误'}`)
+      throw new Error(
+        `模型调用失败: ${invokeError instanceof Error ? invokeError.message : '未知错误'}`
+      )
     }
-    
+
     let outlineContent =
       typeof outlineResponse.content === 'string'
         ? outlineResponse.content
@@ -363,12 +367,12 @@ ${sectionContext.slice(0, 2000) || '（无参考资料，请基于通用知识�
 
       try {
         const parsed = JSON.parse(contentText)
-        
+
         // 内容验证和清理
         const paragraphs = (parsed.paragraphs || [])
           .filter((p: string) => p && typeof p === 'string' && p.trim().length > 10)
           .slice(0, 3) // 最多 3 段
-        
+
         const bulletPoints = (parsed.bulletPoints || [])
           .filter((p: string) => p && typeof p === 'string' && p.trim().length > 5)
           .slice(0, 5) // 最多 5 个要点
@@ -380,7 +384,10 @@ ${sectionContext.slice(0, 2000) || '（无参考资料，请基于通用知识�
 
         contents.push({
           title: section.title,
-          paragraphs: paragraphs.length > 0 ? paragraphs : [`关于${section.title}的详细内容，请参考相关资料。`],
+          paragraphs:
+            paragraphs.length > 0
+              ? paragraphs
+              : [`关于${section.title}的详细内容，请参考相关资料。`],
           bulletPoints: bulletPoints.length > 0 ? bulletPoints : section.keyPoints || [],
           sources: sectionDocs
             .slice(0, 2)
@@ -404,8 +411,11 @@ ${sectionContext.slice(0, 2000) || '（无参考资料，请基于通用知识�
           'Check'
         )
       } catch (parseError) {
-        console.warn(`[DocumentChat] Failed to parse content for section ${i}, using fallback:`, parseError)
-        
+        console.warn(
+          `[DocumentChat] Failed to parse content for section ${i}, using fallback:`,
+          parseError
+        )
+
         // 使用简化的重试逻辑
         try {
           const simplePrompt = `为"${section.title}"写2段内容（每段50-100字）和3个要点（每个10-20字）。只返回JSON：{"paragraphs":["段落1","段落2"],"bulletPoints":["要点1","要点2","要点3"]}`
@@ -419,7 +429,7 @@ ${sectionContext.slice(0, 2000) || '（无参考资料，请基于通用知识�
             .replace(/```\w*\n?/gi, '')
             .replace(/```/g, '')
             .trim()
-          
+
           const jsonMatch = retryText.match(/\{[\s\S]*\}/)
           if (jsonMatch) {
             retryText = jsonMatch[0]
@@ -437,9 +447,10 @@ ${sectionContext.slice(0, 2000) || '（无参考资料，请基于通用知识�
           // 最终兜底：使用关键要点生成简单内容
           contents.push({
             title: section.title,
-            paragraphs: section.keyPoints && section.keyPoints.length > 0
-              ? [`${section.title}涉及以下关键方面：${section.keyPoints.join('、')}。`]
-              : [`关于${section.title}的详细内容，请参考相关资料。`],
+            paragraphs:
+              section.keyPoints && section.keyPoints.length > 0
+                ? [`${section.title}涉及以下关键方面：${section.keyPoints.join('、')}。`]
+                : [`关于${section.title}的详细内容，请参考相关资料。`],
             bulletPoints: section.keyPoints || [],
             sources: []
           })
@@ -525,21 +536,25 @@ ${sectionContext.slice(0, 2000) || '（无参考资料，请基于通用知识�
     const errorStack = error instanceof Error ? error.stack : undefined
     console.error('[DocumentChat] Error:', error)
     console.error('[DocumentChat] Error stack:', errorStack)
-    
+
     yield '<think>'
     yield stepMark('error', '生成失败', 'error', errorMsg, 'File')
     yield '</think>'
-    
+
     // 提供更详细的错误信息
     let userFriendlyError = errorMsg
     if (errorMsg.includes('API key') || errorMsg.includes('authentication')) {
       userFriendlyError = 'API 密钥配置错误，请检查设置中的 API 密钥'
-    } else if (errorMsg.includes('network') || errorMsg.includes('timeout') || errorMsg.includes('fetch')) {
+    } else if (
+      errorMsg.includes('network') ||
+      errorMsg.includes('timeout') ||
+      errorMsg.includes('fetch')
+    ) {
       userFriendlyError = '网络连接失败，请检查网络设置或稍后重试'
     } else if (errorMsg.includes('model') || errorMsg.includes('provider')) {
       userFriendlyError = '模型配置错误，请检查设置中的模型配置'
     }
-    
+
     yield `\n❌ **生成失败**: ${userFriendlyError}\n\n`
     yield `**错误详情**: ${errorMsg}\n\n`
     yield `请检查：\n`

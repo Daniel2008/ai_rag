@@ -25,18 +25,18 @@ const getModelsPath = (): string => {
 // 推荐使用 multilingual-e5-small 或 bge-m3 用于多语言场景
 export const LOCAL_EMBEDDING_MODELS = {
   // 多语言模型（推荐用于中英文混合场景）
-  'multilingual-e5-small': 'intfloat/multilingual-e5-small',  // 多语言，效果好
-  'multilingual-e5-base': 'intfloat/multilingual-e5-base',    // 多语言，更大更准
-  'bge-m3': 'BAAI/bge-m3',                                     // 多语言，最新最强
-  
+  'multilingual-e5-small': 'intfloat/multilingual-e5-small', // 多语言，效果好
+  'multilingual-e5-base': 'intfloat/multilingual-e5-base', // 多语言，更大更准
+  'bge-m3': 'BAAI/bge-m3', // 多语言，最新最强
+
   // 中文专用模型
-  'bge-small-zh': 'BAAI/bge-small-zh-v1.5',                   // 中文专用
-  'bge-base-zh': 'BAAI/bge-base-zh-v1.5',                     // 中文专用，更大
-  
+  'bge-small-zh': 'BAAI/bge-small-zh-v1.5', // 中文专用
+  'bge-base-zh': 'BAAI/bge-base-zh-v1.5', // 中文专用，更大
+
   // 英文模型
-  'nomic-embed-text': 'nomic-ai/nomic-embed-text-v1.5',       // 英文，效果好
-  'all-MiniLM-L6': 'Xenova/all-MiniLM-L6-v2',                 // 英文，轻量
-  
+  'nomic-embed-text': 'nomic-ai/nomic-embed-text-v1.5', // 英文，效果好
+  'all-MiniLM-L6': 'Xenova/all-MiniLM-L6-v2', // 英文，轻量
+
   // 通用多语言（Xenova 量化版，兼容性好）
   'paraphrase-multilingual': 'Xenova/paraphrase-multilingual-MiniLM-L12-v2'
 } as const
@@ -44,11 +44,14 @@ export const LOCAL_EMBEDDING_MODELS = {
 export type LocalEmbeddingModelName = keyof typeof LOCAL_EMBEDDING_MODELS
 
 // 模型语言支持信息
-export const MODEL_LANGUAGE_SUPPORT: Record<LocalEmbeddingModelName, {
-  languages: string[]
-  recommended: boolean
-  description: string
-}> = {
+export const MODEL_LANGUAGE_SUPPORT: Record<
+  LocalEmbeddingModelName,
+  {
+    languages: string[]
+    recommended: boolean
+    description: string
+  }
+> = {
   'multilingual-e5-small': {
     languages: ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'it', 'pt', 'ru'],
     recommended: true,
@@ -177,21 +180,24 @@ export async function initLocalEmbeddings(
                 message: `下载中: ${payloadObj.file} (${Math.round(payloadObj.progress)}%)`,
                 taskType: TaskType.MODEL_DOWNLOAD
               }
-            } else if (payloadObj.step === 'downloading' && typeof payloadObj.message === 'string') {
+            } else if (
+              payloadObj.step === 'downloading' &&
+              typeof payloadObj.message === 'string'
+            ) {
               // 处理镜像切换等进度消息
               progressMessage = {
                 status: ProgressStatus.DOWNLOADING,
                 message: payloadObj.message,
                 taskType: TaskType.MODEL_DOWNLOAD,
-                progress: payloadObj.progress as number || undefined
+                progress: (payloadObj.progress as number) || undefined
               }
             } else {
               // Default case: handle unexpected payloads
               progressMessage = {
                 status: ProgressStatus.DOWNLOADING,
-                message: payloadObj.message as string || '处理中...',
+                message: (payloadObj.message as string) || '处理中...',
                 taskType: TaskType.MODEL_DOWNLOAD,
-                progress: payloadObj.progress as number || undefined
+                progress: (payloadObj.progress as number) || undefined
               }
             }
           }
@@ -216,23 +222,25 @@ export async function initLocalEmbeddings(
       } catch (error) {
         retryCount++
         const errorMessage = error instanceof Error ? error.message : '未知错误'
-        
+
         // 检查是否是Protobuf解析错误，如果是，且重试次数未用尽，则尝试重新初始化
         const isProtobufError = errorMessage.includes('Protobuf parsing failed')
-        
+
         if (isProtobufError && retryCount <= maxRetries) {
-          console.warn(`模型文件可能已损坏 (${errorMessage}), 正在尝试第 ${retryCount} 次重新下载...`)
+          console.warn(
+            `模型文件可能已损坏 (${errorMessage}), 正在尝试第 ${retryCount} 次重新下载...`
+          )
           currentProgressCallback?.({
             status: ProgressStatus.DOWNLOADING,
             message: `模型文件可能已损坏，正在尝试重新下载 (${retryCount}/${maxRetries})...`,
             taskType: TaskType.MODEL_DOWNLOAD
           })
-          
+
           // 清理缓存，强制重新下载
           cachedModelName = null
-          
+
           // 等待1秒后重试
-          await new Promise(resolve => setTimeout(resolve, 1000))
+          await new Promise((resolve) => setTimeout(resolve, 1000))
         } else {
           // 非Protobuf错误或重试次数已用尽，报告错误
           isInitializing = false
@@ -362,7 +370,7 @@ export class LocalEmbeddings extends Embeddings {
 
     // 减少进度更新频率
     const progressUpdateInterval = Math.max(
-      1, 
+      1,
       Math.floor(total / RAG_CONFIG.BATCH.PROGRESS_UPDATE_INTERVAL)
     )
     let lastProgressUpdate = 0
@@ -375,7 +383,10 @@ export class LocalEmbeddings extends Embeddings {
 
       // 控制进度更新频率
       const processed = Math.min(i + batchSize, total)
-      if (callback && (processed - lastProgressUpdate >= progressUpdateInterval || processed === total)) {
+      if (
+        callback &&
+        (processed - lastProgressUpdate >= progressUpdateInterval || processed === total)
+      ) {
         lastProgressUpdate = processed
         const percent = Math.round((processed / total) * 100)
         callback({

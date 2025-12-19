@@ -88,7 +88,7 @@ class MemoryMonitor {
     this.checkInterval = setInterval(() => {
       const stats = this.getCurrentMemory()
       this.statsHistory.push(stats)
-      
+
       // 限制历史记录大小
       if (this.statsHistory.length > this.maxHistorySize) {
         this.statsHistory.shift()
@@ -127,9 +127,7 @@ class MemoryMonitor {
     current: number
   } {
     const now = Date.now()
-    const window = this.statsHistory.filter(
-      stat => now - stat.timestamp <= windowMs
-    )
+    const window = this.statsHistory.filter((stat) => now - stat.timestamp <= windowMs)
 
     if (window.length === 0) {
       const current = this.getCurrentMemory()
@@ -142,9 +140,7 @@ class MemoryMonitor {
       }
     }
 
-    const values = window.map(
-      stat => (stat.heapUsed + stat.external) / (1024 * 1024)
-    )
+    const values = window.map((stat) => (stat.heapUsed + stat.external) / (1024 * 1024))
     const current = this.getCurrentMemory()
     const currentMB = (current.heapUsed + current.external) / (1024 * 1024)
 
@@ -199,4 +195,3 @@ if (typeof process !== 'undefined') {
     memoryMonitor.startMonitoring(60000) // 每分钟检查一次
   }, 5000)
 }
-

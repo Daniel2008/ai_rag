@@ -46,21 +46,21 @@ try {
 
   if (hasImageMagick) {
     log('\n📦 使用 ImageMagick 生成高质量 ICO 文件...', 'blue')
-    
+
     // 使用 ImageMagick 生成包含所有必要尺寸的 ICO
     // Windows 任务栏需要：16x16, 32x32, 48x48, 256x256
     const command = `magick convert "${iconPng}" -define icon:auto-resize=256,128,96,64,48,32,24,16 "${iconIco}"`
-    
+
     log(`执行命令: ${command}`, 'yellow')
     execSync(command, { stdio: 'inherit', cwd: path.join(__dirname, '..') })
-    
+
     log('\n✅ ICO 文件已生成（包含所有必要尺寸）', 'green')
   } else {
     log('\n📦 使用 electron-icon-builder 生成图标...', 'blue')
-    
+
     const command = `npx electron-icon-builder --input=${iconPng} --output=${buildDir} --flatten`
     execSync(command, { stdio: 'inherit', cwd: path.join(__dirname, '..') })
-    
+
     log('\n⚠️  建议：安装 ImageMagick 以获得更好的图标质量', 'yellow')
     log('下载地址: https://imagemagick.org/script/download.php', 'yellow')
   }
@@ -70,7 +70,7 @@ try {
     const stats = fs.statSync(iconIco)
     const sizeKB = (stats.size / 1024).toFixed(2)
     log(`\n✅ 图标文件: ${path.basename(iconIco)} (${sizeKB} KB)`, 'green')
-    
+
     if (parseFloat(sizeKB) < 10) {
       log('⚠️  警告: ICO 文件可能太小，可能缺少某些尺寸', 'yellow')
     }
@@ -86,7 +86,6 @@ try {
   log('     - 重启 Windows 资源管理器', 'yellow')
   log('     - 确保 ICO 文件包含 16x16, 32x32, 48x48, 256x256 尺寸', 'yellow')
   log('─'.repeat(60) + '\n', 'cyan')
-
 } catch (error) {
   log('\n❌ 图标生成失败！', 'red')
   log(`错误: ${error.message}`, 'red')
@@ -98,4 +97,3 @@ try {
   log('  3. 将生成的 ICO 文件保存为 build/icon.ico', 'yellow')
   process.exit(1)
 }
-

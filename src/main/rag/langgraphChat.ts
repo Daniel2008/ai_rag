@@ -44,11 +44,15 @@ const stateChannels = {
   answer: { value: (prev?: string, next?: string) => next ?? prev },
   usedSources: { value: (prev?: ChatSource[], next?: ChatSource[]) => next ?? prev },
   error: { value: (prev?: string, next?: string) => next ?? prev },
-  onToken: { value: (prev?: (chunk: string) => void, next?: (chunk: string) => void) => next ?? prev }
+  onToken: {
+    value: (prev?: (chunk: string) => void, next?: (chunk: string) => void) => next ?? prev
+  }
 }
 
 // 简化的图结构：直接执行 generate 节点（内部包含检索和生成）
-const chatGraph = new StateGraph<ChatGraphState>({ channels: stateChannels as unknown as Record<string, unknown> })
+const chatGraph = new StateGraph<ChatGraphState>({
+  channels: stateChannels as unknown as Record<string, unknown>
+})
   .addNode('generate', generate)
   .addEdge(START, 'generate')
   .addEdge('generate', END)
@@ -73,4 +77,3 @@ export async function runLangGraphChat(
     error: result.error
   }
 }
-

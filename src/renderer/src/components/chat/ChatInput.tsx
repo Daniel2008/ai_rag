@@ -2,7 +2,12 @@ import type { ReactElement } from 'react'
 import { useMemo, useState, useCallback } from 'react'
 import { Sender } from '@ant-design/x'
 import { Divider, Select, Tag, Typography, theme as antdTheme, Tooltip } from 'antd'
-import { ThunderboltOutlined, FileTextOutlined, FolderOutlined, GlobalOutlined } from '@ant-design/icons'
+import {
+  ThunderboltOutlined,
+  FileTextOutlined,
+  FolderOutlined,
+  GlobalOutlined
+} from '@ant-design/icons'
 import type { QuestionScope } from '../../types/chat'
 import type { DocumentCollection, IndexedFile } from '../../types/files'
 import { QUICK_QUESTIONS } from '../../constants/chat'
@@ -122,14 +127,14 @@ export function ChatInput({
         type: 'mention' as const,
         label: `指定文件 (${mentionedFiles.length})`,
         icon: <FileTextOutlined />,
-        files: mentionedFiles.map(m => {
-          const file = readyFiles.find(f => f.path === m.path)
+        files: mentionedFiles.map((m) => {
+          const file = readyFiles.find((f) => f.path === m.path)
           return file?.name || m.token.replace('#', '')
         })
       }
     }
     if (questionScope === 'collection' && resolvedCollectionId) {
-      const col = collections.find(c => c.id === resolvedCollectionId)
+      const col = collections.find((c) => c.id === resolvedCollectionId)
       return {
         type: 'collection' as const,
         label: col ? `${col.name} (${col.files.length})` : '文档集',
@@ -189,13 +194,19 @@ export function ChatInput({
               effectiveSearchScope.type === 'mention'
                 ? `将在以下文件中检索：${effectiveSearchScope.files.join(', ')}`
                 : effectiveSearchScope.type === 'collection'
-                ? '将在选定文档集内检索'
-                : '将在所有文档中检索'
+                  ? '将在选定文档集内检索'
+                  : '将在所有文档中检索'
             }
           >
             <Tag
               icon={effectiveSearchScope.icon}
-              color={effectiveSearchScope.type === 'mention' ? 'blue' : effectiveSearchScope.type === 'collection' ? 'green' : 'default'}
+              color={
+                effectiveSearchScope.type === 'mention'
+                  ? 'blue'
+                  : effectiveSearchScope.type === 'collection'
+                    ? 'green'
+                    : 'default'
+              }
               style={{ margin: 0 }}
             >
               {effectiveSearchScope.label}

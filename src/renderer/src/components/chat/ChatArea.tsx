@@ -297,7 +297,9 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
         style={{ color: token.colorTextSecondary }}
       >
         <DatabaseOutlined />
-        <span>引用来源 ({mergedSources.length} 个文件，{sources.length} 段引用)</span>
+        <span>
+          引用来源 ({mergedSources.length} 个文件，{sources.length} 段引用)
+        </span>
       </div>
       <Collapse
         items={items}
@@ -515,15 +517,15 @@ const MessageContent = memo(
       }
 
       // 否则使用旧的方式（纯文本）
-          return [
-            {
-              key: 'thought',
-              title: '思考过程',
-              content: <XMarkdown>{think}</XMarkdown>,
-              status: isThinking ? ('loading' as const) : ('success' as const)
-            }
-          ]
-        }, [think, isThinking, message.typing])
+      return [
+        {
+          key: 'thought',
+          title: '思考过程',
+          content: <XMarkdown>{think}</XMarkdown>,
+          status: isThinking ? ('loading' as const) : ('success' as const)
+        }
+      ]
+    }, [think, isThinking, message.typing])
 
     return (
       <div className="flex flex-col gap-3">
@@ -531,11 +533,15 @@ const MessageContent = memo(
         {hasContent ? (
           <div className="markdown-content">
             <XMarkdown>
-              {expanded || realContent.length <= MAX_MD_CHARS ? realContent : realContent.slice(0, MAX_MD_CHARS)}
+              {expanded || realContent.length <= MAX_MD_CHARS
+                ? realContent
+                : realContent.slice(0, MAX_MD_CHARS)}
             </XMarkdown>
             {!expanded && realContent.length > MAX_MD_CHARS && (
               <div className="mt-2">
-                <Button size="small" onClick={() => setExpanded(true)}>展开完整内容</Button>
+                <Button size="small" onClick={() => setExpanded(true)}>
+                  展开完整内容
+                </Button>
               </div>
             )}
           </div>
@@ -832,7 +838,10 @@ export function ChatArea({
   const EST_ITEM_HEIGHT = 140
   const VIRTUAL_THRESHOLD = 200
   const OVERSCAN = 10
-  const [visibleRange, setVisibleRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
+  const [visibleRange, setVisibleRange] = useState<{ start: number; end: number }>({
+    start: 0,
+    end: 0
+  })
   const heightMapRef = useRef<Map<string, number>>(new Map())
   const [heightMapSnapshot, setHeightMapSnapshot] = useState<Map<string, number>>(new Map())
   const activeElementsRef = useRef<Map<string, HTMLElement>>(new Map())
@@ -878,11 +887,11 @@ export function ChatArea({
       if (oldEl && oldEl !== el) {
         observerRef.current?.unobserve(oldEl)
       }
-      
+
       activeElementsRef.current.set(key, el)
       elementToKeyRef.current.set(el, key)
       observerRef.current?.observe(el)
-      
+
       const h = el.offsetHeight
       if (h > 0 && h !== heightMapRef.current.get(key)) {
         heightMapRef.current.set(key, h)
@@ -929,7 +938,8 @@ export function ChatArea({
         .map((m) => m.key)
       const cum = computeCumulative(filteredKeys)
       const findIndex = (pos: number): number => {
-        let lo = 0, hi = filteredKeys.length
+        let lo = 0,
+          hi = filteredKeys.length
         while (lo < hi) {
           const mid = (lo + hi) >> 1
           if (cum[mid] <= pos) lo = mid + 1
@@ -956,14 +966,15 @@ export function ChatArea({
       const slice = filtered.slice(start, end)
       return slice
     }
-    const fin = filtered.length > MAX_RENDERED_MESSAGES
-      ? filtered.slice(-MAX_RENDERED_MESSAGES)
-      : filtered
+    const fin =
+      filtered.length > MAX_RENDERED_MESSAGES ? filtered.slice(-MAX_RENDERED_MESSAGES) : filtered
     return fin
   }, [currentMessages, visibleRange])
 
   const spacerHeights = useMemo(() => {
-    const filtered = currentMessages.filter((m) => m.role !== 'system' || m.content.trim().length > 0)
+    const filtered = currentMessages.filter(
+      (m) => m.role !== 'system' || m.content.trim().length > 0
+    )
     if (filtered.length <= VIRTUAL_THRESHOLD) {
       return { top: 0, bottom: 0 }
     }
@@ -971,7 +982,8 @@ export function ChatArea({
     const keys = filtered.map((m) => m.key)
     const cum = calculateCumulativeHeights(keys, heightMapSnapshot)
     const top = cum[visibleRange.start] || 0
-    const endIndex = visibleRange.end ?? Math.min(filtered.length, visibleRange.start + MAX_RENDERED_MESSAGES)
+    const endIndex =
+      visibleRange.end ?? Math.min(filtered.length, visibleRange.start + MAX_RENDERED_MESSAGES)
     const total = cum[cum.length - 1] || 0
     const used = cum[endIndex] || 0
     const bottom = Math.max(0, total - used)
@@ -1034,7 +1046,14 @@ export function ChatArea({
                 footer
               }
             })
-          }, [filteredMessagesForRender, isTyping, copiedMessageKey, onCopyMessage, onRetryMessage, setItemHeight])}
+          }, [
+            filteredMessagesForRender,
+            isTyping,
+            copiedMessageKey,
+            onCopyMessage,
+            onRetryMessage,
+            setItemHeight
+          ])}
         />
         {spacerHeights.bottom > 0 && <div style={{ height: spacerHeights.bottom }} />}
       </div>
@@ -1072,7 +1091,14 @@ interface MetricsPanelProps {
 }
 
 function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
-  const [items, setItems] = useState<Array<{ message: string; timestamp: number; context?: string; metadata?: Record<string, unknown> }>>([])
+  const [items, setItems] = useState<
+    Array<{
+      message: string
+      timestamp: number
+      context?: string
+      metadata?: Record<string, unknown>
+    }>
+  >([])
   const [loading, setLoading] = useState(false)
   const load = useCallback(async () => {
     if (!window.api) return
@@ -1091,16 +1117,18 @@ function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
     }
   }, [open, load])
   const summary = useMemoReact(() => {
-    const metrics = items.filter(i => i.message === 'Search metrics')
-    const completed = items.filter(i => i.message === 'Search completed')
+    const metrics = items.filter((i) => i.message === 'Search metrics')
+    const completed = items.filter((i) => i.message === 'Search completed')
     const avgScores = metrics
       .map((i) => Number(i.metadata?.['avgTopScore'] ?? 0))
       .filter((n) => !Number.isNaN(n))
-    const meanAvg = avgScores.length ? (avgScores.reduce((a, b) => a + b, 0) / avgScores.length) : 0
+    const meanAvg = avgScores.length ? avgScores.reduce((a, b) => a + b, 0) / avgScores.length : 0
     const latencies = completed
       .map((i) => Number(i.metadata?.['latencyMs'] ?? 0))
       .filter((n) => !Number.isNaN(n))
-    const meanLatency = latencies.length ? (latencies.reduce((a, b) => a + b, 0) / latencies.length) : 0
+    const meanLatency = latencies.length
+      ? latencies.reduce((a, b) => a + b, 0) / latencies.length
+      : 0
     const coverage = new Set<string>()
     for (const c of completed) {
       const sources = c.metadata?.['sources']
@@ -1117,12 +1145,20 @@ function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
     }
   }, [items])
   return (
-    <Drawer title="检索指标" placement="right" onClose={onClose} open={open} styles={{ wrapper: { width: 420 } }}>
+    <Drawer
+      title="检索指标"
+      placement="right"
+      onClose={onClose}
+      open={open}
+      styles={{ wrapper: { width: 420 } }}
+    >
       <div className="mb-4 flex gap-4">
         <Tag color="blue">Top-K均值: {summary.meanAvg}</Tag>
         <Tag color="green">平均延迟: {summary.meanLatency}ms</Tag>
         <Tag color="purple">来源覆盖: {summary.coverageCount}</Tag>
-        <Button size="small" loading={loading} onClick={load}>刷新</Button>
+        <Button size="small" loading={loading} onClick={load}>
+          刷新
+        </Button>
       </div>
       <List
         size="small"
@@ -1136,7 +1172,9 @@ function MetricsPanel({ open, onClose }: MetricsPanelProps): ReactElement {
                 <span>{new Date(item.timestamp).toLocaleTimeString('zh-CN')}</span>
               </div>
               {item.metadata && (
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(item.metadata, null, 2)}</pre>
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                  {JSON.stringify(item.metadata, null, 2)}
+                </pre>
               )}
             </div>
           </List.Item>

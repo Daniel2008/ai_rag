@@ -29,25 +29,26 @@ export interface ChunkingConfig {
  */
 function isGarbledText(text: string): boolean {
   if (!text || text.length < 50) return false
-  
+
   // 计算各类字符的比例
   const totalChars = text.length
-  
+
   // 有意义的字符：中文、英文字母、数字
   const meaningfulChars = (text.match(/[\u4e00-\u9fa5a-zA-Z0-9]/g) || []).length
-  
+
   // 标点和特殊字符
-  const punctuationChars = (text.match(/[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~！""''（）【】、，。；：？《》]/g) || []).length
-  
+  const punctuationChars = (
+    text.match(/[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~！""''（）【】、，。；：？《》]/g) || []
+  ).length
+
   // 如果有意义字符占比低于 30%，且标点符号占比高于 40%，判定为乱码
   const meaningfulRatio = meaningfulChars / totalChars
   const punctuationRatio = punctuationChars / totalChars
-  
+
   // 检查是否有连续的标点符号模式（乱码的典型特征）
-  const hasGarbledPattern = /[!"#$%&'()*]{5,}/.test(text) || 
-                            /[!"][#$][!"][%&]/.test(text) ||
-                            /(!["#$%&]){3,}/.test(text)
-  
+  const hasGarbledPattern =
+    /[!"#$%&'()*]{5,}/.test(text) || /[!"][#$][!"][%&]/.test(text) || /(!["#$%&]){3,}/.test(text)
+
   return (meaningfulRatio < 0.3 && punctuationRatio > 0.4) || hasGarbledPattern
 }
 
@@ -214,7 +215,7 @@ export async function loadAndSplitFile(
     message: `检查文件是否存在: ${fileName}`,
     progress: 10
   })
-  
+
   try {
     await fs.access(filePath, fs.constants.F_OK)
   } catch {
@@ -227,44 +228,44 @@ export async function loadAndSplitFile(
   }
 
   // 检查文件是否可读
-  onProgress?.({ 
-    taskType: TaskType.DOCUMENT_PARSE, 
-    status: ProgressStatus.PROCESSING, 
+  onProgress?.({
+    taskType: TaskType.DOCUMENT_PARSE,
+    status: ProgressStatus.PROCESSING,
     message: `检查文件权限: ${fileName}`,
-    progress: 20 
+    progress: 20
   })
-  
+
   try {
     await fs.access(filePath, fs.constants.R_OK)
   } catch {
-    onProgress?.({ 
-      taskType: TaskType.DOCUMENT_PARSE, 
-      status: ProgressStatus.ERROR, 
-      message: `没有读取文件的权限: ${fileName}` 
+    onProgress?.({
+      taskType: TaskType.DOCUMENT_PARSE,
+      status: ProgressStatus.ERROR,
+      message: `没有读取文件的权限: ${fileName}`
     })
     throw new Error(`没有读取文件的权限: ${filePath}`)
   }
 
   if (ext === '.pdf') {
-    onProgress?.({ 
-      taskType: TaskType.DOCUMENT_PARSE, 
-      status: ProgressStatus.PROCESSING, 
+    onProgress?.({
+      taskType: TaskType.DOCUMENT_PARSE,
+      status: ProgressStatus.PROCESSING,
       message: `开始解析PDF文件: ${fileName}`,
-      progress: 30 
+      progress: 30
     })
-    
+
     try {
       const loader = new PDFLoader(filePath, {
         // 尝试按页分割以便更好地处理
         splitPages: true
       })
       docs = await loader.load()
-      
+
       // 检查是否有乱码
       let garbledPageCount = 0
       let totalTextLength = 0
       let meaningfulCharsTotal = 0
-      
+
       for (const doc of docs) {
         totalTextLength += doc.pageContent.length
         meaningfulCharsTotal += (doc.pageContent.match(/[\u4e00-\u9fa5a-zA-Z0-9]/g) || []).length
@@ -272,14 +273,14 @@ export async function loadAndSplitFile(
           garbledPageCount++
         }
       }
-      
+
       // 如果超过 50% 的页面是乱码，使用 OCR
       const garbledRatio = docs.length > 0 ? garbledPageCount / docs.length : 0
       const meaningfulRatio = totalTextLength > 0 ? meaningfulCharsTotal / totalTextLength : 0
-      
+
       // 判定：页面乱码比例超过 20% 或整体有效字符比例低于 40%，则认为无法解析
       const isUnparsable = garbledRatio > 0.2 || meaningfulRatio < 0.4
-      
+
       if (isUnparsable) {
         const msg = `检测到文件疑似乱码，无法解析: ${fileName}（页乱码率 ${(
           garbledRatio * 100
@@ -292,18 +293,18 @@ export async function loadAndSplitFile(
         })
         throw new Error(msg)
       }
-      
-      onProgress?.({ 
-        taskType: TaskType.DOCUMENT_PARSE, 
-        status: ProgressStatus.PROCESSING, 
+
+      onProgress?.({
+        taskType: TaskType.DOCUMENT_PARSE,
+        status: ProgressStatus.PROCESSING,
         message: `PDF文件解析完成，共 ${docs.length} 页`,
-        progress: 60 
+        progress: 60
       })
     } catch (error) {
-      onProgress?.({ 
-        taskType: TaskType.DOCUMENT_PARSE, 
-        status: ProgressStatus.ERROR, 
-        message: `PDF文件解析失败: ${fileName}` 
+      onProgress?.({
+        taskType: TaskType.DOCUMENT_PARSE,
+        status: ProgressStatus.ERROR,
+        message: `PDF文件解析失败: ${fileName}`
       })
       throw new Error(
         `PDF文件解析失败: ${fileName}。文件可能已损坏或格式不支持。错误详情: ${String(error)}`
@@ -313,13 +314,13 @@ export async function loadAndSplitFile(
     // 使用 officeparser 处理 Office 和 OpenDocument 文件
     // 支持: .docx, .pptx, .xlsx, .odt, .odp, .ods
     const typeName = getFileTypeName(ext)
-    onProgress?.({ 
-      taskType: TaskType.DOCUMENT_PARSE, 
-      status: ProgressStatus.PROCESSING, 
+    onProgress?.({
+      taskType: TaskType.DOCUMENT_PARSE,
+      status: ProgressStatus.PROCESSING,
       message: `开始解析${typeName}文件: ${fileName}`,
-      progress: 30 
+      progress: 30
     })
-    
+
     try {
       const content = await officeParser.parseOfficeAsync(filePath)
       docs = [
@@ -328,18 +329,18 @@ export async function loadAndSplitFile(
           metadata: { source: filePath }
         })
       ]
-      
-      onProgress?.({ 
-        taskType: TaskType.DOCUMENT_PARSE, 
-        status: ProgressStatus.PROCESSING, 
+
+      onProgress?.({
+        taskType: TaskType.DOCUMENT_PARSE,
+        status: ProgressStatus.PROCESSING,
         message: `${typeName}文件解析完成`,
-        progress: 60 
+        progress: 60
       })
     } catch (error) {
-      onProgress?.({ 
-        taskType: TaskType.DOCUMENT_PARSE, 
-        status: ProgressStatus.ERROR, 
-        message: `${typeName}文件解析失败: ${fileName}` 
+      onProgress?.({
+        taskType: TaskType.DOCUMENT_PARSE,
+        status: ProgressStatus.ERROR,
+        message: `${typeName}文件解析失败: ${fileName}`
       })
       throw new Error(
         `${typeName}文件解析失败: ${fileName}。文件可能已损坏或格式不支持。错误详情: ${String(error)}`
@@ -353,24 +354,24 @@ export async function loadAndSplitFile(
       '.ppt': { name: 'PPT', newExt: '.pptx' }
     }
     const format = formatMap[ext] || { name: '文档', newExt: '' }
-    
-    onProgress?.({ 
-      taskType: TaskType.DOCUMENT_PARSE, 
-      status: ProgressStatus.ERROR, 
-      message: `不支持旧版 ${ext} 格式: ${fileName}` 
+
+    onProgress?.({
+      taskType: TaskType.DOCUMENT_PARSE,
+      status: ProgressStatus.ERROR,
+      message: `不支持旧版 ${ext} 格式: ${fileName}`
     })
     throw new Error(
       `不支持旧版 ${ext} 格式: ${fileName}。请使用 Microsoft Office 或 WPS 将文件另存为 ${format.newExt} 格式后再导入。`
     )
   } else if (ext === '.txt' || ext === '.md') {
     // 自定义文本文件加载逻辑
-    onProgress?.({ 
-      taskType: TaskType.DOCUMENT_PARSE, 
-      status: ProgressStatus.PROCESSING, 
+    onProgress?.({
+      taskType: TaskType.DOCUMENT_PARSE,
+      status: ProgressStatus.PROCESSING,
       message: `开始读取文本文件: ${fileName}`,
-      progress: 30 
+      progress: 30
     })
-    
+
     try {
       const buffer = await fs.readFile(filePath)
       const { text: content, encoding } = decodeTextBuffer(buffer)
@@ -380,31 +381,33 @@ export async function loadAndSplitFile(
           metadata: { source: filePath, encodingDetected: encoding }
         })
       ]
-      
-      onProgress?.({ 
-        taskType: TaskType.DOCUMENT_PARSE, 
-        status: ProgressStatus.PROCESSING, 
+
+      onProgress?.({
+        taskType: TaskType.DOCUMENT_PARSE,
+        status: ProgressStatus.PROCESSING,
         message: `文本文件读取完成（编码: ${encoding}）`,
-        progress: 60 
+        progress: 60
       })
     } catch (error) {
-      onProgress?.({ 
-        taskType: TaskType.DOCUMENT_PARSE, 
-        status: ProgressStatus.ERROR, 
-        message: `文本文件读取失败: ${fileName}` 
+      onProgress?.({
+        taskType: TaskType.DOCUMENT_PARSE,
+        status: ProgressStatus.ERROR,
+        message: `文本文件读取失败: ${fileName}`
       })
       throw new Error(`文本文件读取失败: ${fileName}。错误详情: ${String(error)}`)
     }
   } else {
-    throw new Error(`不支持的文件类型: ${ext}。当前支持 PDF、Word(.doc/.docx/.odt)、Excel(.xls/.xlsx/.ods)、PPT(.ppt/.pptx/.odp)、TXT 和 Markdown 文件。`)
+    throw new Error(
+      `不支持的文件类型: ${ext}。当前支持 PDF、Word(.doc/.docx/.odt)、Excel(.xls/.xlsx/.ods)、PPT(.ppt/.pptx/.odp)、TXT 和 Markdown 文件。`
+    )
   }
 
   // 发送开始分割进度
-  onProgress?.({ 
-    taskType: TaskType.DOCUMENT_SPLIT, 
-    status: ProgressStatus.PROCESSING, 
+  onProgress?.({
+    taskType: TaskType.DOCUMENT_SPLIT,
+    status: ProgressStatus.PROCESSING,
     message: `开始分割文档内容（策略: ${strategy === 'semantic' ? '语义分块' : '固定分块'}）`,
-    progress: 70 
+    progress: 70
   })
 
   let splitDocs: Document[]
@@ -433,12 +436,12 @@ export async function loadAndSplitFile(
     })
     splitDocs = await splitter.splitDocuments(docs)
   }
-  
-  onProgress?.({ 
-    taskType: TaskType.DOCUMENT_SPLIT, 
-    status: ProgressStatus.PROCESSING, 
+
+  onProgress?.({
+    taskType: TaskType.DOCUMENT_SPLIT,
+    status: ProgressStatus.PROCESSING,
     message: `文档分割完成，共 ${splitDocs.length} 个片段`,
-    progress: 85 
+    progress: 85
   })
 
   // 计算每个 chunk 的位置
@@ -450,7 +453,7 @@ export async function loadAndSplitFile(
 
     // 使用语义分块器提供的位置信息，或估算位置
     const position = doc.metadata?.chunkStartPosition ?? currentPosition
-    currentPosition = doc.metadata?.chunkEndPosition ?? (currentPosition + doc.pageContent.length)
+    currentPosition = doc.metadata?.chunkEndPosition ?? currentPosition + doc.pageContent.length
 
     // 构建增强的元数据
     const metadata: DocumentMetadata & {
@@ -482,14 +485,14 @@ export async function loadAndSplitFile(
   })
 
   // 发送解析完成进度
-  onProgress?.({ 
-    taskType: TaskType.DOCUMENT_PARSE, 
-    status: ProgressStatus.COMPLETED, 
+  onProgress?.({
+    taskType: TaskType.DOCUMENT_PARSE,
+    status: ProgressStatus.COMPLETED,
     message: `文档解析完成: ${fileName}`,
     progress: 100,
     processedCount: sanitizedDocs.length,
     totalCount: sanitizedDocs.length
   })
-  
+
   return sanitizedDocs
 }

@@ -16,18 +16,18 @@ export function detectLanguage(text: string): 'zh' | 'en' | 'mixed' {
   // 简单的语言检测：检查是否包含中文字符
   const chineseRegex = /[\u4e00-\u9fa5]/
   const englishRegex = /[a-zA-Z]/
-  
+
   const hasChinese = chineseRegex.test(text)
   const hasEnglish = englishRegex.test(text)
-  
+
   if (hasChinese && hasEnglish) {
     // 统计中英文字符数量
     const chineseCount = (text.match(/[\u4e00-\u9fa5]/g) || []).length
     const englishCount = (text.match(/[a-zA-Z]/g) || []).length
-    
+
     return chineseCount > englishCount ? 'zh' : 'en'
   }
-  
+
   if (hasChinese) return 'zh'
   if (hasEnglish) return 'en'
   return 'mixed'
@@ -36,19 +36,16 @@ export function detectLanguage(text: string): 'zh' | 'en' | 'mixed' {
 /**
  * 使用 LLM 翻译查询
  */
-async function translateQuery(
-  query: string,
-  targetLang: 'zh' | 'en'
-): Promise<string> {
+async function translateQuery(query: string, targetLang: 'zh' | 'en'): Promise<string> {
   // 检查缓存
   const cached = getCachedTranslation(query, targetLang)
   if (cached) {
     console.log(`[translateQuery] Cache hit for "${query}" -> "${cached}"`)
     return cached
   }
-  
+
   const settings = getSettings()
-  
+
   // 如果已经是目标语言，直接返回
   const sourceLang = detectLanguage(query)
   if (sourceLang === targetLang || (sourceLang === 'mixed' && targetLang === 'en')) {
@@ -56,10 +53,10 @@ async function translateQuery(
     cacheTranslation(query, targetLang, query)
     return query
   }
-  
+
   const sourceLangName = sourceLang === 'zh' ? '中文' : 'English'
   const targetLangName = targetLang === 'zh' ? '中文' : 'English'
-  
+
   const translatePrompt = `Translate the following ${sourceLangName} query to ${targetLangName}. 
 Only return the translated text, do not add any explanation or additional text.
 
@@ -69,7 +66,7 @@ Translation:`
 
   try {
     let model
-    
+
     // 根据配置创建模型
     if (settings.provider === 'openai') {
       model = new ChatOpenAI({
@@ -119,16 +116,19 @@ Translation:`
       console.log('[translateQuery] No LLM configured, returning original query')
       return query
     }
-    
+
     const response = await model.invoke(translatePrompt)
-    const translated = typeof response.content === 'string' 
-      ? response.content.trim() 
-      : String(response.content).trim()
-    
+    const translated =
+      typeof response.content === 'string'
+        ? response.content.trim()
+        : String(response.content).trim()
+
     // 缓存翻译结果
     cacheTranslation(query, targetLang, translated)
-    
-    console.log(`[translateQuery] Translated "${query}" (${sourceLang}) -> "${translated}" (${targetLang})`)
+
+    console.log(
+      `[translateQuery] Translated "${query}" (${sourceLang}) -> "${translated}" (${targetLang})`
+    )
     return translated
   } catch (error) {
     console.error('[translateQuery] Translation failed:', error)
@@ -145,18 +145,35 @@ function extractCoreKeywords(query: string): string[] {
   const cleanQuery = query
     .replace(/[是什么谁干啥做的吗呢吧呀哪里怎么样如何为什么？?！!。，,、]/g, ' ')
     .trim()
-  
+
   // 提取2-4字的中文词组（人名、专有名词）
   const keywords = cleanQuery.match(/[\u4e00-\u9fa5]{2,4}/g) || []
-  
+
   // 过滤常见词
   const commonWords = new Set([
-    '介绍', '内容', '什么', '哪些', '怎样', '如何', '为什么', 
-    '关于', '请问', '告诉', '说说', '讲讲', '一下', '可以',
-    '简历', '资料', '信息', '文档', '文件', '报告'
+    '介绍',
+    '内容',
+    '什么',
+    '哪些',
+    '怎样',
+    '如何',
+    '为什么',
+    '关于',
+    '请问',
+    '告诉',
+    '说说',
+    '讲讲',
+    '一下',
+    '可以',
+    '简历',
+    '资料',
+    '信息',
+    '文档',
+    '文件',
+    '报告'
   ])
-  
-  return keywords.filter(kw => !commonWords.has(kw) && kw.length >= 2)
+
+  return keywords.filter((kw) => !commonWords.has(kw) && kw.length >= 2)
 }
 
 /**
@@ -166,16 +183,16 @@ function extractCoreKeywords(query: string): string[] {
 function generateQueryExpansions(query: string): string[] {
   const expansions: string[] = [query]
   const keywords = extractCoreKeywords(query)
-  
+
   if (keywords.length === 0) return expansions
-  
+
   // 添加单独的关键词作为查询
   for (const kw of keywords.slice(0, 3)) {
     if (!expansions.includes(kw)) {
       expansions.push(kw)
     }
   }
-  
+
   // 如果有多个关键词，添加组合
   if (keywords.length >= 2) {
     const combined = keywords.slice(0, 2).join(' ')
@@ -183,7 +200,7 @@ function generateQueryExpansions(query: string): string[] {
       expansions.push(combined)
     }
   }
-  
+
   // 添加"关于+关键词"的变体
   if (keywords.length > 0) {
     const aboutQuery = `关于${keywords[0]}`
@@ -191,7 +208,7 @@ function generateQueryExpansions(query: string): string[] {
       expansions.push(aboutQuery)
     }
   }
-  
+
   return expansions
 }
 
@@ -203,10 +220,10 @@ export async function generateCrossLanguageQueries(
   query: string
 ): Promise<{ original: string; translated?: string; queries: string[] }> {
   const queryLang = detectLanguage(query)
-  
+
   // 生成中文查询扩展
   const chineseExpansions = queryLang === 'zh' ? generateQueryExpansions(query) : [query]
-  
+
   // 如果查询是混合语言或已经是英文，不需要翻译
   if (queryLang === 'en' || queryLang === 'mixed') {
     return {
@@ -214,11 +231,11 @@ export async function generateCrossLanguageQueries(
       queries: chineseExpansions
     }
   }
-  
+
   // 中文查询，尝试翻译成英文
   try {
     const translated = await translateQuery(query, 'en')
-    
+
     // 如果翻译结果与原文相同或非常相似，可能翻译失败
     if (translated === query || translated.length < query.length * 0.3) {
       return {
@@ -226,10 +243,10 @@ export async function generateCrossLanguageQueries(
         queries: chineseExpansions
       }
     }
-    
+
     // 合并中文扩展和英文翻译
     const allQueries = [...chineseExpansions, translated]
-    
+
     return {
       original: query,
       translated,
@@ -243,4 +260,3 @@ export async function generateCrossLanguageQueries(
     }
   }
 }
-

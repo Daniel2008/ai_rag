@@ -456,7 +456,10 @@ export function AppSidebar({
                                 {statusInfo.text}
                               </Tag>
                               {file.status === 'ready' && (
-                                <Typography.Text type="secondary" className="text-xs whitespace-nowrap">
+                                <Typography.Text
+                                  type="secondary"
+                                  className="text-xs whitespace-nowrap"
+                                >
                                   {file.chunkCount ?? 0} 分块
                                 </Typography.Text>
                               )}

@@ -27,18 +27,18 @@ const ERROR_DISPLAY_MS = 4000 // 错误状态显示时长（增加以便用户�
 /** 阶段描述优化映射 */
 const STAGE_DESCRIPTIONS: Record<string, string> = {
   // 模型下载相关
-  '正在加载模型': '正在初始化嵌入模型...',
-  '模型已就绪': '嵌入模型就绪',
-  '模型加载完成': '嵌入模型加载完成',
-  
+  正在加载模型: '正在初始化嵌入模型...',
+  模型已就绪: '嵌入模型就绪',
+  模型加载完成: '嵌入模型加载完成',
+
   // 文档处理相关
   '正在索引文档...': '正在将文档添加到知识库...',
-  '索引完成': '文档已添加到知识库',
+  索引完成: '文档已添加到知识库',
   '索引完成（已重建）': '知识库索引已重建',
-  
+
   // 通用
-  '处理完成': '✓ 处理完成',
-  '重建完成': '✓ 索引重建完成'
+  处理完成: '✓ 处理完成',
+  重建完成: '✓ 索引重建完成'
 }
 
 /** 优化阶段描述 */
@@ -47,22 +47,22 @@ function optimizeStageDescription(stage: string): string {
   if (STAGE_DESCRIPTIONS[stage]) {
     return STAGE_DESCRIPTIONS[stage]
   }
-  
+
   // 处理动态内容（如包含文件名或数量的描述）
   // 例如：「正在解析文档 (1/3)...」保持原样
   // 例如：「文档解析完成，共 5 个片段」保持原样
-  
+
   // 简化一些冗长的描述
   if (stage.startsWith('正在生成向量') && stage.includes('/')) {
     // 保持格式但简化
     return stage
   }
-  
+
   if (stage.startsWith('下载中:')) {
     // 模型下载进度，保持原样
     return stage
   }
-  
+
   return stage
 }
 
@@ -100,105 +100,117 @@ export function useProgress(): UseProgressReturn {
   }, [])
 
   // 立即更新进度
-  const updateProgressImmediate = useCallback((newProgress: ProgressInfo | null) => {
-    clearAllTimers()
-    pendingProgressRef.current = null
+  const updateProgressImmediate = useCallback(
+    (newProgress: ProgressInfo | null) => {
+      clearAllTimers()
+      pendingProgressRef.current = null
 
-    const now = Date.now()
-    lastDisplayedRef.current = {
-      time: now,
-      percent: newProgress?.percent || 0,
-      stage: newProgress?.stage || '',
-      taskType: newProgress?.taskType
-    }
+      const now = Date.now()
+      lastDisplayedRef.current = {
+        time: now,
+        percent: newProgress?.percent || 0,
+        stage: newProgress?.stage || '',
+        taskType: newProgress?.taskType
+      }
 
-    setProgress(newProgress)
-  }, [clearAllTimers])
+      setProgress(newProgress)
+    },
+    [clearAllTimers]
+  )
 
   // 批量更新进度
-  const updateProgressBatched = useCallback((newProgress: ProgressInfo | null) => {
-    if (!newProgress) {
-      updateProgressImmediate(null)
-      return
-    }
-
-    const now = Date.now()
-
-    // 错误状态或完成状态立即更新
-    if (newProgress.error || newProgress.percent === 100) {
-      updateProgressImmediate(newProgress)
-      return
-    }
-
-    // 终止状态立即更新
-    const isTerminalState = newProgress.taskType?.toUpperCase() === 'COMPLETED'
-    if (isTerminalState) {
-      updateProgressImmediate(newProgress)
-      return
-    }
-
-    const newPercent = Math.max(0, Math.min(100, newProgress.percent || 0))
-    const lastDisplayed = lastDisplayedRef.current
-    const timeSinceLastUpdate = now - lastDisplayed.time
-    const percentChange = Math.abs(newPercent - lastDisplayed.percent)
-    const stageChanged = newProgress.stage !== lastDisplayed.stage
-    const taskTypeChanged = newProgress.taskType !== lastDisplayed.taskType
-
-    // 首次显示立即更新
-    if (lastDisplayed.percent < 0) {
-      updateProgressImmediate({ ...newProgress, percent: newPercent })
-      return
-    }
-
-    // 判断是否应该立即更新
-    const shouldUpdateNow =
-      (percentChange >= MIN_PERCENT_CHANGE && timeSinceLastUpdate >= MIN_TIME_INTERVAL_MS) ||
-      stageChanged ||
-      taskTypeChanged ||
-      timeSinceLastUpdate >= BATCH_INTERVAL_MS * 2
-
-    if (shouldUpdateNow) {
-      updateProgressImmediate({ ...newProgress, percent: newPercent })
-    } else {
-      // 保存待处理的更新
-      pendingProgressRef.current = { ...newProgress, percent: newPercent }
-
-      if (!batchTimerRef.current) {
-        const delay = Math.max(0, Math.min(BATCH_INTERVAL_MS, BATCH_INTERVAL_MS - timeSinceLastUpdate))
-
-        batchTimerRef.current = setTimeout(() => {
-          batchTimerRef.current = null
-
-          if (pendingProgressRef.current) {
-            const pending = pendingProgressRef.current
-            pendingProgressRef.current = null
-
-            const currentDisplayed = lastDisplayedRef.current
-            const finalPercent = pending.percent || 0
-            const finalPercentChange = Math.abs(finalPercent - currentDisplayed.percent)
-            const finalStageChanged = pending.stage !== currentDisplayed.stage
-
-            if (finalPercentChange >= 1 || finalStageChanged) {
-              updateProgressImmediate(pending)
-            }
-          }
-        }, delay)
+  const updateProgressBatched = useCallback(
+    (newProgress: ProgressInfo | null) => {
+      if (!newProgress) {
+        updateProgressImmediate(null)
+        return
       }
-    }
-  }, [updateProgressImmediate])
+
+      const now = Date.now()
+
+      // 错误状态或完成状态立即更新
+      if (newProgress.error || newProgress.percent === 100) {
+        updateProgressImmediate(newProgress)
+        return
+      }
+
+      // 终止状态立即更新
+      const isTerminalState = newProgress.taskType?.toUpperCase() === 'COMPLETED'
+      if (isTerminalState) {
+        updateProgressImmediate(newProgress)
+        return
+      }
+
+      const newPercent = Math.max(0, Math.min(100, newProgress.percent || 0))
+      const lastDisplayed = lastDisplayedRef.current
+      const timeSinceLastUpdate = now - lastDisplayed.time
+      const percentChange = Math.abs(newPercent - lastDisplayed.percent)
+      const stageChanged = newProgress.stage !== lastDisplayed.stage
+      const taskTypeChanged = newProgress.taskType !== lastDisplayed.taskType
+
+      // 首次显示立即更新
+      if (lastDisplayed.percent < 0) {
+        updateProgressImmediate({ ...newProgress, percent: newPercent })
+        return
+      }
+
+      // 判断是否应该立即更新
+      const shouldUpdateNow =
+        (percentChange >= MIN_PERCENT_CHANGE && timeSinceLastUpdate >= MIN_TIME_INTERVAL_MS) ||
+        stageChanged ||
+        taskTypeChanged ||
+        timeSinceLastUpdate >= BATCH_INTERVAL_MS * 2
+
+      if (shouldUpdateNow) {
+        updateProgressImmediate({ ...newProgress, percent: newPercent })
+      } else {
+        // 保存待处理的更新
+        pendingProgressRef.current = { ...newProgress, percent: newPercent }
+
+        if (!batchTimerRef.current) {
+          const delay = Math.max(
+            0,
+            Math.min(BATCH_INTERVAL_MS, BATCH_INTERVAL_MS - timeSinceLastUpdate)
+          )
+
+          batchTimerRef.current = setTimeout(() => {
+            batchTimerRef.current = null
+
+            if (pendingProgressRef.current) {
+              const pending = pendingProgressRef.current
+              pendingProgressRef.current = null
+
+              const currentDisplayed = lastDisplayedRef.current
+              const finalPercent = pending.percent || 0
+              const finalPercentChange = Math.abs(finalPercent - currentDisplayed.percent)
+              const finalStageChanged = pending.stage !== currentDisplayed.stage
+
+              if (finalPercentChange >= 1 || finalStageChanged) {
+                updateProgressImmediate(pending)
+              }
+            }
+          }, delay)
+        }
+      }
+    },
+    [updateProgressImmediate]
+  )
 
   // 延迟清除进度
-  const scheduleClear = useCallback((delayMs: number) => {
-    if (clearTimerRef.current) {
-      clearTimeout(clearTimerRef.current)
-    }
-    clearTimerRef.current = setTimeout(() => {
-      clearTimerRef.current = null
-      updateProgressImmediate(null)
-      // 重置 lastDisplayedRef 以便下次可以立即显示
-      lastDisplayedRef.current = { time: 0, percent: -1, stage: '' }
-    }, delayMs)
-  }, [updateProgressImmediate])
+  const scheduleClear = useCallback(
+    (delayMs: number) => {
+      if (clearTimerRef.current) {
+        clearTimeout(clearTimerRef.current)
+      }
+      clearTimerRef.current = setTimeout(() => {
+        clearTimerRef.current = null
+        updateProgressImmediate(null)
+        // 重置 lastDisplayedRef 以便下次可以立即显示
+        lastDisplayedRef.current = { time: 0, percent: -1, stage: '' }
+      }, delayMs)
+    },
+    [updateProgressImmediate]
+  )
 
   // 手动清除进度
   const clearProgress = useCallback(() => {
@@ -219,7 +231,7 @@ export function useProgress(): UseProgressReturn {
       window.api.onProcessProgress((progressData) => {
         // 优化阶段描述
         const optimizedStage = optimizeStageDescription(progressData.stage)
-        
+
         const newProgress: ProgressInfo = {
           ...progressData,
           stage: optimizedStage,
@@ -235,7 +247,7 @@ export function useProgress(): UseProgressReturn {
           scheduleClear(ERROR_DISPLAY_MS)
           return
         }
-        
+
         // 完成状态（100% 或 taskType 为 completed）
         if (progressData.percent >= 100 || progressData.taskType?.toLowerCase() === 'completed') {
           updateProgressImmediate({
@@ -247,13 +259,13 @@ export function useProgress(): UseProgressReturn {
           scheduleClear(COMPLETION_DISPLAY_MS)
           return
         }
-        
+
         // 开始状态（0-5%）立即显示，让用户知道任务已开始
         if (progressData.percent <= 5 && lastDisplayedRef.current.percent <= 0) {
           updateProgressImmediate(newProgress)
           return
         }
-        
+
         // 中间进度批量更新
         updateProgressBatched(newProgress)
       })
@@ -285,20 +297,20 @@ export function useProgress(): UseProgressReturn {
           scheduleClear(ERROR_DISPLAY_MS)
           return
         }
-        
+
         // 完成状态立即显示
         if (isCompleted) {
           updateProgressImmediate(newProgress)
           scheduleClear(COMPLETION_DISPLAY_MS)
           return
         }
-        
+
         // 开始下载时立即显示
         if (percent <= 5 && lastDisplayedRef.current.percent <= 0) {
           updateProgressImmediate(newProgress)
           return
         }
-        
+
         // 中间进度批量更新
         updateProgressBatched(newProgress)
       })
@@ -322,4 +334,3 @@ export function useProgress(): UseProgressReturn {
     clearProgress
   }
 }
-

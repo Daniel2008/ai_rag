@@ -119,18 +119,19 @@ async function splitTextToDocuments(
     })
 
     const chunks = await chunker.splitText(content)
-    return chunks.map((chunk, index) =>
-      new Document({
-        pageContent: chunk.content,
-        metadata: {
-          ...metadata,
-          chunkIndex: chunk.metadata.chunkIndex ?? index,
-          blockTypes: chunk.metadata.blockTypes ?? [],
-          hasHeading: chunk.metadata.hasHeading ?? false,
-          headingText: chunk.metadata.headingText ?? '',
-          chunkingStrategy: 'semantic'
-        }
-      })
+    return chunks.map(
+      (chunk, index) =>
+        new Document({
+          pageContent: chunk.content,
+          metadata: {
+            ...metadata,
+            chunkIndex: chunk.metadata.chunkIndex ?? index,
+            blockTypes: chunk.metadata.blockTypes ?? [],
+            hasHeading: chunk.metadata.hasHeading ?? false,
+            headingText: chunk.metadata.headingText ?? '',
+            chunkingStrategy: 'semantic'
+          }
+        })
     )
   } else {
     const splitter = new RecursiveCharacterTextSplitter({
@@ -139,7 +140,10 @@ async function splitTextToDocuments(
       separators: ['\n\n', '\n', '。', '！', '？', '；', '.', '!', '?', ';', ' ', '']
     })
 
-    const docs = await splitter.createDocuments([content], [{ ...metadata, chunkingStrategy: 'fixed' }])
+    const docs = await splitter.createDocuments(
+      [content],
+      [{ ...metadata, chunkingStrategy: 'fixed' }]
+    )
     return docs
   }
 }
@@ -531,7 +535,7 @@ function isDynamicRenderSite(url: string): boolean {
   try {
     const parsed = new URL(url)
     const hostname = parsed.hostname.toLowerCase()
-    return DYNAMIC_RENDER_SITES.some(site => hostname.includes(site))
+    return DYNAMIC_RENDER_SITES.some((site) => hostname.includes(site))
   } catch {
     return false
   }
@@ -546,44 +550,44 @@ async function fetchWithJinaReader(
   timeout: number = 30000
 ): Promise<{ success: boolean; content?: string; error?: string }> {
   const jinaUrl = buildJinaReaderUrl(url)
-  
+
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeout)
-    
+
     const response = await fetch(jinaUrl, {
       signal: controller.signal,
       headers: {
         'User-Agent': userAgent,
-        'Accept': 'text/plain,text/markdown,*/*;q=0.1',
+        Accept: 'text/plain,text/markdown,*/*;q=0.1',
         'X-Return-Format': 'markdown'
       }
     })
-    
+
     clearTimeout(timeoutId)
-    
+
     if (!response.ok) {
-      return { 
-        success: false, 
-        error: `Jina Reader 返回错误: ${response.status}` 
+      return {
+        success: false,
+        error: `Jina Reader 返回错误: ${response.status}`
       }
     }
-    
+
     const content = await response.text()
-    
+
     // 检查是否是有效内容（Jina Reader 有时返回错误页面）
     if (content.includes('Error') && content.length < 200) {
       return { success: false, error: 'Jina Reader 无法解析该页面' }
     }
-    
+
     return { success: true, content }
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return { success: false, error: 'Jina Reader 请求超时' }
     }
-    return { 
-      success: false, 
-      error: `Jina Reader 请求失败: ${error instanceof Error ? error.message : '未知错误'}` 
+    return {
+      success: false,
+      error: `Jina Reader 请求失败: ${error instanceof Error ? error.message : '未知错误'}`
     }
   }
 }
@@ -679,7 +683,9 @@ export async function loadFromUrl(
     }
     if (options.allowedHosts && options.allowedHosts.length > 0) {
       const host = parsedUrl.hostname.toLowerCase()
-      const allowed = options.allowedHosts.some((h) => host.endsWith(h.toLowerCase()) || host === h.toLowerCase())
+      const allowed = options.allowedHosts.some(
+        (h) => host.endsWith(h.toLowerCase()) || host === h.toLowerCase()
+      )
       if (!allowed) {
         onProgress?.('域名未授权', 100)
         return { success: false, url, error: '域名未在允许列表中' }
@@ -699,22 +705,22 @@ export async function loadFromUrl(
 
   // 检查是否是动态渲染站点，优先使用 Jina Reader
   const useDynamicFetch = isDynamicRenderSite(url)
-  
+
   if (useDynamicFetch) {
     console.log(`[urlLoader] 检测到动态渲染站点: ${url}，使用 Jina Reader`)
     onProgress?.('检测到动态站点，使用智能抓取', 15)
-    
+
     const jinaResult = await fetchWithJinaReader(url, userAgent, timeout)
-    
+
     if (jinaResult.success && jinaResult.content) {
       onProgress?.('智能抓取完成', 50)
-      
+
       const content = jinaResult.content
-      
+
       // 从 Markdown 内容中提取标题
       const titleMatch = content.match(/^#\s+(.+)$/m) || content.match(/^(.+)\n={3,}$/m)
       const title = titleMatch ? titleMatch[1].trim() : url
-      
+
       // 清理 Markdown 格式，转换为纯文本（可选）
       const cleanContent = content
         .replace(/^\s*[-*]\s+/gm, '• ') // 列表项
@@ -723,7 +729,7 @@ export async function loadFromUrl(
         .replace(/^#+\s+/gm, '') // 标题标记
         .replace(/`{1,3}[^`]*`{1,3}/g, (m) => m.replace(/`/g, '')) // 代码块
         .trim()
-      
+
       if (cleanContent.length < minContentLength) {
         onProgress?.('内容过少', 100)
         return {
@@ -732,9 +738,9 @@ export async function loadFromUrl(
           error: `页面内容过少（${cleanContent.length} 字符），最小要求 ${minContentLength} 字符`
         }
       }
-      
+
       onProgress?.('正在分割文档', 80)
-      
+
       // 使用统一的分块函数
       const chunkStrategy = options.chunkingStrategy ?? 'semantic'
       const docs = await splitTextToDocuments(
@@ -749,7 +755,7 @@ export async function loadFromUrl(
         chunkStrategy,
         options.semanticChunkConfig
       )
-      
+
       onProgress?.('处理完成', 100)
       return {
         success: true,

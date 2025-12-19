@@ -51,7 +51,13 @@ class Logger {
     return level >= this.level
   }
 
-  private log(level: LogLevel, message: string, context?: string, metadata?: Record<string, unknown>, error?: Error): void {
+  private log(
+    level: LogLevel,
+    message: string,
+    context?: string,
+    metadata?: Record<string, unknown>,
+    error?: Error
+  ): void {
     if (!this.shouldLog(level)) return
 
     const entry: LogEntry = {
@@ -72,7 +78,7 @@ class Logger {
     // 输出到控制台
     const prefix = `[${LogLevel[level]}]${context ? ` [${context}]` : ''}`
     const timestamp = new Date(entry.timestamp).toISOString()
-    
+
     switch (level) {
       case LogLevel.DEBUG:
         console.debug(`${timestamp} ${prefix}`, message, metadata || '')
@@ -104,7 +110,12 @@ class Logger {
     this.log(LogLevel.WARN, message, context, metadata, error)
   }
 
-  error(message: string, context?: string, metadata?: Record<string, unknown>, error?: Error): void {
+  error(
+    message: string,
+    context?: string,
+    metadata?: Record<string, unknown>,
+    error?: Error
+  ): void {
     this.log(LogLevel.ERROR, message, context, metadata, error)
   }
 
@@ -114,7 +125,7 @@ class Logger {
   getRecentEntries(count: number = 100, level?: LogLevel): LogEntry[] {
     let filtered = this.entries
     if (level !== undefined) {
-      filtered = this.entries.filter(entry => entry.level >= level)
+      filtered = this.entries.filter((entry) => entry.level >= level)
     }
     return filtered.slice(-count)
   }
@@ -161,16 +172,19 @@ class Logger {
     if (this.lastFlushedIndex >= this.entries.length) return
     const slice = this.entries.slice(this.lastFlushedIndex)
     if (slice.length === 0) return
-    const lines = slice.map((e) =>
-      JSON.stringify({
-        level: LogLevel[e.level],
-        message: e.message,
-        timestamp: e.timestamp,
-        context: e.context,
-        metadata: e.metadata,
-        error: e.error ? { message: e.error.message, stack: e.error.stack } : undefined
-      })
-    ).join('\n') + '\n'
+    const lines =
+      slice
+        .map((e) =>
+          JSON.stringify({
+            level: LogLevel[e.level],
+            message: e.message,
+            timestamp: e.timestamp,
+            context: e.context,
+            metadata: e.metadata,
+            error: e.error ? { message: e.error.message, stack: e.error.stack } : undefined
+          })
+        )
+        .join('\n') + '\n'
     try {
       fs.appendFile(this.filePath, lines, () => {})
       this.lastFlushedIndex = this.entries.length
@@ -184,19 +198,36 @@ class Logger {
 export const logger = new Logger()
 
 // 导出便捷函数
-export function logDebug(message: string, context?: string, metadata?: Record<string, unknown>): void {
+export function logDebug(
+  message: string,
+  context?: string,
+  metadata?: Record<string, unknown>
+): void {
   logger.debug(message, context, metadata)
 }
 
-export function logInfo(message: string, context?: string, metadata?: Record<string, unknown>): void {
+export function logInfo(
+  message: string,
+  context?: string,
+  metadata?: Record<string, unknown>
+): void {
   logger.info(message, context, metadata)
 }
 
-export function logWarn(message: string, context?: string, metadata?: Record<string, unknown>, error?: Error): void {
+export function logWarn(
+  message: string,
+  context?: string,
+  metadata?: Record<string, unknown>,
+  error?: Error
+): void {
   logger.warn(message, context, metadata, error)
 }
 
-export function logError(message: string, context?: string, metadata?: Record<string, unknown>, error?: Error): void {
+export function logError(
+  message: string,
+  context?: string,
+  metadata?: Record<string, unknown>,
+  error?: Error
+): void {
   logger.error(message, context, metadata, error)
 }
-

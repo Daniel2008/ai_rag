@@ -77,10 +77,10 @@ function setupUpdateEvents(): void {
   // 发现可用更新
   autoUpdater.on('update-available', (info: UpdateInfo) => {
     logInfo(`发现新版本: ${info.version}`)
-    updateState({ 
-      isChecking: false, 
+    updateState({
+      isChecking: false,
       availableVersion: info.version,
-      error: undefined 
+      error: undefined
     })
     notifyUpdateAvailable(info)
   })
@@ -88,10 +88,10 @@ function setupUpdateEvents(): void {
   // 未发现更新
   autoUpdater.on('update-not-available', (info: UpdateInfo) => {
     logInfo('当前已是最新版本')
-    updateState({ 
-      isChecking: false, 
+    updateState({
+      isChecking: false,
       availableVersion: undefined,
-      error: undefined 
+      error: undefined
     })
     if (isManualCheck) {
       notifyUpdateNotAvailable(info)
@@ -102,10 +102,10 @@ function setupUpdateEvents(): void {
   // 下载进度
   autoUpdater.on('download-progress', (progress: UpdateProgressInfo) => {
     logInfo(`下载进度: ${Math.round(progress.percent)}%`)
-    updateState({ 
+    updateState({
       isDownloading: true,
       progress: progress,
-      error: undefined 
+      error: undefined
     })
     notifyDownloadProgress(progress)
   })
@@ -113,11 +113,11 @@ function setupUpdateEvents(): void {
   // 下载完成
   autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
     logInfo(`更新下载完成: ${info.version}`)
-    updateState({ 
+    updateState({
       isDownloading: false,
       isDownloaded: true,
       availableVersion: info.version,
-      error: undefined 
+      error: undefined
     })
     notifyUpdateDownloaded(info)
   })
@@ -126,10 +126,10 @@ function setupUpdateEvents(): void {
   autoUpdater.on('error', (error: Error) => {
     const errorInfo = normalizeError(error)
     logError('更新错误', 'update', { error: errorInfo.message, details: errorInfo.details })
-    updateState({ 
+    updateState({
       isChecking: false,
       isDownloading: false,
-      error: errorInfo.message 
+      error: errorInfo.message
     })
     notifyUpdateError(errorInfo.message)
   })
@@ -216,18 +216,20 @@ function notifyUpdateAvailable(info: UpdateInfo): void {
 
   // 如果是手动检查，显示对话框
   if (isManualCheck) {
-    dialog.showMessageBox({
-      type: 'info',
-      title: '发现新版本',
-      message: `发现新版本: ${info.version}`,
-      detail: '是否现在下载更新？',
-      buttons: ['下载更新', '稍后再说'],
-      defaultId: 0
-    }).then((result) => {
-      if (result.response === 0) {
-        downloadUpdate()
-      }
-    })
+    dialog
+      .showMessageBox({
+        type: 'info',
+        title: '发现新版本',
+        message: `发现新版本: ${info.version}`,
+        detail: '是否现在下载更新？',
+        buttons: ['下载更新', '稍后再说'],
+        defaultId: 0
+      })
+      .then((result) => {
+        if (result.response === 0) {
+          downloadUpdate()
+        }
+      })
   }
 }
 
@@ -268,18 +270,20 @@ function notifyUpdateDownloaded(info: UpdateInfo): void {
     })
   }
 
-  dialog.showMessageBox({
-    type: 'info',
-    title: '更新已下载',
-    message: '更新已下载完成',
-    detail: '是否立即安装并重启应用？',
-    buttons: ['立即安装', '稍后安装'],
-    defaultId: 0
-  }).then((result) => {
-    if (result.response === 0) {
-      installUpdateAndQuit()
-    }
-  })
+  dialog
+    .showMessageBox({
+      type: 'info',
+      title: '更新已下载',
+      message: '更新已下载完成',
+      detail: '是否立即安装并重启应用？',
+      buttons: ['立即安装', '稍后安装'],
+      defaultId: 0
+    })
+    .then((result) => {
+      if (result.response === 0) {
+        installUpdateAndQuit()
+      }
+    })
 }
 
 /**

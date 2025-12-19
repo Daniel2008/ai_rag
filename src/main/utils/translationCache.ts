@@ -28,7 +28,7 @@ function cleanExpiredCache(): void {
       translationCache.delete(key)
     }
   }
-  
+
   // 如果缓存仍然太大，删除最旧的条目
   if (translationCache.size > MAX_CACHE_SIZE) {
     const entries = Array.from(translationCache.entries())
@@ -43,29 +43,22 @@ function cleanExpiredCache(): void {
 /**
  * 获取缓存的翻译结果
  */
-export function getCachedTranslation(
-  query: string,
-  targetLang: 'zh' | 'en'
-): string | null {
+export function getCachedTranslation(query: string, targetLang: 'zh' | 'en'): string | null {
   cleanExpiredCache()
   const key = getCacheKey(query, targetLang)
   const entry = translationCache.get(key)
-  
+
   if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
     return entry.translated
   }
-  
+
   return null
 }
 
 /**
  * 缓存翻译结果
  */
-export function cacheTranslation(
-  query: string,
-  targetLang: 'zh' | 'en',
-  translated: string
-): void {
+export function cacheTranslation(query: string, targetLang: 'zh' | 'en', translated: string): void {
   cleanExpiredCache()
   const key = getCacheKey(query, targetLang)
   translationCache.set(key, {
@@ -80,4 +73,3 @@ export function cacheTranslation(
 export function clearTranslationCache(): void {
   translationCache.clear()
 }
-

@@ -138,11 +138,9 @@ declare global {
         }) => void
       ) => void
       removeProcessProgressListener: () => void
-      
+
       // 指标读取
-      getMetricsRecent: (
-        count?: number
-      ) => Promise<
+      getMetricsRecent: (count?: number) => Promise<
         Array<{
           message: string
           timestamp: number
@@ -170,31 +168,39 @@ declare global {
         }
       }>
       forceCheckUpdateDev: () => Promise<{ success: boolean; message?: string }>
-      onUpdateAvailable: (callback: (info: { version: string; releaseNotes?: string; releaseDate?: string }) => void) => (() => void) | void
-      onUpdateNotAvailable: (callback: (info: { currentVersion: string }) => void) => (() => void) | void
-      onDownloadProgress: (callback: (progress: {
-        percent: number
-        bytesPerSecond: number
-        total: number
-        transferred: number
-      }) => void) => (() => void) | void
-      onUpdateDownloaded: (callback: (info: { version: string }) => void) => (() => void) | void
-      onUpdateError: (callback: (error: { error: string }) => void) => (() => void) | void
-      removeAllUpdateListeners: () => void
-      onUpdateStatusChanged: (callback: (status: {
-        isChecking: boolean
-        isDownloading: boolean
-        isDownloaded: boolean
-        availableVersion?: string
-        currentVersion: string
-        error?: string
-        progress?: {
+      onUpdateAvailable: (
+        callback: (info: { version: string; releaseNotes?: string; releaseDate?: string }) => void
+      ) => (() => void) | void
+      onUpdateNotAvailable: (
+        callback: (info: { currentVersion: string }) => void
+      ) => (() => void) | void
+      onDownloadProgress: (
+        callback: (progress: {
           percent: number
           bytesPerSecond: number
           total: number
           transferred: number
-        }
-      }) => void) => (() => void) | void
+        }) => void
+      ) => (() => void) | void
+      onUpdateDownloaded: (callback: (info: { version: string }) => void) => (() => void) | void
+      onUpdateError: (callback: (error: { error: string }) => void) => (() => void) | void
+      removeAllUpdateListeners: () => void
+      onUpdateStatusChanged: (
+        callback: (status: {
+          isChecking: boolean
+          isDownloading: boolean
+          isDownloaded: boolean
+          availableVersion?: string
+          currentVersion: string
+          error?: string
+          progress?: {
+            percent: number
+            bytesPerSecond: number
+            total: number
+            transferred: number
+          }
+        }) => void
+      ) => (() => void) | void
     }
   }
 }

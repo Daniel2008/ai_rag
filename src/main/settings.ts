@@ -93,12 +93,20 @@ const store = new (StoreConstructor as new (
   config: Record<string, unknown>
 ) => ElectronStore<AppSettings>)(storeConfig)
 
-function normalizeRagSettings(input: Partial<RagSettings> | undefined, base: RagSettings): RagSettings {
-  const searchLimitRaw = typeof input?.searchLimit === 'number' ? input.searchLimit : base.searchLimit
-  const maxSearchLimitRaw = typeof input?.maxSearchLimit === 'number' ? input.maxSearchLimit : base.maxSearchLimit
-  const minRelevanceRaw = typeof input?.minRelevance === 'number' ? input.minRelevance : base.minRelevance
+function normalizeRagSettings(
+  input: Partial<RagSettings> | undefined,
+  base: RagSettings
+): RagSettings {
+  const searchLimitRaw =
+    typeof input?.searchLimit === 'number' ? input.searchLimit : base.searchLimit
+  const maxSearchLimitRaw =
+    typeof input?.maxSearchLimit === 'number' ? input.maxSearchLimit : base.maxSearchLimit
+  const minRelevanceRaw =
+    typeof input?.minRelevance === 'number' ? input.minRelevance : base.minRelevance
 
-  const searchLimit = Number.isFinite(searchLimitRaw) ? Math.max(1, Math.round(searchLimitRaw)) : base.searchLimit
+  const searchLimit = Number.isFinite(searchLimitRaw)
+    ? Math.max(1, Math.round(searchLimitRaw))
+    : base.searchLimit
   const maxSearchLimit = Number.isFinite(maxSearchLimitRaw)
     ? Math.max(searchLimit, Math.round(maxSearchLimitRaw))
     : Math.max(searchLimit, base.maxSearchLimit)

@@ -22,12 +22,12 @@ export const RAG_CONFIG = {
     BM25_WEIGHT: 0.4, // BM25 在融合中的权重
     VECTOR_WEIGHT: 0.6 // 向量搜索在融合中的权重
   },
-  
+
   // 文档数量缓存
   DOC_COUNT_CACHE: {
-    TTL: 60000, // 60秒
+    TTL: 60000 // 60秒
   },
-  
+
   // 批量处理配置
   BATCH: {
     EMBEDDING_BATCH_SIZE: 64,
@@ -36,24 +36,24 @@ export const RAG_CONFIG = {
     PROGRESS_UPDATE_INTERVAL: 10, // 每处理10个文档更新一次进度
     EMBEDDING_CONCURRENCY: 4 // 查询向量并发上限
   },
-  
+
   // 输入验证
   VALIDATION: {
     MAX_QUERY_LENGTH: 2000,
     MIN_QUERY_LENGTH: 1,
-    MAX_SOURCES: 100,
+    MAX_SOURCES: 100
   },
-  
+
   // 日志配置
   LOG: {
     DEBUG_LOG_FLUSH_INTERVAL: 5000, // 5秒
-    MAX_DEBUG_LOG_BUFFER: 100,
+    MAX_DEBUG_LOG_BUFFER: 100
   },
-  
+
   // 内存限制（MB）
   MEMORY: {
     MAX_RESULTS_IN_MEMORY: 500,
-    WARNING_THRESHOLD_MB: 500,
+    WARNING_THRESHOLD_MB: 500
   },
 
   // 指标日志
@@ -93,9 +93,9 @@ export const RAG_CONFIG = {
     SIMILAR_QUERY_THRESHOLD: 0.95, // 相似查询复用阈值
     // 推荐的多语言嵌入模型（按优先级排序）
     RECOMMENDED_MULTILINGUAL_MODELS: [
-      'multilingual-e5-small',  // 平衡性能和效果
-      'multilingual-e5-base',   // 更好效果
-      'bge-m3',                 // 最强多语言
+      'multilingual-e5-small', // 平衡性能和效果
+      'multilingual-e5-base', // 更好效果
+      'bge-m3', // 最强多语言
       'paraphrase-multilingual' // 兼容性好
     ],
     // 默认嵌入模型（推荐使用多语言模型）
@@ -105,8 +105,7 @@ export const RAG_CONFIG = {
   // 后端配置占位，默认 LanceDB
   VECTOR_BACKEND: {
     TYPE: 'lancedb'
-  },
+  }
 } as const
 
 export type RagConfig = typeof RAG_CONFIG
-

@@ -68,13 +68,13 @@ function getSnapshot(): KnowledgeBaseSnapshot {
 
 function sanitizeCollectionFiles(files: string[] = []): string[] {
   const records = getIndexedFileRecords()
-  const validSet = new Set(records.map((r) => (r.normalizedPath ?? normalizePath(r.path))))
+  const validSet = new Set(records.map((r) => r.normalizedPath ?? normalizePath(r.path)))
   return [...new Set(files.filter((path) => validSet.has(normalizePath(path))))]
 }
 
 function pruneCollectionsForMissingFiles(): void {
   const records = getIndexedFileRecords()
-  const validSet = new Set(records.map((r) => (r.normalizedPath ?? normalizePath(r.path))))
+  const validSet = new Set(records.map((r) => r.normalizedPath ?? normalizePath(r.path)))
   const collections = getDocumentCollections().map((collection) => ({
     ...collection,
     files: collection.files.filter((path) => validSet.has(normalizePath(path)))
@@ -101,7 +101,9 @@ export function upsertIndexedFileRecord(record: IndexedFileRecord): void {
   const nPath = normalizePath(record.path)
   // ensure normalizedPath stored
   const toStore = { ...record, normalizedPath: nPath }
-  const index = records.findIndex((item) => (item.normalizedPath ?? normalizePath(item.path)) === nPath)
+  const index = records.findIndex(
+    (item) => (item.normalizedPath ?? normalizePath(item.path)) === nPath
+  )
   if (index >= 0) {
     records[index] = { ...records[index], ...toStore }
   } else {
@@ -113,7 +115,9 @@ export function upsertIndexedFileRecord(record: IndexedFileRecord): void {
 export async function removeIndexedFileRecord(path: string): Promise<KnowledgeBaseSnapshot> {
   const records = getIndexedFileRecords()
   const nPath = normalizePath(path)
-  const filtered = records.filter((item) => (item.normalizedPath ?? normalizePath(item.path)) !== nPath)
+  const filtered = records.filter(
+    (item) => (item.normalizedPath ?? normalizePath(item.path)) !== nPath
+  )
   if (filtered.length === records.length) {
     return getSnapshot()
   }
@@ -141,7 +145,9 @@ export async function refreshKnowledgeBase(
 export async function reindexSingleFile(path: string): Promise<KnowledgeBaseSnapshot> {
   const records = getIndexedFileRecords()
   const nPath = normalizePath(path)
-  const target = records.find((record) => (record.normalizedPath ?? normalizePath(record.path)) === nPath)
+  const target = records.find(
+    (record) => (record.normalizedPath ?? normalizePath(record.path)) === nPath
+  )
   if (!target) {
     throw new Error('找不到需要重新索引的文档')
   }
@@ -227,43 +233,56 @@ export function updateDocumentCollection(
 export async function deleteDocumentCollection(id: string): Promise<KnowledgeBaseSnapshot> {
   const collections = getDocumentCollections()
   const collectionToDelete = collections.find((c) => c.id === id)
-  
+
   if (collectionToDelete && collectionToDelete.files && collectionToDelete.files.length > 0) {
     const filesToDelete = collectionToDelete.files
-    logInfo(`Removing ${filesToDelete.length} files from vector store and knowledge base for collection deletion`, 'KnowledgeBase', { 
-      collectionId: id,
-      files: filesToDelete.slice(0, 5) // 只记录前5个
-    })
-    
+    logInfo(
+      `Removing ${filesToDelete.length} files from vector store and knowledge base for collection deletion`,
+      'KnowledgeBase',
+      {
+        collectionId: id,
+        files: filesToDelete.slice(0, 5) // 只记录前5个
+      }
+    )
+
     // 1. 删除向量索引
     const { removeSourcesFromStore } = await import('./store/index')
     try {
       await removeSourcesFromStore(filesToDelete)
     } catch (error) {
-      logWarn('Failed to remove collection files from vector store', 'KnowledgeBase', { collectionId: id }, error as Error)
+      logWarn(
+        'Failed to remove collection files from vector store',
+        'KnowledgeBase',
+        { collectionId: id },
+        error as Error
+      )
     }
-    
+
     // 2. 删除知识库文件记录
     const records = getIndexedFileRecords()
-    const filePathSet = new Set(filesToDelete.map(f => normalizePath(f)))
-    const remainingRecords = records.filter(record => {
+    const filePathSet = new Set(filesToDelete.map((f) => normalizePath(f)))
+    const remainingRecords = records.filter((record) => {
       const normalizedRecordPath = record.normalizedPath ?? normalizePath(record.path)
       return !filePathSet.has(normalizedRecordPath)
     })
-    
+
     if (remainingRecords.length < records.length) {
       saveIndexedFileRecords(remainingRecords)
-      logInfo(`Removed ${records.length - remainingRecords.length} file records from knowledge base`, 'KnowledgeBase', { collectionId: id })
+      logInfo(
+        `Removed ${records.length - remainingRecords.length} file records from knowledge base`,
+        'KnowledgeBase',
+        { collectionId: id }
+      )
     }
   }
-  
+
   // 3. 删除集合本身
   const remainingCollections = collections.filter((collection) => collection.id !== id)
   saveDocumentCollections(remainingCollections)
-  
+
   // 4. 清理其他集合中对已删除文件的引用
   pruneCollectionsForMissingFiles()
-  
+
   return getSnapshot()
 }
 
@@ -417,8 +436,17 @@ async function rebuildVectorStore(
  */
 export async function scanFolder(folderPath: string): Promise<FolderScanResult> {
   const supportedExtensions = new Set([
-    '.pdf', '.doc', '.docx', '.txt', '.md', '.markdown',
-    '.ppt', '.pptx', '.xls', '.xlsx', '.csv'
+    '.pdf',
+    '.doc',
+    '.docx',
+    '.txt',
+    '.md',
+    '.markdown',
+    '.ppt',
+    '.pptx',
+    '.xls',
+    '.xlsx',
+    '.csv'
   ])
 
   const result: FolderScanResult = {
@@ -502,8 +530,8 @@ export async function batchImportFiles(
       // 检查是否已存在
       const existingRecords = getIndexedFileRecords()
       const normalizedPath = normalizePath(filePath)
-      const exists = existingRecords.some(r => 
-        (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath
+      const exists = existingRecords.some(
+        (r) => (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath
       )
 
       if (exists) {
@@ -513,7 +541,7 @@ export async function batchImportFiles(
 
       // 处理文件
       const docs = await loadAndSplitFileInWorker(filePath)
-      
+
       if (docs.length === 0) {
         result.warnings.push(`文件内容为空或无法解析: ${path.basename(filePath)}`)
         continue
@@ -521,7 +549,7 @@ export async function batchImportFiles(
 
       // 获取文件信息
       const stats = await fs.stat(filePath)
-      
+
       // 创建文件记录
       const record: IndexedFileRecord = {
         path: filePath,
@@ -556,14 +584,13 @@ export async function batchImportFiles(
       processedFiles.push(record)
 
       result.addedFiles++
-      
+
       // 进度回调
       if (options.onProgress) {
         options.onProgress(i + 1, filePaths.length, path.basename(filePath))
       }
 
       logDebug('批量导入成功', 'KnowledgeBase', { file: filePath })
-
     } catch (error) {
       result.failedFiles++
       const errorMsg = `导入失败: ${path.basename(filePath)} - ${(error as Error).message}`
@@ -576,21 +603,22 @@ export async function batchImportFiles(
   if (options.targetCollectionId && processedFiles.length > 0) {
     try {
       const collections = getDocumentCollections()
-      const collection = collections.find(c => c.id === options.targetCollectionId)
+      const collection = collections.find((c) => c.id === options.targetCollectionId)
       if (collection) {
-        const newPaths = processedFiles.map(f => f.path)
+        const newPaths = processedFiles.map((f) => f.path)
         collection.files = [...new Set([...collection.files, ...newPaths])]
         collection.updatedAt = Date.now()
-        
+
         // 更新集合统计
         if (!collection.stats) {
           collection.stats = { fileCount: 0, totalSize: 0 }
         }
         collection.stats.fileCount = collection.files.length
         const totalSize = collection.stats.totalSize || 0
-        collection.stats.totalSize = totalSize + processedFiles.reduce((sum, f) => sum + (f.size || 0), 0)
+        collection.stats.totalSize =
+          totalSize + processedFiles.reduce((sum, f) => sum + (f.size || 0), 0)
         collection.stats.lastUpdated = Date.now()
-        
+
         saveDocumentCollections(collections)
         logInfo('已将导入文件添加到集合', 'KnowledgeBase', {
           collectionId: options.targetCollectionId,
@@ -643,9 +671,9 @@ export async function importFromFolder(
   }
 
   // 如果不递归，只导入顶层文件
-  const filesToImport = options.recursive 
-    ? scanResult.files 
-    : scanResult.files.filter(f => path.dirname(f) === folderPath)
+  const filesToImport = options.recursive
+    ? scanResult.files
+    : scanResult.files.filter((f) => path.dirname(f) === folderPath)
 
   return batchImportFiles(filesToImport, {
     ...options,
@@ -716,7 +744,7 @@ export async function createFileVersion(
 ): Promise<IndexedFileRecord> {
   const records = getIndexedFileRecords()
   const normalizedPath = normalizePath(filePath)
-  const record = records.find(r => (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath)
+  const record = records.find((r) => (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath)
 
   if (!record) {
     throw new Error('文件记录不存在')
@@ -731,7 +759,7 @@ export async function createFileVersion(
 
   // 处理新文件
   const docs = await loadAndSplitFileInWorker(newFilePath)
-  
+
   if (docs.length === 0) {
     throw new Error('新文件内容为空或无法解析')
   }
@@ -789,7 +817,7 @@ export async function createFileVersion(
 export function getFileVersions(filePath: string): DocumentVersion[] {
   const records = getIndexedFileRecords()
   const normalizedPath = normalizePath(filePath)
-  const record = records.find(r => (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath)
+  const record = records.find((r) => (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath)
 
   return record?.versions || []
 }
@@ -803,7 +831,7 @@ export async function rollbackToVersion(
 ): Promise<IndexedFileRecord> {
   const records = getIndexedFileRecords()
   const normalizedPath = normalizePath(filePath)
-  const record = records.find(r => (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath)
+  const record = records.find((r) => (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath)
 
   if (!record) {
     throw new Error('文件记录不存在')
@@ -813,7 +841,7 @@ export async function rollbackToVersion(
     throw new Error('没有版本历史')
   }
 
-  const targetVersion = record.versions.find(v => v.version === versionNumber)
+  const targetVersion = record.versions.find((v) => v.version === versionNumber)
   if (!targetVersion) {
     throw new Error(`版本 ${versionNumber} 不存在`)
   }
@@ -834,7 +862,12 @@ export async function rollbackToVersion(
     await removeSourceFromStore(filePath)
     await addDocumentsToStore(docs)
   } catch (error) {
-    logWarn('回滚版本时向量索引处理失败', 'KnowledgeBase', { filePath, version: versionNumber }, error as Error)
+    logWarn(
+      '回滚版本时向量索引处理失败',
+      'KnowledgeBase',
+      { filePath, version: versionNumber },
+      error as Error
+    )
   }
 
   upsertIndexedFileRecord(record)
@@ -905,19 +938,22 @@ export async function restoreKnowledgeBase(backupFile: string): Promise<{
 
     // 恢复文件记录
     const existingFiles = getIndexedFileRecords()
-    const newFiles = backupData.files.filter((f: IndexedFileRecord) => 
-      !existingFiles.some(ef => (ef.normalizedPath ?? normalizePath(ef.path)) === normalizePath(f.path))
+    const newFiles = backupData.files.filter(
+      (f: IndexedFileRecord) =>
+        !existingFiles.some(
+          (ef) => (ef.normalizedPath ?? normalizePath(ef.path)) === normalizePath(f.path)
+        )
     )
-    
+
     const mergedFiles = [...existingFiles, ...newFiles]
     saveIndexedFileRecords(mergedFiles)
 
     // 恢复集合
     const existingCollections = getDocumentCollections()
-    const newCollections = backupData.collections.filter((c: DocumentCollection) => 
-      !existingCollections.some(ec => ec.id === c.id)
+    const newCollections = backupData.collections.filter(
+      (c: DocumentCollection) => !existingCollections.some((ec) => ec.id === c.id)
     )
-    
+
     const mergedCollections = [...existingCollections, ...newCollections]
     saveDocumentCollections(mergedCollections)
 

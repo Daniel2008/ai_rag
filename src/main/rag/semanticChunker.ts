@@ -66,7 +66,7 @@ interface ChunkResult {
     chunkIndex: number
     blockTypes: ContentBlockType[]
     hasHeading: boolean
-    headingText: string  // 必须有值，使用空字符串代替 undefined
+    headingText: string // 必须有值，使用空字符串代替 undefined
     startPosition: number
     endPosition: number
     method: 'nlp' | 'custom' | 'fixed'
@@ -145,7 +145,7 @@ export class SemanticChunker {
     const mergedBlocks = this.mergeSmallBlocks(blocks)
     const chunks = this.blocksToChunks(mergedBlocks)
     const overlappedChunks = this.addOverlap(chunks)
-    return overlappedChunks.map(c => c.content)
+    return overlappedChunks.map((c) => c.content)
   }
 
   /**
@@ -674,7 +674,7 @@ export class SemanticChunker {
       // 4. 添加重叠
       const overlappedChunks = this.addOverlap(chunks)
 
-      return overlappedChunks.map(chunk => ({
+      return overlappedChunks.map((chunk) => ({
         ...chunk,
         metadata: {
           ...chunk.metadata,
@@ -704,7 +704,7 @@ export class SemanticChunker {
     // 4. 添加重叠
     const overlappedChunks = this.addOverlap(chunks)
 
-    return overlappedChunks.map(chunk => ({
+    return overlappedChunks.map((chunk) => ({
       ...chunk,
       metadata: {
         ...chunk.metadata,

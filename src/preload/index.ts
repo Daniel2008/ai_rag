@@ -181,9 +181,10 @@ const api = {
   updateMessage: (messageKey: string, updates: unknown) =>
     ipcRenderer.invoke('db:updateMessage', messageKey, updates),
   generateTitle: (conversationKey: string, question: string, answer: string) =>
-    ipcRenderer.invoke('rag:generateTitle', conversationKey, question, answer)
-  ,
-  getMetricsRecent: (count?: number): Promise<
+    ipcRenderer.invoke('rag:generateTitle', conversationKey, question, answer),
+  getMetricsRecent: (
+    count?: number
+  ): Promise<
     Array<{
       message: string
       timestamp: number
@@ -213,7 +214,9 @@ const api = {
   }> => ipcRenderer.invoke('update:getStatus'),
   forceCheckUpdateDev: (): Promise<{ success: boolean; message?: string }> =>
     ipcRenderer.invoke('update:forceCheckDev'),
-  onUpdateAvailable: (callback: (info: { version: string; releaseNotes?: string; releaseDate?: string }) => void): void => {
+  onUpdateAvailable: (
+    callback: (info: { version: string; releaseNotes?: string; releaseDate?: string }) => void
+  ): void => {
     ipcRenderer.removeAllListeners('update-available')
     ipcRenderer.on('update-available', (_, info) => callback(info))
   },
@@ -221,12 +224,14 @@ const api = {
     ipcRenderer.removeAllListeners('update-not-available')
     ipcRenderer.on('update-not-available', (_, info) => callback(info))
   },
-  onDownloadProgress: (callback: (progress: {
-    percent: number
-    bytesPerSecond: number
-    total: number
-    transferred: number
-  }) => void): void => {
+  onDownloadProgress: (
+    callback: (progress: {
+      percent: number
+      bytesPerSecond: number
+      total: number
+      transferred: number
+    }) => void
+  ): void => {
     ipcRenderer.removeAllListeners('download-progress')
     ipcRenderer.on('download-progress', (_, progress) => callback(progress))
   },
@@ -246,20 +251,22 @@ const api = {
     ipcRenderer.removeAllListeners('update-error')
     ipcRenderer.removeAllListeners('update-status-changed')
   },
-  onUpdateStatusChanged: (callback: (status: {
-    isChecking: boolean
-    isDownloading: boolean
-    isDownloaded: boolean
-    availableVersion?: string
-    currentVersion: string
-    error?: string
-    progress?: {
-      percent: number
-      bytesPerSecond: number
-      total: number
-      transferred: number
-    }
-  }) => void): void => {
+  onUpdateStatusChanged: (
+    callback: (status: {
+      isChecking: boolean
+      isDownloading: boolean
+      isDownloaded: boolean
+      availableVersion?: string
+      currentVersion: string
+      error?: string
+      progress?: {
+        percent: number
+        bytesPerSecond: number
+        total: number
+        transferred: number
+      }
+    }) => void
+  ): void => {
     ipcRenderer.removeAllListeners('update-status-changed')
     ipcRenderer.on('update-status-changed', (_, status) => callback(status))
   }

@@ -25,19 +25,19 @@ export function getAllTags(): DocumentTag[] {
 
 export function getTagById(id: string): DocumentTag | undefined {
   const tags = getAllTags()
-  return tags.find(t => t.id === id)
+  return tags.find((t) => t.id === id)
 }
 
 export function getTagByName(name: string): DocumentTag | undefined {
   const tags = getAllTags()
-  return tags.find(t => t.name.toLowerCase() === name.toLowerCase())
+  return tags.find((t) => t.name.toLowerCase() === name.toLowerCase())
 }
 
 export function createTag(name: string, color?: string): DocumentTag {
   const tags = getAllTags()
-  
+
   // 检查是否已存在
-  const existing = tags.find(t => t.name.toLowerCase() === name.toLowerCase())
+  const existing = tags.find((t) => t.name.toLowerCase() === name.toLowerCase())
   if (existing) {
     return existing
   }
@@ -56,15 +56,15 @@ export function createTag(name: string, color?: string): DocumentTag {
 
 export function updateTag(id: string, updates: { name?: string; color?: string }): DocumentTag {
   const tags = getAllTags()
-  const index = tags.findIndex(t => t.id === id)
-  
+  const index = tags.findIndex((t) => t.id === id)
+
   if (index < 0) {
     throw new Error('标签不存在')
   }
 
   // 检查名称冲突
   if (updates.name && updates.name !== tags[index].name) {
-    const existing = tags.find(t => t.name.toLowerCase() === updates.name!.toLowerCase())
+    const existing = tags.find((t) => t.name.toLowerCase() === updates.name!.toLowerCase())
     if (existing) {
       throw new Error('标签名称已存在')
     }
@@ -81,14 +81,14 @@ export function updateTag(id: string, updates: { name?: string; color?: string }
 }
 
 export function deleteTag(id: string): void {
-  const tags = getAllTags().filter(t => t.id !== id)
+  const tags = getAllTags().filter((t) => t.id !== id)
   store.set('tags', tags)
 }
 
 export function renameTag(oldName: string, newName: string): DocumentTag | null {
   const tags = getAllTags()
-  const tag = tags.find(t => t.name.toLowerCase() === oldName.toLowerCase())
-  
+  const tag = tags.find((t) => t.name.toLowerCase() === oldName.toLowerCase())
+
   if (!tag) return null
 
   return updateTag(tag.id, { name: newName })
@@ -97,8 +97,16 @@ export function renameTag(oldName: string, newName: string): DocumentTag | null 
 // 生成随机颜色
 function getRandomColor(): string {
   const colors = [
-    '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
-    '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B500', '#52B788'
+    '#FF6B6B',
+    '#4ECDC4',
+    '#45B7D1',
+    '#FFA07A',
+    '#98D8C8',
+    '#F7DC6F',
+    '#BB8FCE',
+    '#85C1E2',
+    '#F8B500',
+    '#52B788'
   ]
   return colors[Math.floor(Math.random() * colors.length)]
 }
@@ -107,8 +115,8 @@ function getRandomColor(): string {
 export function addTagToFile(filePath: string, tagId: string): void {
   const { getIndexedFileRecords, upsertIndexedFileRecord } = require('./knowledgeBase')
   const records = getIndexedFileRecords()
-  const record = records.find(r => r.path === filePath)
-  
+  const record = records.find((r) => r.path === filePath)
+
   if (!record) {
     throw new Error('文件不存在')
   }
@@ -127,11 +135,11 @@ export function addTagToFile(filePath: string, tagId: string): void {
 export function removeTagFromFile(filePath: string, tagId: string): void {
   const { getIndexedFileRecords, upsertIndexedFileRecord } = require('./knowledgeBase')
   const records = getIndexedFileRecords()
-  const record = records.find(r => r.path === filePath)
-  
+  const record = records.find((r) => r.path === filePath)
+
   if (!record || !record.tags) return
 
-  record.tags = record.tags.filter(t => t !== tagId)
+  record.tags = record.tags.filter((t) => t !== tagId)
   upsertIndexedFileRecord(record)
 }
 
@@ -139,10 +147,12 @@ export function removeTagFromFile(filePath: string, tagId: string): void {
 export function getTagsForFile(filePath: string): DocumentTag[] {
   const { getIndexedFileRecords } = require('./knowledgeBase')
   const records = getIndexedFileRecords()
-  const record = records.find(r => r.path === filePath)
-  
+  const record = records.find((r) => r.path === filePath)
+
   if (!record || !record.tags) return []
 
   const allTags = getAllTags()
-  return record.tags.map(tagId => allTags.find(t => t.id === tagId)).filter(Boolean) as DocumentTag[]
+  return record.tags
+    .map((tagId) => allTags.find((t) => t.id === tagId))
+    .filter(Boolean) as DocumentTag[]
 }

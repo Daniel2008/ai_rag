@@ -153,7 +153,10 @@ export class DebugMonitor {
       this.errors = this.errors.slice(-this.maxErrors)
     }
 
-    logError(`错误记录: ${error.message}`, module || 'DebugMonitor', { context, stack: error.stack })
+    logError(`错误记录: ${error.message}`, module || 'DebugMonitor', {
+      context,
+      stack: error.stack
+    })
   }
 
   /**
@@ -174,7 +177,7 @@ export class DebugMonitor {
 
     // 按名称分组统计
     const byName: Record<string, { count: number; avg: number; max: number }> = {}
-    this.metrics.forEach(m => {
+    this.metrics.forEach((m) => {
       if (!byName[m.name]) {
         byName[m.name] = { count: 0, avg: 0, max: 0 }
       }
@@ -187,12 +190,12 @@ export class DebugMonitor {
     })
 
     // 计算平均值
-    Object.keys(byName).forEach(name => {
+    Object.keys(byName).forEach((name) => {
       byName[name].avg = byName[name].avg / byName[name].count
     })
 
     // 找出最慢的调用
-    const slowest = this.metrics.reduce((prev, current) => 
+    const slowest = this.metrics.reduce((prev, current) =>
       prev.duration > current.duration ? prev : current
     )
 
@@ -213,7 +216,7 @@ export class DebugMonitor {
     recentErrors: ErrorInfo[]
   } {
     const byModule: Record<string, number> = {}
-    this.errors.forEach(e => {
+    this.errors.forEach((e) => {
       const module = e.module || 'unknown'
       byModule[module] = (byModule[module] || 0) + 1
     })
@@ -231,9 +234,9 @@ export class DebugMonitor {
   async generateReport(): Promise<DebugInfo> {
     const settings = getSettings()
     const memory = process.memoryUsage()
-    
+
     // 获取RAG相关统计（异步）
-    let ragStats: any = {}
+    const ragStats: any = {}
     try {
       const { getDocCount } = await import('../rag/store/index')
       const { getQueryCacheStats } = await import('../rag/store/index')
@@ -333,7 +336,9 @@ export class DebugMonitor {
     // 检查性能
     const perfStats = this.getPerformanceStats()
     if (perfStats.slowest && perfStats.slowest.duration > 5000) {
-      issues.push(`存在极慢操作: ${perfStats.slowest.name} (${perfStats.slowest.duration.toFixed(0)}ms)`)
+      issues.push(
+        `存在极慢操作: ${perfStats.slowest.name} (${perfStats.slowest.duration.toFixed(0)}ms)`
+      )
       suggestions.push('优化相关操作，考虑使用缓存或异步处理')
     }
 
@@ -441,7 +446,7 @@ export class PerformanceAnalyzer {
   exportCSV(): string {
     const analysis = this.getAnalysis()
     let csv = 'Operation,Average,Min,Max,Count\n'
-    
+
     Object.entries(analysis).forEach(([name, stats]) => {
       csv += `${name},${stats.avg},${stats.min},${stats.max},${stats.count}\n`
     })
@@ -461,7 +466,7 @@ export class EventPerformanceMonitor {
    */
   startEvent(eventName: string): string {
     const eventId = `${eventName}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    
+
     if (!this.eventTimings.has(eventName)) {
       this.eventTimings.set(eventName, [])
     }
@@ -478,17 +483,17 @@ export class EventPerformanceMonitor {
    */
   endEvent(eventId: string): void {
     const end = performance.now()
-    
+
     // 查找并更新对应的事件
     for (const [eventName, timings] of this.eventTimings.entries()) {
       const event = (timings as any[]).find((t: any) => t.eventId === eventId)
       if (event) {
         event.timing.end = end
         const duration = event.timing.end - event.timing.start
-        
+
         // 记录到主监控器
         DebugMonitor.getInstance().recordMetric(eventName, duration)
-        
+
         logDebug(`事件性能: ${eventName}`, 'EventMonitor', { duration })
         return
       }
@@ -532,8 +537,8 @@ export class SystemResourceMonitor {
   private checkInterval: NodeJS.Timeout | null = null
   private thresholds = {
     memory: 80, // 80% 内存使用率
-    cpu: 70,    // 70% CPU 使用率（需要额外实现）
-    storage: 85  // 85% 存储使用率（需要额外实现）
+    cpu: 70, // 70% CPU 使用率（需要额外实现）
+    storage: 85 // 85% 存储使用率（需要额外实现）
   }
 
   /**
@@ -543,7 +548,7 @@ export class SystemResourceMonitor {
     if (this.checkInterval) return
 
     logInfo('系统资源监控已启动', 'ResourceMonitor', { intervalMs })
-    
+
     this.checkInterval = setInterval(() => {
       this.checkResources()
     }, intervalMs)
@@ -578,7 +583,8 @@ export class SystemResourceMonitor {
     }
 
     // 检查缓存大小
-    if (memory.heapUsed > 500 * 1024 * 1024) { // 500MB
+    if (memory.heapUsed > 500 * 1024 * 1024) {
+      // 500MB
       logInfo('内存占用超过500MB，建议清理缓存', 'ResourceMonitor')
     }
   }
@@ -594,14 +600,16 @@ export class SystemResourceMonitor {
     }
 
     // 清理查询缓存
-    import('../rag/store/index').then(({ pruneExpiredCaches }) => {
-      const result = pruneExpiredCaches()
-      if (result.pruned > 0) {
-        logInfo(`清理了 ${result.pruned} 个过期缓存`, 'ResourceMonitor')
-      }
-    }).catch(e => {
-      logWarn('清理缓存失败', 'ResourceMonitor', undefined, e)
-    })
+    import('../rag/store/index')
+      .then(({ pruneExpiredCaches }) => {
+        const result = pruneExpiredCaches()
+        if (result.pruned > 0) {
+          logInfo(`清理了 ${result.pruned} 个过期缓存`, 'ResourceMonitor')
+        }
+      })
+      .catch((e) => {
+        logWarn('清理缓存失败', 'ResourceMonitor', undefined, e)
+      })
   }
 
   /**

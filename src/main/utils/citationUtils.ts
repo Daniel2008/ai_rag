@@ -59,8 +59,8 @@ export async function enhanceCitation(
   if (includeMetadata && baseSource.filePath) {
     const records = getIndexedFileRecords()
     const normalizedPath = normalizePath(baseSource.filePath)
-    const fileRecord = records.find(r => 
-      (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath
+    const fileRecord = records.find(
+      (r) => (r.normalizedPath ?? normalizePath(r.path)) === normalizedPath
     )
 
     if (fileRecord) {
@@ -94,8 +94,8 @@ export async function enhanceCitation(
     try {
       const tags = await getTagsForFile(baseSource.filePath)
       if (tags.length > 0) {
-        enhanced.tags = tags.map(t => t.name)
-        enhancedInfo.tagNames = tags.map(t => t.name)
+        enhanced.tags = tags.map((t) => t.name)
+        enhancedInfo.tagNames = tags.map((t) => t.name)
       }
     } catch (error) {
       // 标签获取失败不影响主流程
@@ -131,7 +131,7 @@ export async function enhanceCitation(
   // 5. 来源统计
   if (baseSource.searchSources && baseSource.searchSources.length > 0) {
     const stats: any = {}
-    baseSource.searchSources.forEach(source => {
+    baseSource.searchSources.forEach((source) => {
       stats[source] = (stats[source] || 0) + 1
     })
     enhancedInfo.sourceStats = stats
@@ -139,8 +139,8 @@ export async function enhanceCitation(
 
   // 6. OCR特殊信息
   if (baseSource.sourceType === 'ocr' && baseSource.ocrConfidence !== undefined) {
-    enhancedInfo.ocrQuality = baseSource.ocrConfidence >= 0.9 ? '高' : 
-                             baseSource.ocrConfidence >= 0.7 ? '中' : '低'
+    enhancedInfo.ocrQuality =
+      baseSource.ocrConfidence >= 0.9 ? '高' : baseSource.ocrConfidence >= 0.7 ? '中' : '低'
   }
 
   enhanced.enhanced = enhancedInfo
@@ -154,19 +154,16 @@ export async function enhanceCitations(
   sources: ChatSource[],
   options?: Parameters<typeof enhanceCitation>[1]
 ): Promise<EnhancedCitation[]> {
-  const promises = sources.map(source => enhanceCitation(source, options))
+  const promises = sources.map((source) => enhanceCitation(source, options))
   return Promise.all(promises)
 }
 
 /**
  * 生成相关内容预览
  */
-function generateRelatedContent(
-  mainContent: string,
-  relatedContents?: string[]
-): string[] {
+function generateRelatedContent(mainContent: string, relatedContents?: string[]): string[] {
   const results: string[] = []
-  
+
   // 添加主内容预览
   const trimmed = mainContent.trim()
   if (trimmed.length > 0) {
@@ -183,7 +180,7 @@ function generateRelatedContent(
 
   // 添加相关片段
   if (relatedContents && relatedContents.length > 0) {
-    relatedContents.forEach(content => {
+    relatedContents.forEach((content) => {
       const trimmed = content.trim()
       if (trimmed.length > 0 && trimmed !== mainContent.trim()) {
         results.push(trimmed.length > 150 ? trimmed.substring(0, 150) + '...' : trimmed)
@@ -208,9 +205,7 @@ function formatFileSize(bytes: number): string {
 /**
  * 创建引用可视化数据
  */
-export function createCitationVisualization(
-  citations: EnhancedCitation[]
-): {
+export function createCitationVisualization(citations: EnhancedCitation[]): {
   sources: string[]
   tags: string[]
   fileTypes: string[]
@@ -242,13 +237,13 @@ export function createCitationVisualization(
     avgScore: 0
   }
 
-  citations.forEach(citation => {
+  citations.forEach((citation) => {
     // 来源文件
     if (citation.filePath) sources.add(citation.filePath)
 
     // 标签
     if (citation.tags) {
-      citation.tags.forEach(tag => tags.add(tag))
+      citation.tags.forEach((tag) => tags.add(tag))
     }
 
     // 文件类型
@@ -283,8 +278,8 @@ export function createCitationVisualization(
   }
 
   // 统计标签
-  tags.forEach(tag => {
-    const count = citations.filter(c => c.tags && c.tags.includes(tag)).length
+  tags.forEach((tag) => {
+    const count = citations.filter((c) => c.tags && c.tags.includes(tag)).length
     stats.byTag[tag] = count
   })
 
@@ -308,9 +303,9 @@ export function generateCitationSummary(citations: EnhancedCitation[]): string {
   }
 
   const visualization = createCitationVisualization(citations)
-  
+
   let summary = `共引用 ${citations.length} 个来源`
-  
+
   if (visualization.sources.length > 0) {
     summary += `，来自 ${visualization.sources.length} 个文档`
   }
@@ -378,7 +373,9 @@ export function validateCitations(citations: ChatSource[]): {
     }
 
     if (issues.length > 0) {
-      warnings.push(`引用 ${index + 1}: ${issues.join(', ')} (${citation.fileName || citation.filePath})`)
+      warnings.push(
+        `引用 ${index + 1}: ${issues.join(', ')} (${citation.fileName || citation.filePath})`
+      )
     } else {
       valid.push(citation)
     }
@@ -403,8 +400,8 @@ export function sortCitations(
 
     case 'quality':
       sorted.sort((a, b) => {
-        const aQuality = a.ocrConfidence || (a.score || 0)
-        const bQuality = b.ocrConfidence || (b.score || 0)
+        const aQuality = a.ocrConfidence || a.score || 0
+        const bQuality = b.ocrConfidence || b.score || 0
         return bQuality - aQuality
       })
       break
@@ -445,7 +442,7 @@ export function exportCitations(
     citations.forEach((citation, index) => {
       md += `### ${index + 1}. ${citation.fileName}\n\n`
       md += `**来源类型**: ${citation.sourceType || '未知'}\n\n`
-      
+
       if (citation.enhanced?.positionInfo) {
         md += `**位置**: ${citation.enhanced.positionInfo}\n\n`
       }
@@ -476,7 +473,7 @@ export function exportCitations(
   if (format === 'text') {
     let text = '引用来源\n'
     text += '='.repeat(50) + '\n\n'
-    
+
     citations.forEach((citation, index) => {
       text += `${index + 1}. ${citation.fileName}\n`
       text += `   类型: ${citation.sourceType || '未知'}\n`
@@ -492,7 +489,7 @@ export function exportCitations(
       text += `   内容: ${citation.content.substring(0, 100)}${citation.content.length > 100 ? '...' : ''}\n`
       text += '\n'
     })
-    
+
     return text
   }
 

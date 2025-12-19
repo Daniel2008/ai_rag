@@ -90,7 +90,7 @@ async function build() {
     // 步骤 3: Electron Builder
     startStep('builder')
     const builderArgs = []
-    
+
     // 根据构建类型选择命令
     if (buildType === 'win') {
       builderArgs.push('run', 'build:win:fast')
@@ -101,7 +101,7 @@ async function build() {
     } else {
       builderArgs.push('run', `build:${buildType}:fast`)
     }
-    
+
     if (isDebug) {
       builderArgs.push('--debug')
     }
@@ -159,4 +159,3 @@ function runCommand(command, args, options) {
 }
 
 build()
-

@@ -18,7 +18,14 @@ import {
   Col,
   Tabs
 } from 'antd'
-import { ApiOutlined, RobotOutlined, KeyOutlined, SettingOutlined, ToolOutlined, CloudDownloadOutlined } from '@ant-design/icons'
+import {
+  ApiOutlined,
+  RobotOutlined,
+  KeyOutlined,
+  SettingOutlined,
+  ToolOutlined,
+  CloudDownloadOutlined
+} from '@ant-design/icons'
 import type { AppSettings, ModelProvider, EmbeddingProvider } from '../types/chat'
 import UpdateChecker from './UpdateChecker'
 
@@ -60,7 +67,13 @@ const LOCAL_EMBEDDING_MODELS = [
 ]
 
 // Ollama 嵌入模型
-const OLLAMA_EMBEDDING_MODELS = ['nomic-embed-text', 'mxbai-embed-large', 'all-minilm', 'bge-m3', 'snowflake-arctic-embed']
+const OLLAMA_EMBEDDING_MODELS = [
+  'nomic-embed-text',
+  'mxbai-embed-large',
+  'all-minilm',
+  'bge-m3',
+  'snowflake-arctic-embed'
+]
 
 export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps): ReactElement {
   const [form] = Form.useForm<AppSettings>()
@@ -108,10 +121,10 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     try {
       const values = await form.validateFields()
       setSaving(true)
-      
+
       // 合并初始配置与当前表单值，防止未渲染的供应商配置丢失
       const finalSettings = { ...initialSettings, ...values }
-      
+
       const result = await window.api.saveSettings(finalSettings)
 
       if (result.embeddingChanged) {

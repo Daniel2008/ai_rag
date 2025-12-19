@@ -35,7 +35,7 @@ const TERM_MAPPINGS: Record<string, string[]> = {
   多模态: ['multimodal', 'vision-language', 'VLM', 'image-text'],
   智能体: ['agent', 'autonomous', 'agentic', 'multi-agent'],
   提示词: ['prompt', 'prompting', 'instruction', 'few-shot'],
-  
+
   // 技术相关
   数据库: ['database', 'DB', 'SQL', 'データベース', 'NoSQL', 'vector database'],
   云计算: ['cloud', 'computing', 'AWS', 'Azure', 'GCP', 'serverless'],
@@ -43,7 +43,7 @@ const TERM_MAPPINGS: Record<string, string[]> = {
   网络安全: ['cybersecurity', 'security', 'サイバーセキュリティ', 'infosec'],
   容器: ['container', 'docker', 'kubernetes', 'k8s'],
   微服务: ['microservice', 'service', 'API', 'REST'],
-  
+
   // 商业/文档相关
   市场分析: ['market', 'analysis', 'マーケット分析', 'research'],
   财务报告: ['financial', 'report', 'finance', '財務報告', 'annual report'],
@@ -53,19 +53,19 @@ const TERM_MAPPINGS: Record<string, string[]> = {
   报告: ['report', 'paper', 'whitepaper', 'document'],
   研究: ['research', 'study', 'investigation', 'survey'],
   趋势: ['trend', 'forecast', 'prediction', 'outlook'],
-  
+
   // 英文到中文反向映射
-  'AI': ['人工智能', '智能', 'artificial intelligence'],
+  AI: ['人工智能', '智能', 'artificial intelligence'],
   'machine learning': ['机器学习', 'ML'],
   'deep learning': ['深度学习', 'DL', 'neural network'],
   'state of ai': ['人工智能现状', 'AI发展', 'AI现状', 'state-of-ai'],
-  'GPT': ['大模型', 'LLM', '大语言模型', 'ChatGPT'],
-  'LLM': ['大语言模型', '大模型', 'language model'],
-  'NLP': ['自然语言处理', '自然语言', 'natural language'],
+  GPT: ['大模型', 'LLM', '大语言模型', 'ChatGPT'],
+  LLM: ['大语言模型', '大模型', 'language model'],
+  NLP: ['自然语言处理', '自然语言', 'natural language'],
   'computer vision': ['计算机视觉', 'CV', '图像识别'],
   'neural network': ['神经网络', 'NN', '深度学习'],
-  'RAG': ['检索增强', '检索', 'retrieval'],
-  'embedding': ['向量', '嵌入', 'vector'],
+  RAG: ['检索增强', '检索', 'retrieval'],
+  embedding: ['向量', '嵌入', 'vector']
 }
 
 /**
@@ -73,14 +73,55 @@ const TERM_MAPPINGS: Record<string, string[]> = {
  */
 const COMMON_WORDS = new Set([
   // 中文
-  '介绍', '内容', '什么', '哪些', '怎样', '如何', '为什么', '关于', '请问', '告诉', 
-  '说说', '讲讲', '现状', '分析', '研究', '报告', '文档', '资料',
+  '介绍',
+  '内容',
+  '什么',
+  '哪些',
+  '怎样',
+  '如何',
+  '为什么',
+  '关于',
+  '请问',
+  '告诉',
+  '说说',
+  '讲讲',
+  '现状',
+  '分析',
+  '研究',
+  '报告',
+  '文档',
+  '资料',
   // 英文
-  'the', 'of', 'and', 'to', 'in', 'is', 'a', 'an', 'for', 'on', 'with', 'about', 
-  'this', 'that', 'these', 'those', 'some', 'any', 'all',
-  'introduction', 'overview', 'summary', 'document', 'report', 'analysis',
+  'the',
+  'of',
+  'and',
+  'to',
+  'in',
+  'is',
+  'a',
+  'an',
+  'for',
+  'on',
+  'with',
+  'about',
+  'this',
+  'that',
+  'these',
+  'those',
+  'some',
+  'any',
+  'all',
+  'introduction',
+  'overview',
+  'summary',
+  'document',
+  'report',
+  'analysis',
   // 日文
-  'について', 'とは', 'です', 'ます'
+  'について',
+  'とは',
+  'です',
+  'ます'
 ])
 
 /**
@@ -133,10 +174,7 @@ export function extractFileNameKeywords(query: string): string[] {
   ]
 
   const filtered = allKeywords.filter(
-    (kw) =>
-      !COMMON_WORDS.has(kw.toLowerCase()) &&
-      kw.length >= 2 &&
-      !/^\d+$/.test(kw)
+    (kw) => !COMMON_WORDS.has(kw.toLowerCase()) && kw.length >= 2 && !/^\d+$/.test(kw)
   )
 
   const unique = [...new Set(filtered)]
@@ -153,10 +191,7 @@ export function extractFileNameKeywords(query: string): string[] {
 /**
  * 检查文档是否与查询相关
  */
-export function isDocumentRelevantToQuery(
-  docContent: string,
-  query: string
-): RelevanceCheckResult {
+export function isDocumentRelevantToQuery(docContent: string, query: string): RelevanceCheckResult {
   const queryLower = query.toLowerCase()
   const docLower = docContent.toLowerCase()
 
@@ -183,9 +218,7 @@ export function isDocumentRelevantToQuery(
     .split(/[\s\u3000]+/)
     .filter((word) => word.length > 1 && !/^[\u4e00-\u9fa5]$/.test(word))
 
-  const hasQuerySubstring = queryWords.some(
-    (word) => word.length > 2 && docLower.includes(word)
-  )
+  const hasQuerySubstring = queryWords.some((word) => word.length > 2 && docLower.includes(word))
 
   const relevant = hasDirectMatch || hasQuerySubstring || matchScore >= 0.25
 
@@ -223,7 +256,7 @@ export function filterByRelevanceThreshold<T extends { score: number; doc: Docum
   if (scoreFiltered.length < 3) {
     const lowThreshold = Math.min(threshold, RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD_LOW)
     const relaxedResults = results.filter((r) => r.score >= lowThreshold)
-    
+
     // 如果放宽后仍然太少，返回原始结果的前部分（按分数排序）
     if (relaxedResults.length < 2 && results.length > 0) {
       logDebug('Relaxed filter still too strict, returning top results', 'Search', {
@@ -234,7 +267,7 @@ export function filterByRelevanceThreshold<T extends { score: number; doc: Docum
       })
       return results.slice(0, Math.max(5, Math.ceil(results.length * 0.3)))
     }
-    
+
     return relaxedResults
   }
 

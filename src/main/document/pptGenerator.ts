@@ -830,17 +830,19 @@ function createReferencesSlide(
   const displaySources = sources.slice(0, maxRefs)
   const hasMore = sources.length > maxRefs
 
-  const refItems: { text: string; options: PptxGenJS.TextPropsOptions }[] = displaySources.map((source, index) => ({
-    text: `[${index + 1}] ${source}`,
-    options: {
-      fontSize: 12,
-      fontFace: FONTS.body,
-      color: colors.lightText,
-      bullet: false,
-      paraSpaceBefore: index === 0 ? 10 : 8,
-      paraSpaceAfter: 6
-    }
-  }))
+  const refItems: { text: string; options: PptxGenJS.TextPropsOptions }[] = displaySources.map(
+    (source, index) => ({
+      text: `[${index + 1}] ${source}`,
+      options: {
+        fontSize: 12,
+        fontFace: FONTS.body,
+        color: colors.lightText,
+        bullet: false,
+        paraSpaceBefore: index === 0 ? 10 : 8,
+        paraSpaceAfter: 6
+      }
+    })
+  )
 
   // 如果有更多参考文献，添加省略提示
   if (hasMore) {
@@ -971,8 +973,18 @@ function splitContentIntoSlides(
   title: string,
   paragraphs: string[],
   bullets: string[]
-): { title: string; paragraphs: string[]; bullets: string[]; layout: 'default' | 'twoColumn' | 'bulletFocus' }[] {
-  const slides: { title: string; paragraphs: string[]; bullets: string[]; layout: 'default' | 'twoColumn' | 'bulletFocus' }[] = []
+): {
+  title: string
+  paragraphs: string[]
+  bullets: string[]
+  layout: 'default' | 'twoColumn' | 'bulletFocus'
+}[] {
+  const slides: {
+    title: string
+    paragraphs: string[]
+    bullets: string[]
+    layout: 'default' | 'twoColumn' | 'bulletFocus'
+  }[] = []
 
   // 处理段落：将长段落分割
   const processedParagraphs: string[] = []
@@ -1027,7 +1039,10 @@ function splitContentIntoSlides(
   }
 
   // 段落和要点都有的情况：使用双栏布局或分页
-  if (totalParagraphs <= PAGE_CONFIG.maxParagraphsPerSlide && totalBullets <= PAGE_CONFIG.maxBulletsPerSlide) {
+  if (
+    totalParagraphs <= PAGE_CONFIG.maxParagraphsPerSlide &&
+    totalBullets <= PAGE_CONFIG.maxBulletsPerSlide
+  ) {
     // 内容适合放在一页：使用双栏布局
     slides.push({
       title,
@@ -1039,7 +1054,10 @@ function splitContentIntoSlides(
     // 内容过多：分页处理
     // 第一页：段落
     const firstPageParagraphs = processedParagraphs.slice(0, PAGE_CONFIG.maxParagraphsPerSlide)
-    const firstPageBullets = processedBullets.slice(0, Math.floor(PAGE_CONFIG.maxBulletsPerSlide / 2))
+    const firstPageBullets = processedBullets.slice(
+      0,
+      Math.floor(PAGE_CONFIG.maxBulletsPerSlide / 2)
+    )
 
     slides.push({
       title,

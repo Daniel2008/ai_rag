@@ -35,7 +35,7 @@ export function TitleBar({ title = '智汇' }: TitleBarProps): ReactElement {
       const unsubscribe = window.api.onMaximizedChange(setIsMaximized)
       return unsubscribe
     }
-    
+
     return undefined
   }, [])
 

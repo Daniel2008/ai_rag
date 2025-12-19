@@ -5,10 +5,10 @@
  */
 export enum ProgressStatus {
   DOWNLOADING = 'downloading', // 下载中
-  PROCESSING = 'processing',   // 处理中
-  COMPLETED = 'completed',     // 已完成
-  ERROR = 'error',             // 错误
-  READY = 'ready'              // 准备就绪
+  PROCESSING = 'processing', // 处理中
+  COMPLETED = 'completed', // 已完成
+  ERROR = 'error', // 错误
+  READY = 'ready' // 准备就绪
 }
 
 /**
@@ -19,8 +19,8 @@ export enum TaskType {
   DOCUMENT_PARSE = 'document_parse', // 文档解析
   DOCUMENT_SPLIT = 'document_split', // 文档分割
   EMBEDDING_GENERATION = 'embedding_generation', // 向量生成
-  INDEX_REBUILD = 'index_rebuild',   // 重建索引
-  UNKNOWN = 'unknown',               // 未知任务
+  INDEX_REBUILD = 'index_rebuild', // 重建索引
+  UNKNOWN = 'unknown', // 未知任务
   KNOWLEDGE_BASE_BUILD = 'knowledge_base_build' // 知识库构建
 }
 

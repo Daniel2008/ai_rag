@@ -6,15 +6,15 @@ import eslintPluginReactHooks from 'eslint-plugin-react-hooks'
 import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 
 export default defineConfig(
-  { 
+  {
     ignores: [
       '**/node_modules/**',
-      '**/dist/**', 
+      '**/dist/**',
       '**/out/**',
       '**/.git/**',
       '**/*.log',
       '**/.eslintcache'
-    ] 
+    ]
   },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,

@@ -52,14 +52,14 @@ export class HybridSearcher {
       // 1. 向量搜索
       const vectorStart = Date.now()
       const vectorLimit = options.limit || this.config.topK || 10
-      
+
       const vectorResults = await searchSimilarDocumentsWithScores(query, {
         k: vectorLimit,
         sources: options.sources
       })
-      
+
       // 转换为统一格式
-      context.vectorResults = vectorResults.map(r => ({
+      context.vectorResults = vectorResults.map((r) => ({
         doc: r.doc,
         score: r.score
       }))
@@ -74,36 +74,41 @@ export class HybridSearcher {
 
       // 2. 关键词搜索（BM25）
       const keywordStart = Date.now()
-      
+
       // 由于BM25Searcher需要完整的LanceDB数据，这里简化为返回空结果
       // 在实际使用中，需要集成BM25索引
       let keywordDocs: { doc: Document; score: number }[] = []
-      
+
       // 如果有向量结果，可以尝试从它们中提取关键词匹配作为简单实现
       if (vectorResults.length > 0) {
         // 简单实现：基于文本匹配的关键词评分
-        const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2)
-        
+        const queryTerms = query
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((t) => t.length > 2)
+
         if (queryTerms.length > 0) {
-          keywordDocs = vectorResults.map(r => {
-            const text = (r.doc.pageContent || '').toLowerCase()
-            let keywordScore = 0
-            queryTerms.forEach(term => {
-              if (text.includes(term)) {
-                keywordScore += 1
+          keywordDocs = vectorResults
+            .map((r) => {
+              const text = (r.doc.pageContent || '').toLowerCase()
+              let keywordScore = 0
+              queryTerms.forEach((term) => {
+                if (text.includes(term)) {
+                  keywordScore += 1
+                }
+              })
+              // 归一化分数
+              keywordScore = keywordScore / Math.max(queryTerms.length, 1)
+
+              return {
+                doc: r.doc,
+                score: keywordScore * 0.5 // 缩小分数范围
               }
             })
-            // 归一化分数
-            keywordScore = keywordScore / Math.max(queryTerms.length, 1)
-            
-            return {
-              doc: r.doc,
-              score: keywordScore * 0.5 // 缩小分数范围
-            }
-          }).filter(r => r.score > 0)
+            .filter((r) => r.score > 0)
         }
       }
-      
+
       context.keywordResults = keywordDocs
       context.processingTime = Date.now() - startTime
 
@@ -123,8 +128,8 @@ export class HybridSearcher {
 
       // 4. 过滤低质量结果
       if (this.config.minScore) {
-        context.hybridResults = context.hybridResults.filter(r => 
-          r.finalScore >= this.config.minScore!
+        context.hybridResults = context.hybridResults.filter(
+          (r) => r.finalScore >= this.config.minScore!
         )
       }
 
@@ -137,13 +142,12 @@ export class HybridSearcher {
       })
 
       return context
-
     } catch (error) {
       logWarn('混合检索失败', 'HybridSearch', { query }, error as Error)
-      
+
       // 降级：只返回向量搜索结果
       if (context.vectorResults && context.vectorResults.length > 0) {
-        context.hybridResults = context.vectorResults.map(r => ({
+        context.hybridResults = context.vectorResults.map((r) => ({
           doc: r.doc,
           finalScore: r.score,
           sources: ['vector']
@@ -165,7 +169,7 @@ export class HybridSearcher {
     const resultsMap = new Map<string, { doc: Document; scores: number[]; sources: string[] }>()
 
     // 向量结果
-    vectorResults.forEach(r => {
+    vectorResults.forEach((r) => {
       const key = this.getDocKey(r.doc)
       const existing = resultsMap.get(key)
       if (existing) {
@@ -177,7 +181,7 @@ export class HybridSearcher {
     })
 
     // 关键词结果
-    keywordResults.forEach(r => {
+    keywordResults.forEach((r) => {
       const key = this.getDocKey(r.doc)
       const existing = resultsMap.get(key)
       if (existing) {
@@ -189,15 +193,15 @@ export class HybridSearcher {
     })
 
     // 计算最终分数
-    const finalResults = Array.from(resultsMap.values()).map(item => {
+    const finalResults = Array.from(resultsMap.values()).map((item) => {
       // 加权平均
-      const vectorScore = item.sources.includes('vector') 
+      const vectorScore = item.sources.includes('vector')
         ? (item.scores[item.sources.indexOf('vector')] || 0) * this.config.vectorWeight!
         : 0
       const keywordScore = item.sources.includes('keyword')
         ? (item.scores[item.sources.indexOf('keyword')] || 0) * this.config.keywordWeight!
         : 0
-      
+
       const finalScore = vectorScore + keywordScore
 
       return {
@@ -221,7 +225,7 @@ export class HybridSearcher {
     const results: { doc: Document; finalScore: number; sources: string[] }[] = []
 
     // 添加向量结果
-    vectorResults.forEach(r => {
+    vectorResults.forEach((r) => {
       results.push({
         doc: r.doc,
         finalScore: r.score * this.config.vectorWeight!,
@@ -230,7 +234,7 @@ export class HybridSearcher {
     })
 
     // 添加关键词结果
-    keywordResults.forEach(r => {
+    keywordResults.forEach((r) => {
       results.push({
         doc: r.doc,
         finalScore: r.score * 0.1 * this.config.keywordWeight!, // 缩小关键词分数
@@ -240,7 +244,7 @@ export class HybridSearcher {
 
     // 去重
     const seen = new Set<string>()
-    const uniqueResults = results.filter(item => {
+    const uniqueResults = results.filter((item) => {
       const key = this.getDocKey(item.doc)
       if (seen.has(key)) return false
       seen.add(key)
@@ -281,7 +285,12 @@ export class HybridSearcher {
    * 获取索引统计
    * 返回空统计，因为当前版本使用简化实现
    */
-  getIndexStats(): { docCount: number; uniqueTerms: number; avgDocLength: number; message: string } {
+  getIndexStats(): {
+    docCount: number
+    uniqueTerms: number
+    avgDocLength: number
+    message: string
+  } {
     return {
       docCount: 0,
       uniqueTerms: 0,
@@ -343,7 +352,7 @@ export class AdvancedRetriever {
         context = {
           query,
           vectorResults,
-          hybridResults: vectorResults.map(r => ({
+          hybridResults: vectorResults.map((r) => ({
             doc: r.doc,
             finalScore: r.score,
             sources: ['vector-fallback']
@@ -377,11 +386,11 @@ export class AdvancedRetriever {
       { find: /项目/g, replace: ['项目', '项目管理', '项目实施'] }
     ]
 
-    patterns.forEach(pattern => {
+    patterns.forEach((pattern) => {
       if (pattern.find.test(query)) {
-        const alternatives = pattern.replace.filter(w => !query.includes(w))
+        const alternatives = pattern.replace.filter((w) => !query.includes(w))
         if (alternatives.length > 0) {
-          expansions.push(...alternatives.map(w => query.replace(pattern.find, w)))
+          expansions.push(...alternatives.map((w) => query.replace(pattern.find, w)))
         }
       }
     })
@@ -406,7 +415,7 @@ export class AdvancedRetriever {
   ): Promise<void> {
     // 从相关文档中提取关键词
     const relevantKeywords = this.extractKeywords(relevantDocs)
-    
+
     // 从不相关文档中提取应避免的模式
     const irrelevantPatterns = this.extractPatterns(irrelevantDocs)
 
@@ -429,18 +438,47 @@ export class AdvancedRetriever {
    */
   private extractKeywords(docs: Document[]): string[] {
     const keywords = new Set<string>()
-    const stopWords = new Set(['的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这'])
+    const stopWords = new Set([
+      '的',
+      '了',
+      '在',
+      '是',
+      '我',
+      '有',
+      '和',
+      '就',
+      '不',
+      '人',
+      '都',
+      '一',
+      '一个',
+      '上',
+      '也',
+      '很',
+      '到',
+      '说',
+      '要',
+      '去',
+      '你',
+      '会',
+      '着',
+      '没有',
+      '看',
+      '好',
+      '自己',
+      '这'
+    ])
 
-    docs.forEach(doc => {
+    docs.forEach((doc) => {
       const text = doc.pageContent.toLowerCase()
       // 提取中文词汇（简单版本）
       const words = text.match(/[\u4e00-\u9fa5]{2,4}/g) || []
       // 提取英文单词
       const enWords = text.match(/[a-zA-Z]{3,}/g) || []
-      
+
       // 合并数组并过滤
       const allWords = [...words, ...enWords]
-      allWords.forEach(word => {
+      allWords.forEach((word) => {
         if (!stopWords.has(word) && word.length > 1) {
           keywords.add(word)
         }
@@ -456,7 +494,7 @@ export class AdvancedRetriever {
   private extractPatterns(docs: Document[]): string[] {
     const patterns = new Set<string>()
 
-    docs.forEach(doc => {
+    docs.forEach((doc) => {
       const text = doc.pageContent.toLowerCase()
       // 提取可能不相关的主题词
       const topics = text.match(/[\u4e00-\u9fa5]{2,6}/g) || []
