@@ -45,16 +45,22 @@ asarUnpack:
   - node_modules/@huggingface/**
   - node_modules/better-sqlite3/**
   - node_modules/onnxruntime-node/**
+  - node_modules/officeparser/**
 
 # ASAR 压缩优化
 asar: true
-compression: maximum  # 最大压缩以减小体积
+compression: normal  # 普通压缩，显著提升打包速度
 
 # Windows 配置
 win:
   executableName: ZhiHui
   icon: build/icon.ico
   requestedExecutionLevel: asInvoker
+  # 代码签名配置（生产环境需要配置证书）
+  # certificateFile: ./path/to/certificate.pfx
+  # certificatePassword: ${CERT_PASSWORD}
+  # signAndEditExecutable: true
+  # signingHashAlgorithms: ['sha256', 'sha512']
   target:
     - target: nsis
       arch:
@@ -104,4 +110,4 @@ npmRebuild: false
 # 发布配置
 publish:
   provider: generic
-  url: https://example.com/auto-updates
+  url: http://8.130.79.130:9099

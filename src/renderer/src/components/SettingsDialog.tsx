@@ -18,8 +18,9 @@ import {
   Col,
   Tabs
 } from 'antd'
-import { ApiOutlined, RobotOutlined, KeyOutlined, SettingOutlined, ToolOutlined } from '@ant-design/icons'
+import { ApiOutlined, RobotOutlined, KeyOutlined, SettingOutlined, ToolOutlined, CloudDownloadOutlined } from '@ant-design/icons'
 import type { AppSettings, ModelProvider, EmbeddingProvider } from '../types/chat'
+import UpdateChecker from './UpdateChecker'
 
 interface SettingsDialogProps {
   isOpen: boolean
@@ -398,6 +399,20 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
                       过滤低质量结果的阈值。值越高结果越精准但可能遗漏，值越低召回越多但可能有噪声。
                     </Typography.Text>
                   </div>
+                </>
+              )
+            },
+            {
+              key: 'update',
+              label: (
+                <span>
+                  <CloudDownloadOutlined />
+                  更新检查
+                </span>
+              ),
+              children: (
+                <>
+                  <UpdateChecker />
                 </>
               )
             }

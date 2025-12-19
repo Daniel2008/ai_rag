@@ -190,7 +190,79 @@ const api = {
       context?: string
       metadata?: Record<string, unknown>
     }>
-  > => ipcRenderer.invoke('metrics:getRecent', count)
+  > => ipcRenderer.invoke('metrics:getRecent', count),
+
+  // Update Service APIs
+  checkForUpdates: (): Promise<{ success: boolean }> => ipcRenderer.invoke('update:check'),
+  downloadUpdate: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('update:download'),
+  installUpdate: (): Promise<{ success: boolean }> => ipcRenderer.invoke('update:install'),
+  getUpdateStatus: (): Promise<{
+    isChecking: boolean
+    isDownloading: boolean
+    isDownloaded: boolean
+    availableVersion?: string
+    currentVersion: string
+    error?: string
+    progress?: {
+      percent: number
+      bytesPerSecond: number
+      total: number
+      transferred: number
+    }
+  }> => ipcRenderer.invoke('update:getStatus'),
+  forceCheckUpdateDev: (): Promise<{ success: boolean; message?: string }> =>
+    ipcRenderer.invoke('update:forceCheckDev'),
+  onUpdateAvailable: (callback: (info: { version: string; releaseNotes?: string; releaseDate?: string }) => void): void => {
+    ipcRenderer.removeAllListeners('update-available')
+    ipcRenderer.on('update-available', (_, info) => callback(info))
+  },
+  onUpdateNotAvailable: (callback: (info: { currentVersion: string }) => void): void => {
+    ipcRenderer.removeAllListeners('update-not-available')
+    ipcRenderer.on('update-not-available', (_, info) => callback(info))
+  },
+  onDownloadProgress: (callback: (progress: {
+    percent: number
+    bytesPerSecond: number
+    total: number
+    transferred: number
+  }) => void): void => {
+    ipcRenderer.removeAllListeners('download-progress')
+    ipcRenderer.on('download-progress', (_, progress) => callback(progress))
+  },
+  onUpdateDownloaded: (callback: (info: { version: string }) => void): void => {
+    ipcRenderer.removeAllListeners('update-downloaded')
+    ipcRenderer.on('update-downloaded', (_, info) => callback(info))
+  },
+  onUpdateError: (callback: (error: { error: string }) => void): void => {
+    ipcRenderer.removeAllListeners('update-error')
+    ipcRenderer.on('update-error', (_, error) => callback(error))
+  },
+  removeAllUpdateListeners: (): void => {
+    ipcRenderer.removeAllListeners('update-available')
+    ipcRenderer.removeAllListeners('update-not-available')
+    ipcRenderer.removeAllListeners('download-progress')
+    ipcRenderer.removeAllListeners('update-downloaded')
+    ipcRenderer.removeAllListeners('update-error')
+    ipcRenderer.removeAllListeners('update-status-changed')
+  },
+  onUpdateStatusChanged: (callback: (status: {
+    isChecking: boolean
+    isDownloading: boolean
+    isDownloaded: boolean
+    availableVersion?: string
+    currentVersion: string
+    error?: string
+    progress?: {
+      percent: number
+      bytesPerSecond: number
+      total: number
+      transferred: number
+    }
+  }) => void): void => {
+    ipcRenderer.removeAllListeners('update-status-changed')
+    ipcRenderer.on('update-status-changed', (_, status) => callback(status))
+  }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

@@ -64,6 +64,15 @@ import { logger } from './utils/logger'
 import { runLangGraphChat } from './rag/langgraphChat'
 import { getSettings, saveSettings, AppSettings } from './settings'
 import {
+  initializeAutoUpdater,
+  checkForUpdates,
+  downloadUpdate,
+  installUpdateAndQuit,
+  setUpdateWindow,
+  getUpdateStatus,
+  forceCheckUpdate
+} from './utils/updateService'
+import {
   getKnowledgeBaseSnapshot,
   removeIndexedFileRecord,
   upsertIndexedFileRecord,
@@ -149,6 +158,9 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('Failed to initialize LanceDB:', error)
   }
+
+  // Initialize auto update service
+  initializeAutoUpdater()
 
   // Default open or close DevTools by F12 in development
   app.on('browser-window-created', (_, window) => {
@@ -863,6 +875,40 @@ app.whenReady().then(async () => {
     return { content, sources: result.sources }
   })
 
+  // Update Service IPC
+  ipcMain.handle('update:check', async () => {
+    setUpdateWindow(mainWindow)
+    await checkForUpdates(true)
+    return { success: true }
+  })
+
+  ipcMain.handle('update:download', async () => {
+    try {
+      await downloadUpdate()
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('update:install', () => {
+    installUpdateAndQuit()
+    return { success: true }
+  })
+
+  ipcMain.handle('update:getStatus', () => {
+    return getUpdateStatus()
+  })
+
+  // 开发环境下的强制更新检查（调试用）
+  ipcMain.handle('update:forceCheckDev', async () => {
+    if (process.env.NODE_ENV === 'development') {
+      await forceCheckUpdate()
+      return { success: true }
+    }
+    return { success: false, message: '仅在开发环境可用' }
+  })
+
   // Settings IPC
   ipcMain.handle('settings:get', () => {
     return getSettings()
@@ -931,6 +977,9 @@ app.whenReady().then(async () => {
 
   mainWindow = createWindow()
 
+  // 设置更新窗口
+  setUpdateWindow(mainWindow)
+
   // 监听窗口最大化状态变化
   mainWindow.on('maximize', () => {
     mainWindow?.webContents.send('window:maximized-changed', true)
@@ -941,6 +990,7 @@ app.whenReady().then(async () => {
   })
 
   mainWindow.on('closed', () => {
+    setUpdateWindow(null)
     mainWindow = null
   })
 

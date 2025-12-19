@@ -150,6 +150,51 @@ declare global {
           metadata?: Record<string, unknown>
         }>
       >
+
+      // Update Service APIs
+      checkForUpdates: () => Promise<{ success: boolean }>
+      downloadUpdate: () => Promise<{ success: boolean; error?: string }>
+      installUpdate: () => Promise<{ success: boolean }>
+      getUpdateStatus: () => Promise<{
+        isChecking: boolean
+        isDownloading: boolean
+        isDownloaded: boolean
+        availableVersion?: string
+        currentVersion: string
+        error?: string
+        progress?: {
+          percent: number
+          bytesPerSecond: number
+          total: number
+          transferred: number
+        }
+      }>
+      forceCheckUpdateDev: () => Promise<{ success: boolean; message?: string }>
+      onUpdateAvailable: (callback: (info: { version: string; releaseNotes?: string; releaseDate?: string }) => void) => (() => void) | void
+      onUpdateNotAvailable: (callback: (info: { currentVersion: string }) => void) => (() => void) | void
+      onDownloadProgress: (callback: (progress: {
+        percent: number
+        bytesPerSecond: number
+        total: number
+        transferred: number
+      }) => void) => (() => void) | void
+      onUpdateDownloaded: (callback: (info: { version: string }) => void) => (() => void) | void
+      onUpdateError: (callback: (error: { error: string }) => void) => (() => void) | void
+      removeAllUpdateListeners: () => void
+      onUpdateStatusChanged: (callback: (status: {
+        isChecking: boolean
+        isDownloading: boolean
+        isDownloaded: boolean
+        availableVersion?: string
+        currentVersion: string
+        error?: string
+        progress?: {
+          percent: number
+          bytesPerSecond: number
+          total: number
+          transferred: number
+        }
+      }) => void) => (() => void) | void
     }
   }
 }

@@ -9,6 +9,7 @@ import { getTheme } from './theme'
 import type { AppSettings } from '../../types/chat'
 import { ChatSidebar, WelcomeScreen, ChatArea, ChatInput, CollectionModal } from './components/chat'
 import { GlobalProgress } from './components/GlobalProgress'
+import { UpdateNotification } from './components/UpdateNotification'
 import { useConversations, useChatWithXChat, useKnowledgeBase, useProgress } from './hooks'
 import type { DocumentCollection } from './types/files'
 
@@ -633,6 +634,9 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             onClick={() => setShowKnowledgeBase((v) => !v)}
           />
         </FloatButton.Group>
+
+        {/* 更新通知组件 - 显示在右上角 */}
+        <UpdateNotification />
       </div>
     </div>
   )

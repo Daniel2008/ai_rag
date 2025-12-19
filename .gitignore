@@ -9,3 +9,6 @@ out
 .electron-builder-cache
 node_modules/.vite
 .cache
+.idea
+.vscode
+.github
