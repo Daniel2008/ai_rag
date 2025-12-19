@@ -63,6 +63,10 @@ function optimizeStageDescription(stage: string): string {
     return stage
   }
 
+  if (stage.startsWith('Still downloading model')) {
+    return '模型下载中...'
+  }
+
   return stage
 }
 
@@ -106,14 +110,33 @@ export function useProgress(): UseProgressReturn {
       pendingProgressRef.current = null
 
       const now = Date.now()
+      const lastDisplayed = lastDisplayedRef.current
+      const taskType = newProgress?.taskType
+      const rawPercent = newProgress?.percent
+      const basePercent =
+        typeof rawPercent === 'number' && Number.isFinite(rawPercent)
+          ? rawPercent
+          : taskType && taskType === lastDisplayed.taskType && lastDisplayed.percent >= 0
+            ? lastDisplayed.percent
+            : 0
+      const nextPercent = Math.max(
+        0,
+        Math.min(
+          100,
+          taskType && taskType === lastDisplayed.taskType && lastDisplayed.percent >= 0
+            ? Math.max(basePercent, lastDisplayed.percent)
+            : basePercent
+        )
+      )
+
       lastDisplayedRef.current = {
         time: now,
-        percent: newProgress?.percent || 0,
+        percent: newProgress ? nextPercent : 0,
         stage: newProgress?.stage || '',
         taskType: newProgress?.taskType
       }
 
-      setProgress(newProgress)
+      setProgress(newProgress ? { ...newProgress, percent: nextPercent } : null)
     },
     [clearAllTimers]
   )
@@ -141,16 +164,31 @@ export function useProgress(): UseProgressReturn {
         return
       }
 
-      const newPercent = Math.max(0, Math.min(100, newProgress.percent || 0))
+      const newPercentRaw =
+        typeof newProgress.percent === 'number' && Number.isFinite(newProgress.percent)
+          ? newProgress.percent
+          : 0
+      const newPercent = Math.max(0, Math.min(100, newPercentRaw))
       const lastDisplayed = lastDisplayedRef.current
       const timeSinceLastUpdate = now - lastDisplayed.time
-      const percentChange = Math.abs(newPercent - lastDisplayed.percent)
-      const stageChanged = newProgress.stage !== lastDisplayed.stage
       const taskTypeChanged = newProgress.taskType !== lastDisplayed.taskType
+      const monotonicPercent = taskTypeChanged
+        ? newPercent
+        : lastDisplayed.percent >= 0
+          ? Math.max(newPercent, lastDisplayed.percent)
+          : newPercent
+      const percentChange = monotonicPercent - lastDisplayed.percent
+      const isNoisyStage = (s: string) =>
+        s.startsWith('下载中:') ||
+        s.startsWith('正在生成向量') ||
+        s.startsWith('Still downloading model')
+      const stageChanged =
+        newProgress.stage !== lastDisplayed.stage &&
+        !(isNoisyStage(newProgress.stage) && isNoisyStage(lastDisplayed.stage))
 
       // 首次显示立即更新
       if (lastDisplayed.percent < 0) {
-        updateProgressImmediate({ ...newProgress, percent: newPercent })
+        updateProgressImmediate({ ...newProgress, percent: monotonicPercent })
         return
       }
 
@@ -162,10 +200,10 @@ export function useProgress(): UseProgressReturn {
         timeSinceLastUpdate >= BATCH_INTERVAL_MS * 2
 
       if (shouldUpdateNow) {
-        updateProgressImmediate({ ...newProgress, percent: newPercent })
+        updateProgressImmediate({ ...newProgress, percent: monotonicPercent })
       } else {
         // 保存待处理的更新
-        pendingProgressRef.current = { ...newProgress, percent: newPercent }
+        pendingProgressRef.current = { ...newProgress, percent: monotonicPercent }
 
         if (!batchTimerRef.current) {
           const delay = Math.max(
@@ -182,8 +220,10 @@ export function useProgress(): UseProgressReturn {
 
               const currentDisplayed = lastDisplayedRef.current
               const finalPercent = pending.percent || 0
-              const finalPercentChange = Math.abs(finalPercent - currentDisplayed.percent)
-              const finalStageChanged = pending.stage !== currentDisplayed.stage
+              const finalPercentChange = finalPercent - currentDisplayed.percent
+              const finalStageChanged =
+                pending.stage !== currentDisplayed.stage &&
+                !(isNoisyStage(pending.stage) && isNoisyStage(currentDisplayed.stage))
 
               if (finalPercentChange >= 1 || finalStageChanged) {
                 updateProgressImmediate(pending)
@@ -277,7 +317,14 @@ export function useProgress(): UseProgressReturn {
         const rawStage = progressData.stage || progressData.message || '正在处理模型...'
         const stage = optimizeStageDescription(rawStage)
         const taskType = progressData.taskType || 'model_download'
-        const percent = progressData.percent || progressData.progress || 0
+        const rawPercent = progressData.percent ?? progressData.progress
+        const percent =
+          typeof rawPercent === 'number' && Number.isFinite(rawPercent)
+            ? rawPercent
+            : lastDisplayedRef.current.taskType === taskType &&
+                lastDisplayedRef.current.percent >= 0
+              ? lastDisplayedRef.current.percent
+              : 0
         const isError = progressData.status === 'error'
         const isCompleted = progressData.status === 'completed' || progressData.status === 'ready'
 

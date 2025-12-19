@@ -6,7 +6,7 @@ import path from 'path'
 import fs from 'fs'
 import fsPromises from 'fs/promises'
 import { RAG_CONFIG } from '../../utils/config'
-import { logDebug, logInfo, logWarn } from '../../utils/logger'
+import { logDebug, logInfo, logWarn, logError } from '../../utils/logger'
 import { getEmbeddings } from './embeddings'
 
 export const TABLE_NAME = 'documents'
@@ -114,28 +114,60 @@ export async function ensureTableWithDocuments(
         table = await conn.openTable(TABLE_NAME)
       }
 
+      // 准备要插入的数据
+      const schema = await table.schema()
+      const existingColumns = schema.fields.map((f) => f.name)
+      logDebug('Existing table columns', 'VectorStore', { existingColumns })
+
       // 生成向量嵌入
       const texts = docs.map((d) => d.pageContent)
       const vectors = await embeddings.embedDocuments(texts)
 
-      // 准备要插入的数据
-      const records = docs.map((doc, i) => ({
-        vector: vectors[i],
-        text: doc.pageContent,
-        source: doc.metadata?.source ?? null,
-        tags: doc.metadata?.tags ?? [],
-        fileName: doc.metadata?.fileName ?? null,
-        fileType: doc.metadata?.fileType ?? null,
-        pageNumber: doc.metadata?.pageNumber ?? null,
-        position: doc.metadata?.position ?? null,
-        sourceType: doc.metadata?.sourceType ?? null,
-        importedAt: doc.metadata?.importedAt ?? null,
-        chunkIndex: doc.metadata?.chunkIndex ?? null,
-        blockTypes: doc.metadata?.blockTypes ?? [],
-        hasHeading: doc.metadata?.hasHeading ?? false,
-        headingText: doc.metadata?.headingText ?? '',
-        chunkingStrategy: doc.metadata?.chunkingStrategy ?? null
-      }))
+      const records = docs.map((doc, i) => {
+        const record: Record<string, unknown> = {
+          vector: vectors[i],
+          text: doc.pageContent
+        }
+
+        // 映射元数据到顶层列（如果列存在）
+        const metadataFields = [
+          'source',
+          'tags',
+          'fileName',
+          'fileType',
+          'pageNumber',
+          'position',
+          'sourceType',
+          'importedAt',
+          'chunkIndex',
+          'blockTypes',
+          'hasHeading',
+          'headingText',
+          'chunkingStrategy'
+        ]
+
+        for (const field of metadataFields) {
+          if (existingColumns.includes(field)) {
+            const value = doc.metadata?.[field]
+            if (field === 'tags' || field === 'blockTypes') {
+              record[field] = Array.isArray(value) ? value : []
+            } else if (field === 'hasHeading') {
+              record[field] = !!value
+            } else if (field === 'headingText') {
+              record[field] = value ?? ''
+            } else {
+              record[field] = value ?? null
+            }
+          }
+        }
+
+        // 保持对 LangChain metadata 列的兼容（如果存在）
+        if (existingColumns.includes('metadata')) {
+          record.metadata = doc.metadata
+        }
+
+        return record
+      })
 
       // 使用 LanceDB 原生 add 方法追加数据
       await (table as unknown as { add: (data: unknown[]) => Promise<void> }).add(records)
@@ -154,12 +186,30 @@ export async function ensureTableWithDocuments(
       return vectorStore
     } catch (appendError) {
       logWarn(
-        'Failed to append documents via native add, falling back to recreate',
+        'Failed to append documents via native add, trying LangChain fallback',
         'VectorStore',
         undefined,
         appendError as Error
       )
-      // 追加失败，回退到重建模式
+
+      // 尝试使用 LangChain 的 addDocuments 作为备选方案
+      try {
+        if (!vectorStore) {
+          if (!table) table = await conn.openTable(TABLE_NAME)
+          vectorStore = new LanceDBCtor!(embeddings, { table })
+        }
+        await vectorStore.addDocuments(docs)
+        logInfo(`Appended ${docs.length} documents via LangChain addDocuments`, 'VectorStore')
+        return vectorStore
+      } catch (lcError) {
+        logError(
+          'LangChain addDocuments also failed, falling back to recreate',
+          'VectorStore',
+          undefined,
+          lcError as Error
+        )
+        // 最终失败，回退到重建模式
+      }
     }
   }
 
@@ -170,21 +220,40 @@ export async function ensureTableWithDocuments(
     appendMode
   })
 
+  // 这里的逻辑也需要改进：如果是为了修复架构而重建，应该确保包含所有字段
+  // 生成向量嵌入
+  const texts = docs.map((d) => d.pageContent)
+  const vectors = await embeddings.embedDocuments(texts)
+
+  const fullRecords = docs.map((doc, i) => ({
+    vector: vectors[i],
+    text: doc.pageContent,
+    metadata: doc.metadata, // 必须包含 metadata 以保持 LangChain 兼容性
+    source: doc.metadata?.source ?? null,
+    tags: doc.metadata?.tags ?? [],
+    fileName: doc.metadata?.fileName ?? null,
+    fileType: doc.metadata?.fileType ?? null,
+    pageNumber: doc.metadata?.pageNumber ?? null,
+    position: doc.metadata?.position ?? null,
+    sourceType: doc.metadata?.sourceType ?? null,
+    importedAt: doc.metadata?.importedAt ?? null,
+    chunkIndex: doc.metadata?.chunkIndex ?? null,
+    blockTypes: doc.metadata?.blockTypes ?? [],
+    hasHeading: doc.metadata?.hasHeading ?? false,
+    headingText: doc.metadata?.headingText ?? '',
+    chunkingStrategy: doc.metadata?.chunkingStrategy ?? null
+  }))
+
   await loadLanceModules()
-  const store = await LanceDBCtor!.fromDocuments(docs, embeddings, {
-    uri: dbPath,
-    tableName: TABLE_NAME
-  })
 
+  // 使用原生 createTable 确保包含所有我们想要的列
+  if (!db) db = await connectFn!(dbPath)
   const conn2 = db as Connection
-  const newTableNames = await conn2.tableNames()
-  if (newTableNames.includes(TABLE_NAME)) {
-    table = await conn2.openTable(TABLE_NAME)
-    await createVectorIndexIfNeeded(table)
-  }
+  table = await conn2.createTable(TABLE_NAME, fullRecords, { mode: 'overwrite' })
+  await createVectorIndexIfNeeded(table)
 
-  vectorStore = store
-  return store
+  vectorStore = new LanceDBCtor!(embeddings, { table })
+  return vectorStore
 }
 
 export async function initVectorStore(): Promise<void> {

@@ -39,7 +39,7 @@ export class HybridSearcher {
     this.config = {
       vectorWeight: 0.7,
       keywordWeight: 0.3,
-      rerank: config.rerank ?? settings.rag?.useRerank ?? true,
+      rerank: config.rerank ?? settings.rag?.useRerank ?? false,
       multiQuery: config.multiQuery ?? settings.rag?.useMultiQuery ?? false,
       topK: 10,
       minScore: 0.1,

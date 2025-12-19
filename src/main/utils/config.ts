@@ -25,7 +25,7 @@ export const RAG_CONFIG = {
 
   // 重排序配置
   RERANK: {
-    ENABLED: true,
+    ENABLED: false,
     MODEL: 'bge-reranker-base', // 默认重排序模型
     TOP_K: 5, // 重排序后保留的数量
     BATCH_SIZE: 16,

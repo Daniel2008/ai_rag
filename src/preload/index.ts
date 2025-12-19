@@ -139,8 +139,12 @@ const api = {
     callback: (progress: {
       status: 'downloading' | 'loading' | 'ready' | 'completed' | 'processing' | 'error'
       progress?: number
+      percent?: number
       file?: string
+      fileName?: string
       message?: string
+      stage?: string
+      taskType?: string
     }) => void
   ): void => {
     ipcRenderer.removeAllListeners('embedding:progress')

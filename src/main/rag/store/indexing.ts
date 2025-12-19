@@ -8,7 +8,6 @@ import { getEmbeddings } from './embeddings'
 import {
   ensureTableWithDocuments,
   initVectorStore,
-  resetVectorStore,
   TABLE_NAME,
   db,
   table,
@@ -77,12 +76,13 @@ export async function addDocumentsToStore(
     clearBM25Cache()
   } catch (error) {
     logError(
-      'Failed to add documents, trying to recreate table',
+      'Failed to add documents, attempting to recover by recreating table (existing data will be lost)',
       'VectorStore',
       undefined,
       error as Error
     )
-    await resetVectorStore()
+    // 注意：这里不再调用 resetVectorStore()，以避免删除整个数据库目录
+    // ensureTableWithDocuments(docs, false) 会使用 overwrite 模式重建表
     const store = await ensureTableWithDocuments(docs, false)
     setVectorStore(store)
     onProgress?.(createCompletedMessage(TaskType.INDEX_REBUILD, '索引完成（已重建）'))

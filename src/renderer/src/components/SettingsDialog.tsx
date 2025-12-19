@@ -99,7 +99,7 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
           searchLimit: current.rag?.searchLimit ?? 6,
           maxSearchLimit: current.rag?.maxSearchLimit ?? 30,
           minRelevance: current.rag?.minRelevance ?? 0.25,
-          useRerank: current.rag?.useRerank ?? true,
+          useRerank: current.rag?.useRerank ?? false,
           useMultiQuery: current.rag?.useMultiQuery ?? false,
           useWebSearch: current.rag?.useWebSearch ?? false,
           tavilyApiKey: current.rag?.tavilyApiKey ?? ''

@@ -960,10 +960,20 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:save', async (event, settings: Partial<AppSettings>) => {
     const oldSettings = getSettings()
     saveSettings(settings)
+    const newSettings = getSettings()
+
+    const rerankEnabledBefore = oldSettings.rag?.useRerank ?? false
+    const rerankEnabledAfter = newSettings.rag?.useRerank ?? false
+    if (!rerankEnabledBefore && rerankEnabledAfter) {
+      import('./rag/localReranker')
+        .then(({ initLocalReranker }) => initLocalReranker())
+        .catch((error) => {
+          console.error('Failed to init local reranker after enabling setting:', error)
+        })
+    }
 
     // 如果嵌入模型设置变化，清除缓存并通知用户
     if (settings.embeddingProvider !== undefined || settings.embeddingModel !== undefined) {
-      const newSettings = getSettings()
       const embeddingChanged =
         oldSettings.embeddingProvider !== newSettings.embeddingProvider ||
         oldSettings.embeddingModel !== newSettings.embeddingModel

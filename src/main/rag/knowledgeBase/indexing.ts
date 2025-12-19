@@ -133,7 +133,7 @@ async function incrementalUpdateVectorStore(
   for (const record of records) {
     try {
       let needsUpdate = false
-      let stats: any = null
+      let stats: import('fs').Stats | null = null
 
       if (record.sourceType === 'file') {
         try {
@@ -177,12 +177,13 @@ async function incrementalUpdateVectorStore(
           }
         } else {
           docs = await loadAndSplitFileInWorker(record.path)
+          const fileSize = stats?.size ?? record.size
           newRecord = {
             ...record,
             chunkCount: docs.length,
             preview: docs[0]?.pageContent.slice(0, 160) ?? record.preview,
             updatedAt: Date.now(),
-            size: stats.size
+            size: fileSize
           }
         }
 

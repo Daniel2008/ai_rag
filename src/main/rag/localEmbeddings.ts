@@ -230,6 +230,27 @@ export async function initLocalEmbeddings(
           console.warn(
             `模型文件可能已损坏 (${errorMessage}), 正在尝试第 ${retryCount} 次重新下载...`
           )
+
+          // 尝试清理损坏的模型目录
+          try {
+            const modelsPath = getModelsPath()
+            // 常见的缓存目录结构处理
+            const modelDirName = modelId.replace('/', path.sep)
+            const modelFullPath = path.join(modelsPath, modelDirName)
+            const modelLegacyPath = path.join(modelsPath, modelId.replace('/', '--'))
+
+            if (fs.existsSync(modelFullPath)) {
+              console.log(`正在清理损坏的模型目录: ${modelFullPath}`)
+              fs.rmSync(modelFullPath, { recursive: true, force: true })
+            }
+            if (fs.existsSync(modelLegacyPath)) {
+              console.log(`正在清理旧版格式的模型目录: ${modelLegacyPath}`)
+              fs.rmSync(modelLegacyPath, { recursive: true, force: true })
+            }
+          } catch (cleanupError) {
+            console.error('清理损坏模型目录失败:', cleanupError)
+          }
+
           currentProgressCallback?.({
             status: ProgressStatus.DOWNLOADING,
             message: `模型文件可能已损坏，正在尝试重新下载 (${retryCount}/${maxRetries})...`,

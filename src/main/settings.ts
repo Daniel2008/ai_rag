@@ -47,7 +47,7 @@ const defaults: AppSettings = {
     searchLimit: 6,
     maxSearchLimit: 30,
     minRelevance: 0.25,
-    useRerank: true,
+    useRerank: false,
     useMultiQuery: false,
     useWebSearch: false,
     tavilyApiKey: ''
@@ -151,6 +151,16 @@ export function saveSettings(settings: Partial<AppSettings>): void {
         const existing = store.get('rag')
         const merged = { ...defaults.rag, ...(existing ?? {}), ...(value as Partial<RagSettings>) }
         store.set('rag', normalizeRagSettings(merged, defaults.rag))
+      } else if (
+        typeof value === 'object' &&
+        value !== null &&
+        ['openai', 'anthropic', 'deepseek', 'zhipu', 'moonshot', 'ollama'].includes(key)
+      ) {
+        // 自动修剪 API Key 和 Base URL 的空格
+        const config = { ...(value as Record<string, any>) }
+        if (typeof config.apiKey === 'string') config.apiKey = config.apiKey.trim()
+        if (typeof config.baseUrl === 'string') config.baseUrl = config.baseUrl.trim()
+        store.set(key as keyof AppSettings, config)
       } else {
         store.set(key as keyof AppSettings, value)
       }

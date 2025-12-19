@@ -32,9 +32,10 @@ export function createChatModel(provider?: ModelProvider): BaseChatModel {
     }
     case 'openai': {
       const config = settings.openai
+      const baseUrl = config.baseUrl?.trim()
       console.log(`[ChatModel] OpenAI config:`, {
         hasApiKey: !!config.apiKey,
-        baseUrl: config.baseUrl,
+        baseUrl: baseUrl,
         model: config.chatModel
       })
       if (!config.apiKey) {
@@ -42,7 +43,7 @@ export function createChatModel(provider?: ModelProvider): BaseChatModel {
       }
       return new ChatOpenAI({
         apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
+        configuration: { baseURL: baseUrl },
         model: config.chatModel
       }) as unknown as BaseChatModel
     }
@@ -53,16 +54,17 @@ export function createChatModel(provider?: ModelProvider): BaseChatModel {
       }
       return new ChatAnthropic({
         anthropicApiKey: config.apiKey,
-        anthropicApiUrl: config.baseUrl,
+        anthropicApiUrl: config.baseUrl?.trim(),
         model: config.chatModel
       }) as unknown as BaseChatModel
     }
     case 'deepseek': {
       const config = settings.deepseek
+      const baseUrl = config.baseUrl?.trim()
       console.log(`[ChatModel] DeepSeek config:`, {
         hasApiKey: !!config.apiKey,
         apiKeyLength: config.apiKey?.length,
-        baseUrl: config.baseUrl,
+        baseUrl: baseUrl,
         model: config.chatModel
       })
       if (!config.apiKey) {
@@ -70,7 +72,7 @@ export function createChatModel(provider?: ModelProvider): BaseChatModel {
       }
       return new ChatOpenAI({
         apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
+        configuration: { baseURL: baseUrl },
         model: config.chatModel
       }) as unknown as BaseChatModel
     }
@@ -81,7 +83,7 @@ export function createChatModel(provider?: ModelProvider): BaseChatModel {
       }
       return new ChatOpenAI({
         apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
+        configuration: { baseURL: config.baseUrl?.trim() },
         model: config.chatModel
       }) as unknown as BaseChatModel
     }
@@ -92,7 +94,7 @@ export function createChatModel(provider?: ModelProvider): BaseChatModel {
       }
       return new ChatOpenAI({
         apiKey: config.apiKey,
-        configuration: { baseURL: config.baseUrl },
+        configuration: { baseURL: config.baseUrl?.trim() },
         model: config.chatModel
       }) as unknown as BaseChatModel
     }

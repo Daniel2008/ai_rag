@@ -29,6 +29,7 @@ interface GlobalProgressProps {
 /** 任务类型枚举（与后端保持一致） */
 const TaskTypeMap = {
   MODEL_DOWNLOAD: 'model_download',
+  RERANKER_DOWNLOAD: 'reranker_download',
   DOCUMENT_PARSE: 'document_parse',
   DOCUMENT_SPLIT: 'document_split',
   EMBEDDING_GENERATION: 'embedding_generation',
@@ -50,6 +51,7 @@ function getTaskIcon(taskType?: string, isError?: boolean): ReactElement {
     case 'completed':
       return <CheckCircleOutlined />
     case TaskTypeMap.MODEL_DOWNLOAD:
+    case TaskTypeMap.RERANKER_DOWNLOAD:
     case 'downloading':
       return <CloudDownloadOutlined />
     case TaskTypeMap.DOCUMENT_PARSE:
@@ -77,6 +79,7 @@ function getTaskIcon(taskType?: string, isError?: boolean): ReactElement {
 /** 任务标题映射 */
 const TASK_TITLES: Record<string, string> = {
   [TaskTypeMap.MODEL_DOWNLOAD]: '下载嵌入模型',
+  [TaskTypeMap.RERANKER_DOWNLOAD]: '下载重排序模型',
   [TaskTypeMap.DOCUMENT_PARSE]: '解析文档',
   [TaskTypeMap.DOCUMENT_SPLIT]: '分割文档',
   [TaskTypeMap.EMBEDDING_GENERATION]: '生成向量',

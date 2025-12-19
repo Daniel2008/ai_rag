@@ -13,6 +13,7 @@ import { ProgressMessage, ProgressStatus, TaskType } from '../rag/progressTypes'
 /** 任务类型的用户友好名称 */
 const TASK_TYPE_LABELS: Record<string, string> = {
   [TaskType.MODEL_DOWNLOAD]: '下载嵌入模型',
+  [TaskType.RERANKER_DOWNLOAD]: '下载重排序模型',
   [TaskType.DOCUMENT_PARSE]: '解析文档',
   [TaskType.DOCUMENT_SPLIT]: '分割文档',
   [TaskType.EMBEDDING_GENERATION]: '生成向量',

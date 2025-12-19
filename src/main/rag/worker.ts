@@ -1,5 +1,11 @@
 import { parentPort } from 'worker_threads'
 import type { FeatureExtractionPipeline } from '@huggingface/transformers'
+import fs from 'fs'
+import path from 'path'
+import crypto from 'crypto'
+import { Readable } from 'stream'
+import http from 'http'
+import https from 'https'
 
 import { loadAndSplitFile } from './loader'
 import { ProgressStatus, TaskType } from './progressTypes'
@@ -38,9 +44,11 @@ export interface ProgressMessage {
  */
 export type ProgressCallback = (progress: ProgressMessage) => void
 
+type TransformersModule = typeof import('@huggingface/transformers')
+
 // Lazy load variables
-let pipeline: any
-let env: any
+let pipeline: TransformersModule['pipeline'] | undefined
+let env: TransformersModule['env'] | undefined
 
 // Helper to ensure transformers is loaded and configured
 async function ensureTransformers() {
@@ -70,19 +78,401 @@ const HF_MIRROR = 'https://hf-mirror.com'
 
 // Patch global fetch to add timeout, logging and retry mechanism
 const originalFetch = global.fetch
+const inFlightLargeDownloads = new Map<string, Promise<string>>()
+const parallelHandledFiles = new Set<string>()
+const httpAgent = new http.Agent({ keepAlive: true })
+const httpsAgent = new https.Agent({ keepAlive: true })
+
+type DownloadProgressEvent = {
+  status: 'initiate' | 'download' | 'done'
+  file: string
+  loaded?: number
+  total?: number
+  _source?: 'parallel'
+}
+
+let activeDownloadReporter: ((event: DownloadProgressEvent) => void) | null = null
+
+function getHeaderValue(headers: http.IncomingHttpHeaders, key: string): string | undefined {
+  const val = headers[key.toLowerCase()]
+  if (Array.isArray(val)) return val[0]
+  return val
+}
+
+function headersToRecord(input: Headers): Record<string, string> {
+  const out: Record<string, string> = {}
+  input.forEach((value, key) => {
+    out[key] = value
+  })
+  return out
+}
+
+async function httpGetBuffer(
+  urlStr: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+  extraHeaders: Record<string, string>,
+  maxRedirects: number = 5
+): Promise<{
+  statusCode: number
+  headers: http.IncomingHttpHeaders
+  body: Buffer
+  finalUrl: string
+}> {
+  let currentUrl = urlStr
+  for (let redirects = 0; redirects <= maxRedirects; redirects++) {
+    const u = new URL(currentUrl)
+    const isHttps = u.protocol === 'https:'
+    const mod = isHttps ? https : http
+
+    const baseHeaders = new Headers(init?.headers)
+    for (const [k, v] of Object.entries(extraHeaders)) baseHeaders.set(k, v)
+    const headers = headersToRecord(baseHeaders)
+
+    const result = await new Promise<{
+      statusCode: number
+      headers: http.IncomingHttpHeaders
+      body: Buffer
+    }>((resolve, reject) => {
+      if (init?.signal?.aborted) {
+        reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+        return
+      }
+
+      const req = mod.request(
+        {
+          protocol: u.protocol,
+          hostname: u.hostname,
+          port: u.port,
+          path: `${u.pathname}${u.search}`,
+          method: 'GET',
+          headers,
+          agent: isHttps ? httpsAgent : httpAgent
+        },
+        (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (chunk: Buffer) => chunks.push(chunk))
+          res.on('end', () => {
+            resolve({
+              statusCode: res.statusCode ?? 0,
+              headers: res.headers,
+              body: Buffer.concat(chunks)
+            })
+          })
+        }
+      )
+
+      const connectTimeoutId = setTimeout(
+        () => {
+          req.destroy(new Error(`connect_timeout_${timeoutMs}ms`))
+        },
+        Math.min(30000, timeoutMs)
+      )
+
+      req.on('socket', (socket) => {
+        const clear = () => clearTimeout(connectTimeoutId)
+        socket.once('connect', clear)
+        socket.once('secureConnect', clear)
+      })
+
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error(`request_timeout_${timeoutMs}ms`))
+      })
+
+      const abortHandler = () => {
+        req.destroy(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+      }
+      init?.signal?.addEventListener('abort', abortHandler, { once: true })
+
+      req.on('error', (err) => {
+        clearTimeout(connectTimeoutId)
+        init?.signal?.removeEventListener('abort', abortHandler)
+        reject(err)
+      })
+
+      req.on('close', () => {
+        clearTimeout(connectTimeoutId)
+        init?.signal?.removeEventListener('abort', abortHandler)
+      })
+
+      req.end()
+    })
+
+    const status = result.statusCode
+    if ([301, 302, 303, 307, 308].includes(status)) {
+      const location = getHeaderValue(result.headers, 'location')
+      if (!location) return { ...result, finalUrl: currentUrl }
+      currentUrl = new URL(location, currentUrl).toString()
+      continue
+    }
+
+    return { ...result, finalUrl: currentUrl }
+  }
+
+  throw new Error(`too_many_redirects: ${urlStr}`)
+}
+
+function getLargeDownloadCacheDir(): string {
+  const cacheDir = typeof env?.cacheDir === 'string' ? env.cacheDir : undefined
+  const root = cacheDir || process.cwd()
+  const dir = path.join(root, '.hf_parallel_cache')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function getLargeDownloadCachePath(urlStr: string): string {
+  const hash = crypto.createHash('sha1').update(urlStr).digest('hex')
+  let ext = ''
+  try {
+    const u = new URL(urlStr)
+    const e = path.extname(u.pathname)
+    if (e && e.length <= 16) ext = e
+  } catch (_e) {
+    ext = ''
+  }
+  return path.join(getLargeDownloadCacheDir(), `${hash}${ext}`)
+}
+
+async function downloadLargeFileWithRanges(
+  urlStr: string,
+  destPath: string,
+  fileName: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+  reporter: ((event: DownloadProgressEvent) => void) | null
+): Promise<boolean> {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  let totalSize = 0
+  for (let probeAttempt = 0; probeAttempt < 3; probeAttempt++) {
+    try {
+      const probe = await httpGetBuffer(urlStr, init, timeoutMs, { range: 'bytes=0-0' })
+      if (probe.statusCode !== 206) return false
+
+      const contentRange = getHeaderValue(probe.headers, 'content-range') || ''
+      const match = contentRange.match(/\/(\d+)\s*$/)
+      totalSize = match ? Number(match[1]) : NaN
+      if (!Number.isFinite(totalSize) || totalSize <= 0) return false
+      break
+    } catch (e) {
+      if (probeAttempt === 2) throw e
+      await sleep(500 * (probeAttempt + 1))
+    }
+  }
+
+  reporter?.({
+    status: 'initiate',
+    file: fileName,
+    loaded: 0,
+    total: totalSize,
+    _source: 'parallel'
+  })
+
+  const tmpPath = `${destPath}.part`
+  await fs.promises.mkdir(path.dirname(destPath), { recursive: true })
+
+  for (let fileAttempt = 0; fileAttempt < 2; fileAttempt++) {
+    const fileHandle = await fs.promises.open(tmpPath, 'w')
+    try {
+      await fileHandle.truncate(totalSize)
+      const chunkSize = 16 * 1024 * 1024
+      const concurrency = 3
+
+      const ranges: Array<{ start: number; end: number }> = []
+      for (let start = 0; start < totalSize; start += chunkSize) {
+        const end = Math.min(totalSize - 1, start + chunkSize - 1)
+        ranges.push({ start, end })
+      }
+
+      let downloadedBytes = 0
+      let lastReportAt = 0
+
+      let idx = 0
+      const runOne = async (): Promise<void> => {
+        while (idx < ranges.length) {
+          const current = ranges[idx++]
+          const rangeHeaders = new Headers(init?.headers)
+          rangeHeaders.set('Range', `bytes=${current.start}-${current.end}`)
+
+          let lastErr: unknown
+          for (let attempt = 0; attempt < 6; attempt++) {
+            try {
+              const extraHeaders = headersToRecord(rangeHeaders)
+              const resp = await httpGetBuffer(urlStr, init, timeoutMs, extraHeaders)
+              if (resp.statusCode !== 206) {
+                throw new Error(
+                  `Unexpected status ${resp.statusCode} for range ${current.start}-${current.end}`
+                )
+              }
+              await fileHandle.write(resp.body, 0, resp.body.length, current.start)
+              downloadedBytes += resp.body.length
+              const now = Date.now()
+              if (now - lastReportAt > 200 || downloadedBytes >= totalSize) {
+                lastReportAt = now
+                reporter?.({
+                  status: 'download',
+                  file: fileName,
+                  loaded: downloadedBytes,
+                  total: totalSize,
+                  _source: 'parallel'
+                })
+              }
+              lastErr = null
+              break
+            } catch (e) {
+              lastErr = e
+              const backoff = Math.min(5000, 250 * 2 ** attempt)
+              await sleep(backoff + Math.floor(Math.random() * 250))
+            }
+          }
+          if (lastErr) throw lastErr
+        }
+      }
+
+      const workers = Array.from({ length: Math.min(concurrency, ranges.length) }, () => runOne())
+      await Promise.all(workers)
+
+      await fileHandle.close()
+      await fs.promises.rename(tmpPath, destPath)
+      reporter?.({
+        status: 'done',
+        file: fileName,
+        loaded: totalSize,
+        total: totalSize,
+        _source: 'parallel'
+      })
+      return true
+    } catch (e) {
+      try {
+        await fileHandle.close()
+      } catch (closeErr) {
+        void closeErr
+      }
+      try {
+        await fs.promises.rm(tmpPath, { force: true })
+      } catch (rmErr) {
+        void rmErr
+      }
+      if (fileAttempt === 1) throw e
+      await sleep(1000 * (fileAttempt + 1))
+    }
+  }
+
+  return true
+}
+
+async function tryFetchLargeFileFromCache(
+  urlStr: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+  reporter: ((event: DownloadProgressEvent) => void) | null
+): Promise<Response | null> {
+  const method = (init?.method || 'GET').toUpperCase()
+  if (method !== 'GET') return null
+
+  let fileName = 'model'
+  try {
+    const u = new URL(urlStr)
+    fileName = decodeURIComponent(path.basename(u.pathname)) || fileName
+  } catch (_e) {
+    fileName = 'model'
+  }
+
+  const cachePath = getLargeDownloadCachePath(urlStr)
+  if (fs.existsSync(cachePath)) {
+    const stat = await fs.promises.stat(cachePath)
+    if (stat.size > 0) {
+      reporter?.({
+        status: 'done',
+        file: fileName,
+        loaded: stat.size,
+        total: stat.size,
+        _source: 'parallel'
+      })
+      const stream = Readable.toWeb(
+        fs.createReadStream(cachePath)
+      ) as unknown as ReadableStream<Uint8Array>
+      return new Response(stream, { headers: { 'content-length': String(stat.size) } })
+    }
+  }
+
+  let inFlight = inFlightLargeDownloads.get(urlStr)
+  if (!inFlight) {
+    parallelHandledFiles.add(fileName)
+    inFlight = (async () => {
+      const ok = await downloadLargeFileWithRanges(
+        urlStr,
+        cachePath,
+        fileName,
+        init,
+        timeoutMs,
+        reporter
+      )
+      if (!ok) throw new Error('range_not_supported')
+      return cachePath
+    })()
+    inFlightLargeDownloads.set(urlStr, inFlight)
+    inFlight.finally(() => {
+      inFlightLargeDownloads.delete(urlStr)
+    })
+  }
+
+  try {
+    const finishedPath = await inFlight
+    const stat = await fs.promises.stat(finishedPath)
+    if (stat.size <= 0) return null
+    const stream = Readable.toWeb(
+      fs.createReadStream(finishedPath)
+    ) as unknown as ReadableStream<Uint8Array>
+    return new Response(stream, { headers: { 'content-length': String(stat.size) } })
+  } catch (_e) {
+    return null
+  }
+}
+
+function buildFallbackUrls(urlStr: string): string[] {
+  const urls: string[] = [urlStr]
+  try {
+    const u = new URL(urlStr)
+    const host = u.hostname.toLowerCase()
+    let altHost: string | null = null
+    if (host === 'hf-mirror.com') altHost = 'huggingface.co'
+    else if (host === 'huggingface.co') altHost = 'hf-mirror.com'
+
+    if (altHost) {
+      const alt = new URL(urlStr)
+      alt.hostname = altHost
+      urls.push(alt.toString())
+    }
+  } catch (_e) {
+    return urls
+  }
+  return urls
+}
+
 global.fetch = async (url, init) => {
   const urlStr = url.toString()
-  const MAX_RETRIES = 3
-  const TIMEOUT = 60000 // 60 seconds
+  const candidateUrls = buildFallbackUrls(urlStr)
+  const isLargeModelFile =
+    /\/resolve\//.test(urlStr) && /\.(onnx|bin|safetensors|gguf|pt|pth|tar|zip)(\?|$)/i.test(urlStr)
+  const MAX_RETRIES = isLargeModelFile ? 5 : 3
+  const TIMEOUT = isLargeModelFile ? 600000 : 60000 // 10min for large model files, else 60s
 
   // Helper to sleep
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
   let lastError: Error | null = null
 
+  if (isLargeModelFile) {
+    for (const u of candidateUrls) {
+      const cached = await tryFetchLargeFileFromCache(u, init, TIMEOUT, activeDownloadReporter)
+      if (cached) return cached
+    }
+  }
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const controller = new AbortController()
-    const id = setTimeout(() => controller.abort(), TIMEOUT)
+    const controller = init?.signal ? null : new AbortController()
+    const timeoutId = controller ? setTimeout(() => controller.abort(), TIMEOUT) : null
 
     try {
       if (attempt > 0) {
@@ -90,20 +480,49 @@ global.fetch = async (url, init) => {
         await sleep(1000 * attempt) // Exponential backoff-ish
       }
 
-      const response = await originalFetch(url, {
+      const fetchUrl = candidateUrls[attempt % candidateUrls.length]
+      const response = await originalFetch(fetchUrl, {
         ...init,
-        signal: init?.signal || controller.signal
+        signal: init?.signal || controller?.signal
       })
-      clearTimeout(id)
+      if (timeoutId) clearTimeout(timeoutId)
 
-      // Treat server errors as retryable
-      if (!response.ok && response.status >= 500) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+      // Treat non-ok responses as errors so they don't get saved as corrupted files
+      if (!response.ok) {
+        const statusText = response.statusText || `Status ${response.status}`
+        console.error(`[FETCH] HTTP error for ${urlStr}: ${statusText}`)
+
+        // If it's a 404, it might be a missing file on the mirror or wrong path
+        if (response.status === 404) {
+          throw new Error(`Model file not found on mirror (404): ${urlStr}`)
+        }
+
+        throw new Error(`HTTP error! status: ${response.status} ${statusText}`)
+      }
+
+      // Check content-type to catch HTML error pages served with 200 OK (rare but possible)
+      const contentType = response.headers.get('content-type')
+      const contentLength = response.headers.get('content-length')
+      const isOnnx = urlStr.includes('.onnx')
+
+      if (contentType && contentType.includes('text/html') && isOnnx) {
+        console.error(`[FETCH] Received HTML instead of ONNX model for ${urlStr}`)
+        throw new Error(`Received HTML content instead of model file. Possible mirror/auth issue.`)
+      }
+
+      // Check for suspiciously small files for .onnx (usually error messages from proxy/CDN)
+      if (isOnnx && contentLength && parseInt(contentLength) < 10000) {
+        console.error(
+          `[FETCH] File too small for ONNX model (${contentLength} bytes) for ${urlStr}`
+        )
+        throw new Error(
+          `Downloaded file is too small to be a valid model (${contentLength} bytes).`
+        )
       }
 
       return response
     } catch (error) {
-      clearTimeout(id)
+      if (timeoutId) clearTimeout(timeoutId)
       lastError = error as Error
 
       const isAbort = lastError.name === 'AbortError'
@@ -112,7 +531,7 @@ global.fetch = async (url, init) => {
       } else {
         console.error(`[FETCH] Error for ${urlStr} (attempt ${attempt + 1}):`, lastError.message)
         // Check for specific error codes like ETIMEDOUT, ECONNRESET, etc.
-        const cause = (lastError as any).cause
+        const cause = (lastError as { cause?: unknown }).cause
         if (cause) {
           console.error(`[FETCH] Cause:`, cause)
         }
@@ -132,7 +551,11 @@ global.fetch = async (url, init) => {
 
 // Use the library's FeatureExtractionPipeline type directly
 let embeddingPipeline: FeatureExtractionPipeline | null = null
-let rerankPipeline: any | null = null
+type RerankPipeline = (
+  text: string,
+  options: { top_k?: number; text_pair: string }
+) => Promise<Array<{ score: number }>>
+let rerankPipeline: RerankPipeline | null = null
 
 // Helper function to map short model names to full Hugging Face model IDs
 function mapModelName(modelName: string): string {
@@ -158,6 +581,9 @@ parentPort.on('message', async (task) => {
   try {
     if (type === 'initEmbedding' || type === 'initReranker') {
       await ensureTransformers()
+      if (!env || !pipeline) {
+        throw new Error('Transformers not initialized')
+      }
       const { modelName, cacheDir } = payload
       if (cacheDir) {
         env.cacheDir = cacheDir
@@ -315,11 +741,12 @@ parentPort.on('message', async (task) => {
           const currentProgress = calculateProgress()
 
           // 确保进度只增不减
-          const finalProgress = Math.max(currentProgress, lastReportedGlobalProgress)
+          const isCompleted = status === ProgressStatus.COMPLETED
+          const rawFinalProgress = Math.max(currentProgress, lastReportedGlobalProgress)
+          const finalProgress = isCompleted ? 100 : Math.min(99, rawFinalProgress)
 
           // 检查是否需要更新进度
           const progressChanged = finalProgress - lastReportedGlobalProgress >= MIN_PROGRESS_CHANGE
-          const isCompleted = status === ProgressStatus.COMPLETED
           const isError = status === ProgressStatus.ERROR
 
           // 如果进度变化不大且不是完成或错误状态，并且在节流间隔内，则不更新
@@ -359,8 +786,17 @@ parentPort.on('message', async (task) => {
         }
 
         // 主进度回调函数
-        const customProgressCallback = (progress: any) => {
+        const customProgressCallback = (progress: {
+          status: string
+          file?: string
+          loaded?: number
+          total?: number
+          _source?: 'parallel'
+        }) => {
           const { status, file, loaded, total } = progress
+          if (file && parallelHandledFiles.has(file) && progress._source !== 'parallel') {
+            return
+          }
 
           // 初始化文件状态
           if (file && !fileStates.has(file)) {
@@ -461,21 +897,34 @@ parentPort.on('message', async (task) => {
 
         // 下载并初始化模型
         try {
-          if (type === 'initEmbedding') {
-            embeddingPipeline = (await pipeline('feature-extraction', fullModelName, {
-              progress_callback: customProgressCallback,
-              timeout: 300000 // 5分钟超时
-            })) as unknown as FeatureExtractionPipeline
-          } else {
-            rerankPipeline = await pipeline('text-classification', fullModelName, {
-              progress_callback: customProgressCallback,
-              timeout: 300000
-            })
-          }
+          activeDownloadReporter = (event) => customProgressCallback(event)
+          // 创建一个带超时的 Promise
+          const pipelinePromise = (async () => {
+            if (type === 'initEmbedding') {
+              embeddingPipeline = (await pipeline('feature-extraction', fullModelName, {
+                progress_callback: customProgressCallback
+              })) as unknown as FeatureExtractionPipeline
+            } else {
+              rerankPipeline = (await pipeline('text-classification', fullModelName, {
+                progress_callback: customProgressCallback
+              })) as unknown as RerankPipeline
+            }
+          })()
+
+          const timeoutMs = 180000 // 3分钟超时，通常下载+加载够了
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Model initialization timed out after ${timeoutMs}ms`)),
+              timeoutMs
+            )
+          )
+
+          await Promise.race([pipelinePromise, timeoutPromise])
         } catch (error) {
           console.error('[ERROR] Pipeline initialization failed:', error)
           throw error
         } finally {
+          activeDownloadReporter = null
           clearInterval(progressCheckInterval)
         }
 

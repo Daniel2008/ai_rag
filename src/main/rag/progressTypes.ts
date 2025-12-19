@@ -16,6 +16,7 @@ export enum ProgressStatus {
  */
 export enum TaskType {
   MODEL_DOWNLOAD = 'model_download', // 模型下载
+  RERANKER_DOWNLOAD = 'reranker_download', // 重排序模型下载
   DOCUMENT_PARSE = 'document_parse', // 文档解析
   DOCUMENT_SPLIT = 'document_split', // 文档分割
   EMBEDDING_GENERATION = 'embedding_generation', // 向量生成
