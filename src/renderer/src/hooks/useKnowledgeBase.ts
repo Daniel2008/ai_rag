@@ -17,6 +17,7 @@ export interface UseKnowledgeBaseReturn {
   readyDocuments: number
   activeFile: IndexedFile | undefined
   resolvedCollectionId: string | undefined
+  availableTags: { name: string; count?: number; color?: string }[]
   setActiveDocument: (path: string | undefined) => void
   setActiveCollectionId: React.Dispatch<React.SetStateAction<string | undefined>>
   setQuestionScope: React.Dispatch<React.SetStateAction<QuestionScope>>
@@ -24,11 +25,15 @@ export interface UseKnowledgeBaseReturn {
   handleUpload: (targetCollectionId?: string) => Promise<void>
   handleReindexDocument: (filePath: string) => Promise<void>
   handleRemoveDocument: (filePath: string) => Promise<void>
+  handleRefreshKnowledgeBase: () => Promise<void>
 }
 
 export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKnowledgeBaseReturn {
   const [files, setFiles] = useState<IndexedFile[]>([])
   const [collections, setCollections] = useState<DocumentCollection[]>([])
+  const [availableTags, setAvailableTags] = useState<
+    { name: string; count?: number; color?: string }[]
+  >([])
   const [activeDocument, setActiveDocumentState] = useState<string | undefined>(undefined)
   const [activeCollectionId, setActiveCollectionId] = useState<string | undefined>(undefined)
   // 仅保留 all / collection
@@ -68,6 +73,16 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
     (snapshot: KnowledgeBaseSnapshot) => {
       setFiles((prev) => mergeRecordsWithTransient(snapshot.files, prev))
       setCollections(snapshot.collections)
+      // 提取和转换标签
+      if (snapshot.availableTags) {
+        setAvailableTags(
+          snapshot.availableTags.map((t) => ({
+            name: t.name,
+            count: (t as any).count, // 兼容主进程返回的 count
+            color: t.color
+          }))
+        )
+      }
 
       // 获取所有就绪的文件用于回退选择
       const readyFiles = snapshot.files.filter((f) => f.status === 'ready')
@@ -217,6 +232,17 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
     [activeDocument, messageApi, syncKnowledgeBase, setActiveDocument]
   )
 
+  const handleRefreshKnowledgeBase = useCallback(async () => {
+    try {
+      const snapshot = await window.api.refreshKnowledgeBase()
+      syncKnowledgeBase(snapshot)
+      messageApi.success('知识库已完成增量更新')
+    } catch (error) {
+      console.error('Failed to refresh knowledge base:', error)
+      messageApi.error('更新知识库失败')
+    }
+  }, [syncKnowledgeBase, messageApi])
+
   return {
     files,
     collections,
@@ -226,12 +252,14 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
     readyDocuments,
     activeFile,
     resolvedCollectionId,
+    availableTags,
     setActiveDocument,
     setActiveCollectionId,
     setQuestionScope,
     syncKnowledgeBase,
     handleUpload,
     handleReindexDocument,
-    handleRemoveDocument
+    handleRemoveDocument,
+    handleRefreshKnowledgeBase
   }
 }

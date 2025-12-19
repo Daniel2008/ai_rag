@@ -81,11 +81,9 @@ import {
   deleteDocumentCollection,
   refreshKnowledgeBase
 } from './rag/knowledgeBase'
-import {
-  generateDocument,
-  setLLMChatFunction,
-  type DocumentGenerateRequest
-} from './document'
+import { generateDocument, setLLMChatFunction, type DocumentGenerateRequest } from './document'
+
+import { SmartPromptGenerator } from './rag/smartFeatures'
 
 // 使用环境变量检测开发模式，因为 app.isPackaged 在模块加载时不可用
 const isDev = process.env.NODE_ENV === 'development' || !!process.env['ELECTRON_RENDERER_URL']
@@ -294,11 +292,32 @@ app.whenReady().then(async () => {
         }
 
         const preview = docs[0]?.pageContent.slice(0, 160)
+
+        // 生成摘要和要点
+        let summary: string | undefined
+        let keyPoints: string[] | undefined
+        try {
+          const generator = new SmartPromptGenerator()
+          const content = docs
+            .slice(0, 10)
+            .map((d) => d.pageContent)
+            .join('\n\n')
+          if (content.length > 100) {
+            const result = await generator.generateSummary(content, { length: 'short' })
+            summary = result.summary
+            keyPoints = result.keyPoints
+          }
+        } catch (e) {
+          console.warn('Failed to generate smart features for', fileName, e)
+        }
+
         const record = {
           path: filePath,
           name: fileName,
           chunkCount: docs.length,
           preview,
+          summary,
+          keyPoints,
           updatedAt: Date.now()
         }
 
@@ -510,7 +529,7 @@ app.whenReady().then(async () => {
     return getKnowledgeBaseSnapshot()
   })
 
-  // 重建全部索引
+  // 重建全部索引（全量）
   ipcMain.handle('kb:rebuild', async (event) => {
     try {
       event.sender.send('rag:process-progress', {
@@ -527,7 +546,7 @@ app.whenReady().then(async () => {
           error: progress.status === 'error' ? progress.message : undefined,
           taskType: progress.taskType
         })
-      })
+      }, false) // 显式传 false 表示全量重建
 
       event.sender.send('rag:process-progress', {
         stage: '知识库索引重建完成',
@@ -540,6 +559,43 @@ app.whenReady().then(async () => {
       console.error('Failed to rebuild knowledge base:', error)
       event.sender.send('rag:process-progress', {
         stage: '知识库重建失败',
+        percent: 0,
+        error: getErrorMessage(error),
+        taskType: 'error'
+      })
+      throw error
+    }
+  })
+
+  // 增量更新知识库
+  ipcMain.handle('kb:refresh', async (event) => {
+    try {
+      event.sender.send('rag:process-progress', {
+        stage: '正在扫描文件变更...',
+        percent: 2,
+        taskType: 'index_rebuild'
+      })
+
+      const snapshot = await refreshKnowledgeBase((progress) => {
+        event.sender.send('rag:process-progress', {
+          stage: progress.message,
+          percent: progress.progress || 0,
+          error: progress.status === 'error' ? progress.message : undefined,
+          taskType: progress.taskType
+        })
+      }, true) // 显式传 true 表示增量更新
+
+      event.sender.send('rag:process-progress', {
+        stage: '知识库更新完成',
+        percent: 100,
+        taskType: 'completed'
+      })
+
+      return snapshot
+    } catch (error) {
+      console.error('Failed to refresh knowledge base:', error)
+      event.sender.send('rag:process-progress', {
+        stage: '知识库更新失败',
         percent: 0,
         error: getErrorMessage(error),
         taskType: 'error'
@@ -741,71 +797,36 @@ app.whenReady().then(async () => {
   ipcMain.on('rag:chat', async (event, payload) => {
     const normalized =
       typeof payload === 'string'
-        ? { question: payload, sources: undefined }
+        ? { question: payload, sources: undefined, conversationKey: undefined, tags: undefined }
         : {
             question: payload?.question,
             sources: payload?.sources,
-            conversationKey: payload?.conversationKey
+            conversationKey: payload?.conversationKey,
+            tags: payload?.tags
           }
 
-    // 输入验证
     if (!normalized.question) {
       event.reply('rag:chat-error', '问题内容不能为空')
       return
     }
 
-    const { RAG_CONFIG } = await import('./utils/config')
-    if (normalized.question.length > RAG_CONFIG.VALIDATION.MAX_QUERY_LENGTH) {
-      event.reply(
-        'rag:chat-error',
-        `问题内容过长，最多支持 ${RAG_CONFIG.VALIDATION.MAX_QUERY_LENGTH} 个字符`
-      )
-      return
-    }
+    const normalizePath = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
 
-    if (normalized.question.length < RAG_CONFIG.VALIDATION.MIN_QUERY_LENGTH) {
-      event.reply('rag:chat-error', '问题内容不能为空')
-      return
-    }
-
-    if (normalized.sources && normalized.sources.length > RAG_CONFIG.VALIDATION.MAX_SOURCES) {
-      event.reply(
-        'rag:chat-error',
-        `指定来源过多，最多支持 ${RAG_CONFIG.VALIDATION.MAX_SOURCES} 个文件`
-      )
-      return
-    }
-
-    // 清洗 sources：空数组或无效传 undefined，避免误判为限定空来源
-    if (!normalized.sources || normalized.sources.length === 0) {
-      normalized.sources = undefined
-    }
-
-    // 进一步校验：仅保留当前 snapshot 中就绪的文件
-    // 注意：文件路径在不同平台/上下文中可能存在分隔符或大小写差异，
-    // 因此先对路径做统一标准化再比较，避免因分隔符或大小写导致误判
-    if (normalized.sources) {
+    // 预处理 sources 和 tags
+    if (normalized.sources && normalized.sources.length > 0) {
       const snapshot = getKnowledgeBaseSnapshot()
-      const normalizePath = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
       const readySet = new Set(
         snapshot.files.filter((f) => f.status === 'ready').map((f) => normalizePath(f.path))
       )
 
-      // 记录进入过滤的原始来源，便于排查间歇性失效
       console.debug('[rag:chat] incoming sources:', normalized.sources)
 
       const filtered = normalized.sources.filter((s) => readySet.has(normalizePath(s)))
 
-      // 如果过滤后为空，设为 undefined 表示全库检索；并打印日志以便诊断
       if (filtered.length === 0) {
-        console.debug(
-          '[rag:chat] sources filtered out (no ready files matched), fallback to full-scope'
-        )
+        console.debug('[rag:chat] sources filtered out, fallback to full-scope')
         normalized.sources = undefined
       } else {
-        if (filtered.length !== normalized.sources.length) {
-          console.debug('[rag:chat] sources partially filtered, using:', filtered)
-        }
         normalized.sources = filtered
       }
     }
@@ -813,12 +834,12 @@ app.whenReady().then(async () => {
     try {
       console.log('Chat question:', normalized.question)
 
-      // 使用 LangGraph 版 RAG，保持流式回传（内部已包含文档生成路由）
       const result = await runLangGraphChat(
         normalized.question,
         normalized.sources,
         normalized.conversationKey,
-        (chunk) => event.reply('rag:chat-token', chunk)
+        (chunk) => event.reply('rag:chat-token', chunk),
+        normalized.tags
       )
 
       if (result.error) {
@@ -827,6 +848,9 @@ app.whenReady().then(async () => {
       }
 
       event.reply('rag:chat-sources', result.sources || [])
+      if (result.suggestedQuestions && result.suggestedQuestions.length > 0) {
+        event.reply('rag:chat-suggestions', result.suggestedQuestions)
+      }
       // 注意：不要再次发送 result.answer，因为已经通过 onToken 回调流式发送过了
       // 重复发送会导致前端重复渲染
       event.reply('rag:chat-done')
@@ -848,11 +872,12 @@ app.whenReady().then(async () => {
   ipcMain.handle('rag:chat-graph', async (_, payload) => {
     const normalized =
       typeof payload === 'string'
-        ? { question: payload, sources: undefined }
+        ? { question: payload, sources: undefined, conversationKey: undefined, tags: undefined }
         : {
             question: payload?.question,
             sources: payload?.sources,
-            conversationKey: payload?.conversationKey
+            conversationKey: payload?.conversationKey,
+            tags: payload?.tags
           }
 
     if (!normalized.question) {
@@ -862,7 +887,9 @@ app.whenReady().then(async () => {
     const result = await runLangGraphChat(
       normalized.question,
       normalized.sources,
-      normalized.conversationKey
+      normalized.conversationKey,
+      undefined,
+      normalized.tags
     )
     if (result.error) {
       return { success: false, error: result.error }
@@ -871,7 +898,8 @@ app.whenReady().then(async () => {
     return {
       success: true,
       answer: result.answer,
-      sources: result.sources
+      sources: result.sources,
+      suggestedQuestions: result.suggestedQuestions
     }
   })
 

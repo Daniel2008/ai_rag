@@ -1,44 +1,13 @@
 import ElectronStore from 'electron-store'
+import type {
+  AppSettings,
+  ModelProvider,
+  ProviderConfig,
+  EmbeddingProvider,
+  RagSettings
+} from '../types/chat'
 
-export type ModelProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek' | 'zhipu' | 'moonshot'
-
-export interface ProviderConfig {
-  apiKey?: string
-  baseUrl?: string
-  chatModel: string
-  embeddingModel?: string
-}
-
-export type EmbeddingProvider = 'local' | 'ollama'
-
-export interface RagSettings {
-  searchLimit: number
-  minRelevance: number
-  maxSearchLimit: number
-}
-
-export interface AppSettings {
-  // 当前选择的供应商
-  provider: ModelProvider
-  // Ollama 设置（本地）
-  ollama: ProviderConfig
-  // OpenAI 设置
-  openai: ProviderConfig
-  // Anthropic (Claude) 设置
-  anthropic: ProviderConfig
-  // DeepSeek 设置
-  deepseek: ProviderConfig
-  // 智谱 AI 设置
-  zhipu: ProviderConfig
-  // Moonshot (Kimi) 设置
-  moonshot: ProviderConfig
-  // 向量模型设置
-  embeddingProvider: EmbeddingProvider
-  embeddingModel: string
-  ollamaUrl: string
-  // RAG 检索设置
-  rag: RagSettings
-}
+export type { AppSettings, ModelProvider, ProviderConfig, EmbeddingProvider, RagSettings }
 
 const defaults: AppSettings = {
   provider: 'ollama',
@@ -77,7 +46,11 @@ const defaults: AppSettings = {
   rag: {
     searchLimit: 6,
     maxSearchLimit: 30,
-    minRelevance: 0.25
+    minRelevance: 0.25,
+    useRerank: true,
+    useMultiQuery: false,
+    useWebSearch: false,
+    tavilyApiKey: ''
   }
 }
 
@@ -114,7 +87,22 @@ function normalizeRagSettings(
     ? Math.min(1, Math.max(0, minRelevanceRaw))
     : base.minRelevance
 
-  return { searchLimit, maxSearchLimit, minRelevance }
+  const useRerank = typeof input?.useRerank === 'boolean' ? input.useRerank : base.useRerank
+  const useMultiQuery =
+    typeof input?.useMultiQuery === 'boolean' ? input.useMultiQuery : base.useMultiQuery
+  const useWebSearch =
+    typeof input?.useWebSearch === 'boolean' ? input.useWebSearch : base.useWebSearch
+  const tavilyApiKey = input?.tavilyApiKey ?? base.tavilyApiKey
+
+  return {
+    searchLimit,
+    maxSearchLimit,
+    minRelevance,
+    useRerank,
+    useMultiQuery,
+    useWebSearch,
+    tavilyApiKey
+  }
 }
 
 // 合并供应商配置，确保所有字段都有值

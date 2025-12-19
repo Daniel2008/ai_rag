@@ -10,12 +10,14 @@ export interface ElectronRequestInput {
   conversationKey: string
   question: string
   sources?: string[]
+  tags?: string[]
 }
 
 export interface ElectronRequestOutput {
-  type: 'token' | 'sources' | 'done' | 'error'
+  type: 'token' | 'sources' | 'done' | 'error' | 'suggestions'
   content?: string
   sources?: ChatSource[]
+  suggestions?: string[]
   error?: string
 }
 
@@ -124,6 +126,12 @@ export class ElectronXRequest extends AbstractXRequestClass<
       // sources 不触发 onUpdate，只存储
     }
 
+    const handleSuggestions = (suggestions: string[]): void => {
+      const output: ElectronRequestOutput = { type: 'suggestions', suggestions }
+      this.chunks.push(output)
+      // suggestions 不触发 onUpdate，由 transformMessage 处理
+    }
+
     const handleDone = (): void => {
       // 刷新剩余的 token
       flushTokenBuffer()
@@ -169,6 +177,9 @@ export class ElectronXRequest extends AbstractXRequestClass<
     if (typeof window.api.onChatSources === 'function') {
       window.api.onChatSources(handleSources)
     }
+    if (typeof window.api.onChatSuggestions === 'function') {
+      window.api.onChatSuggestions(handleSuggestions)
+    }
     if (typeof window.api.onChatDone === 'function') {
       window.api.onChatDone(handleDone)
     }
@@ -181,7 +192,8 @@ export class ElectronXRequest extends AbstractXRequestClass<
       window.api.chat({
         conversationKey: params.conversationKey,
         question: params.question,
-        sources: params.sources
+        sources: params.sources,
+        tags: params.tags
       })
     } else {
       console.error('[ElectronXRequest] window.api.chat is not available')

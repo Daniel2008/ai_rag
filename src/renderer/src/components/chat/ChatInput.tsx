@@ -6,7 +6,8 @@ import {
   ThunderboltOutlined,
   FileTextOutlined,
   FolderOutlined,
-  GlobalOutlined
+  GlobalOutlined,
+  TagsOutlined
 } from '@ant-design/icons'
 import type { QuestionScope } from '../../types/chat'
 import type { DocumentCollection, IndexedFile } from '../../types/files'
@@ -27,6 +28,11 @@ interface ChatInputProps {
   readyFiles: IndexedFile[]
   /** 当前已选择的 # 文件 */
   mentionedFiles: { token: string; path: string }[]
+  /** 可用标签 */
+  availableTags?: { name: string; count?: number; color?: string }[]
+  /** 已选标签 */
+  selectedTags?: string[]
+  onSelectedTagsChange?: (tags: string[]) => void
   onMentionFilesChange: (mentions: { token: string; path: string }[]) => void
   onInputChange: (value: string) => void
   onSubmit: (value: string) => void
@@ -49,6 +55,9 @@ export function ChatInput({
   hasReadyFiles,
   readyFiles,
   mentionedFiles,
+  availableTags = [],
+  selectedTags = [],
+  onSelectedTagsChange,
   onMentionFilesChange,
   onInputChange,
   onSubmit,
@@ -188,6 +197,28 @@ export function ChatInput({
             />
           )}
           <div className="flex-1" />
+
+          {/* 标签过滤选择 */}
+          {availableTags.length > 0 && (
+            <Tooltip title="按标签筛选检索内容">
+              <Select
+                mode="multiple"
+                size="small"
+                placeholder="标签筛选"
+                value={selectedTags}
+                onChange={onSelectedTagsChange}
+                maxTagCount="responsive"
+                style={{ minWidth: 100, maxWidth: 240 }}
+                variant="borderless"
+                options={availableTags.map((t) => ({
+                  label: `${t.name} (${t.count || 0})`,
+                  value: t.name
+                }))}
+                suffixIcon={<TagsOutlined />}
+              />
+            </Tooltip>
+          )}
+
           {/* 实际检索范围提示 */}
           <Tooltip
             title={
@@ -260,9 +291,12 @@ export function ChatInput({
       hasReadyFiles,
       mentionedFiles,
       readyFiles,
+      availableTags,
+      selectedTags,
       effectiveSearchScope,
       onQuestionScopeChange,
       onCollectionChange,
+      onSelectedTagsChange,
       handleRemoveMention
     ]
   )

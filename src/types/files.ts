@@ -5,10 +5,11 @@ export type SourceType = 'file' | 'url'
 
 /** 文档标签 */
 export interface DocumentTag {
-  id: string
+  id?: string
   name: string
   color?: string
-  createdAt: number
+  count?: number
+  createdAt?: number
 }
 
 /** 文档版本信息 */
@@ -48,6 +49,10 @@ export interface IndexedFileRecord {
   metadata?: Record<string, unknown>
   /** 文档格式（如 PDF、Word 等） */
   format?: string
+  /** 文档摘要 */
+  summary?: string
+  /** 文档要点 */
+  keyPoints?: string[]
 }
 
 export interface IndexedFile extends IndexedFileRecord {

@@ -66,9 +66,14 @@ const api = {
     preview?: string
     error?: string
   }> => ipcRenderer.invoke('rag:processUrl', url),
-  chat: (payload: { conversationKey: string; question: string; sources?: string[] }): void =>
-    ipcRenderer.send('rag:chat', payload),
+  chat: (payload: {
+    conversationKey: string
+    question: string
+    sources?: string[]
+    tags?: string[]
+  }): void => ipcRenderer.send('rag:chat', payload),
   getKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:list'),
+  refreshKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:refresh'),
   rebuildKnowledgeBase: (): Promise<KnowledgeBaseSnapshot> => ipcRenderer.invoke('kb:rebuild'),
   removeIndexedFile: (filePath: string): Promise<KnowledgeBaseSnapshot> =>
     ipcRenderer.invoke('files:remove', filePath),
@@ -95,6 +100,10 @@ const api = {
     ipcRenderer.removeAllListeners('rag:chat-sources')
     ipcRenderer.on('rag:chat-sources', (_, sources) => callback(sources))
   },
+  onChatSuggestions: (callback: (suggestions: string[]) => void): void => {
+    ipcRenderer.removeAllListeners('rag:chat-suggestions')
+    ipcRenderer.on('rag:chat-suggestions', (_, suggestions) => callback(suggestions))
+  },
   onChatDone: (callback: () => void): void => {
     ipcRenderer.removeAllListeners('rag:chat-done')
     ipcRenderer.on('rag:chat-done', () => callback())
@@ -106,6 +115,7 @@ const api = {
   removeAllChatListeners: (): void => {
     ipcRenderer.removeAllListeners('rag:chat-token')
     ipcRenderer.removeAllListeners('rag:chat-sources')
+    ipcRenderer.removeAllListeners('rag:chat-suggestions')
     ipcRenderer.removeAllListeners('rag:chat-done')
     ipcRenderer.removeAllListeners('rag:chat-error')
   },

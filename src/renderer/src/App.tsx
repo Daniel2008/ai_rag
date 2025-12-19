@@ -58,6 +58,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   // 输入状态
   const [inputValue, setInputValue] = useState('')
   const [mentionedFiles, setMentionedFiles] = useState<{ token: string; path: string }[]>([])
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [, setCurrentSettings] = useState<AppSettings | null>(null)
   const [collectionModalOpen, setCollectionModalOpen] = useState(false)
@@ -95,6 +96,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   const {
     files,
     collections,
+    availableTags,
     activeDocument,
     activeCollectionId,
     questionScope,
@@ -106,7 +108,8 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     setActiveDocument,
     handleUpload,
     handleReindexDocument,
-    handleRemoveDocument
+    handleRemoveDocument,
+    handleRefreshKnowledgeBase
   } = useKnowledgeBase({ messageApi })
 
   const readyFiles = useMemo(() => files.filter((f) => f.status === 'ready'), [files])
@@ -260,6 +263,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         console.debug('[rag:chat-renderer] sendMessage called', {
           question: trimmed,
           selectedSources,
+          selectedTags,
           questionScope,
           mentionedFiles,
           resolvedCollectionId
@@ -267,8 +271,9 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
 
         setInputValue('')
         setMentionedFiles([])
+        setSelectedTags([])
         // 使用 useChatWithXChat 的 sendMessage 发送消息
-        sendMessage(trimmed, selectedSources)
+        sendMessage(trimmed, selectedSources, selectedTags)
       })()
     },
     [
@@ -278,6 +283,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
       resolvedCollectionId,
       collections,
       mentionedFiles,
+      selectedTags,
       messageApi,
       createNewConversation,
       sendMessage
@@ -522,6 +528,9 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             hasReadyFiles={readyDocuments > 0}
             readyFiles={readyFiles}
             mentionedFiles={mentionedFiles}
+            availableTags={availableTags}
+            selectedTags={selectedTags}
+            onSelectedTagsChange={setSelectedTags}
             onMentionFilesChange={setMentionedFiles}
             onInputChange={setInputValue}
             onSubmit={handleSend}
@@ -583,6 +592,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
               onUpdateActiveDocument={setActiveDocument}
               onReindexDocument={handleReindexDocument}
               onRemoveDocument={handleRemoveDocument}
+              onRefreshKnowledgeBase={handleRefreshKnowledgeBase}
               onRebuildAllIndex={async () => {
                 try {
                   const snapshot = await window.api.rebuildKnowledgeBase()

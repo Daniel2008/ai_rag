@@ -132,6 +132,7 @@ global.fetch = async (url, init) => {
 
 // Use the library's FeatureExtractionPipeline type directly
 let embeddingPipeline: FeatureExtractionPipeline | null = null
+let rerankPipeline: any | null = null
 
 // Helper function to map short model names to full Hugging Face model IDs
 function mapModelName(modelName: string): string {
@@ -139,7 +140,9 @@ function mapModelName(modelName: string): string {
     'bert-base': 'bert-base-uncased',
     'bert-large': 'bert-large-uncased',
     'sentence-transformers': 'sentence-transformers/all-MiniLM-L6-v2',
-    'nomic-bert': 'nomic-ai/nomic-bert-2048'
+    'nomic-bert': 'nomic-ai/nomic-bert-2048',
+    'bge-reranker-base': 'Xenova/bge-reranker-base',
+    'bge-reranker-v2-m3': 'Xenova/bge-reranker-v2-m3'
     // Add more mappings as needed
   }
   return modelMap[modelName] || modelName
@@ -153,7 +156,7 @@ parentPort.on('message', async (task) => {
   const { id, type, payload } = task
 
   try {
-    if (type === 'initEmbedding') {
+    if (type === 'initEmbedding' || type === 'initReranker') {
       await ensureTransformers()
       const { modelName, cacheDir } = payload
       if (cacheDir) {
@@ -458,11 +461,17 @@ parentPort.on('message', async (task) => {
 
         // 下载并初始化模型
         try {
-          embeddingPipeline = (await pipeline('feature-extraction', fullModelName, {
-            progress_callback: customProgressCallback,
-            // 增加超时设置
-            timeout: 300000 // 5分钟超时
-          })) as unknown as FeatureExtractionPipeline
+          if (type === 'initEmbedding') {
+            embeddingPipeline = (await pipeline('feature-extraction', fullModelName, {
+              progress_callback: customProgressCallback,
+              timeout: 300000 // 5分钟超时
+            })) as unknown as FeatureExtractionPipeline
+          } else {
+            rerankPipeline = await pipeline('text-classification', fullModelName, {
+              progress_callback: customProgressCallback,
+              timeout: 300000
+            })
+          }
         } catch (error) {
           console.error('[ERROR] Pipeline initialization failed:', error)
           throw error
@@ -636,6 +645,47 @@ parentPort.on('message', async (task) => {
         parentPort?.postMessage({ id, success: true, result: embeddings })
       } catch (error) {
         throw new Error(`Failed to generate embeddings: ${(error as Error).message}`)
+      }
+    } else if (type === 'rerank') {
+      if (!rerankPipeline) throw new Error('Rerank pipeline not initialized')
+      const { query, documents } = payload
+      const totalDocs = documents.length
+
+      try {
+        const scores: number[] = []
+        // BGE-Reranker uses a cross-encoder approach
+        // We need to score pairs of (query, document)
+        for (let i = 0; i < documents.length; i++) {
+          const doc = documents[i]
+          // Standard cross-encoder input format: [query, passage]
+          const result = await rerankPipeline(query, {
+            top_k: 1,
+            text_pair: doc
+          })
+
+          // transformers.js returns scores in a specific format for classification
+          // Usually [{label: 'LABEL_0', score: 0.123}]
+          // For rerankers, we just want the score
+          scores.push(result[0].score)
+
+          // Update progress
+          if ((i + 1) % 5 === 0 || i === totalDocs - 1) {
+            parentPort?.postMessage({
+              id,
+              type: 'progress',
+              payload: {
+                taskType: 'reranking',
+                status: ProgressStatus.PROCESSING,
+                message: `正在重排序: ${i + 1}/${totalDocs}`,
+                progress: Math.round(((i + 1) / totalDocs) * 100)
+              }
+            })
+          }
+        }
+
+        parentPort?.postMessage({ id, success: true, result: scores })
+      } catch (error) {
+        throw new Error(`Failed to rerank: ${(error as Error).message}`)
       }
     } else if (type === 'loadAndSplit') {
       const { filePath } = payload

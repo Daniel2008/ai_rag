@@ -30,7 +30,7 @@ export interface UseChatWithXChatReturn {
   /** 当前会话的消息列表（用于渲染） */
   messages: ChatMessage[]
   /** 发送消息 */
-  sendMessage: (question: string, sources?: string[]) => void
+  sendMessage: (question: string, sources?: string[], tags?: string[]) => void
   /** 停止生成 */
   stopGeneration: () => void
 }
@@ -234,6 +234,7 @@ export function useChatWithXChat({
       role: ChatMessage['role']
       content: string
       sources?: ChatMessage['sources']
+      suggestedQuestions?: string[]
       typing: boolean
       status: ChatMessage['status']
       timestamp?: number
@@ -256,6 +257,7 @@ export function useChatWithXChat({
         role: xMsg.message.role === 'user' ? 'user' : 'ai',
         content: xMsg.message.content,
         sources: xMsg.message.sources,
+        suggestedQuestions: xMsg.message.suggestedQuestions,
         typing: xMsg.status === 'loading' || xMsg.status === 'updating',
         status: mapStatus(xMsg.status),
         timestamp
@@ -277,6 +279,7 @@ export function useChatWithXChat({
         role: msg.role,
         content: msg.content,
         sources: msg.sources,
+        suggestedQuestions: msg.suggestedQuestions,
         typing: msg.typing,
         status: msg.status,
         timestamp: msg.timestamp
@@ -287,7 +290,7 @@ export function useChatWithXChat({
 
   // 发送消息
   const sendMessage = useCallback(
-    (question: string, sources?: string[]) => {
+    (question: string, sources?: string[], tags?: string[]) => {
       if (!question.trim() || isRequesting) return
       if (!conversationKey) {
         messageApi.warning('请先创建或选择一个对话')
@@ -298,7 +301,7 @@ export function useChatWithXChat({
       isSendingRef.current = true
 
       // 使用 onRequest 发送消息
-      onRequest({ conversationKey, question: question.trim(), sources })
+      onRequest({ conversationKey, question: question.trim(), sources, tags })
     },
     [conversationKey, isRequesting, messageApi, onRequest]
   )
@@ -341,6 +344,7 @@ export function useChatWithXChat({
               role: role,
               content: xMsg.message.content,
               sources: xMsg.message.sources,
+              suggestedQuestions: xMsg.message.suggestedQuestions,
               timestamp: Date.now(),
               status: mapStatus(xMsg.status),
               typing: false

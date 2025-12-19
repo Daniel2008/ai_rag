@@ -81,8 +81,14 @@ declare global {
         preview?: string
         error?: string
       }>
-      chat: (payload: { conversationKey: string; question: string; sources?: string[] }) => void
+      chat: (payload: {
+        conversationKey: string
+        question: string
+        sources?: string[]
+        tags?: string[]
+      }) => void
       getKnowledgeBase: () => Promise<KnowledgeBaseSnapshot>
+      refreshKnowledgeBase: () => Promise<KnowledgeBaseSnapshot>
       rebuildKnowledgeBase: () => Promise<KnowledgeBaseSnapshot>
       removeIndexedFile: (filePath: string) => Promise<KnowledgeBaseSnapshot>
       reindexIndexedFile: (filePath: string) => Promise<KnowledgeBaseSnapshot>
@@ -100,6 +106,7 @@ declare global {
       deleteCollection: (collectionId: string) => Promise<KnowledgeBaseSnapshot>
       onChatToken: (callback: (token: string) => void) => void
       onChatSources: (callback: (sources: ChatSource[]) => void) => void
+      onChatSuggestions: (callback: (suggestions: string[]) => void) => void
       onChatDone: (callback: () => void) => void
       onChatError: (callback: (error: string) => void) => void
       removeAllChatListeners: () => void

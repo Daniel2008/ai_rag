@@ -9,6 +9,7 @@ import {
   FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SyncOutlined,
   UploadOutlined,
   MoreOutlined,
   DatabaseOutlined,
@@ -58,6 +59,7 @@ interface AppSidebarProps {
   onReindexDocument: (filePath: string) => void
   onRemoveDocument: (filePath: string) => void
   onRebuildAllIndex?: () => void
+  onRefreshKnowledgeBase?: () => void
 }
 
 const statusConfig: Record<
@@ -171,7 +173,8 @@ export function AppSidebar({
   onUpdateActiveDocument,
   onReindexDocument,
   onRemoveDocument,
-  onRebuildAllIndex
+  onRebuildAllIndex,
+  onRefreshKnowledgeBase
 }: AppSidebarProps): ReactElement {
   const { token } = antdTheme.useToken()
 
@@ -583,6 +586,16 @@ export function AppSidebar({
             </div>
           </Flex>
           <div className="flex items-center gap-1">
+            {files.length > 0 && onRefreshKnowledgeBase && (
+              <Tooltip title="增量更新知识库">
+                <Button
+                  type="text"
+                  icon={<SyncOutlined />}
+                  onClick={onRefreshKnowledgeBase}
+                  style={{ color: token.colorTextSecondary }}
+                />
+              </Tooltip>
+            )}
             {files.length > 0 && onRebuildAllIndex && (
               <Tooltip title="重建全部索引">
                 <Button

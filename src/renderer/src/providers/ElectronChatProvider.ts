@@ -19,6 +19,7 @@ export interface ElectronChatMessage {
   role: 'user' | 'assistant'
   content: string
   sources?: ChatSource[]
+  suggestedQuestions?: string[]
 }
 
 /** Provider 配置 */
@@ -77,7 +78,8 @@ export class ElectronChatProvider extends AbstractChatProvider<
     return {
       conversationKey: requestParams.conversationKey ?? '',
       question: requestParams.question ?? '',
-      sources: requestParams.sources ?? this.config.defaultSources
+      sources: requestParams.sources ?? this.config.defaultSources,
+      tags: requestParams.tags
     }
   }
 
@@ -109,14 +111,15 @@ export class ElectronChatProvider extends AbstractChatProvider<
       content += chunk.content
     }
 
-    // 收集 sources
+    // 收集 sources 和 suggestions
     const sourcesChunk = chunks.find((c) => c.type === 'sources')
-    const sources = sourcesChunk?.sources
+    const suggestionsChunk = chunks.find((c) => c.type === 'suggestions')
 
     return {
       role: 'assistant',
       content,
-      sources
+      sources: sourcesChunk?.sources,
+      suggestedQuestions: suggestionsChunk?.suggestions
     }
   }
 }

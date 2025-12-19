@@ -113,6 +113,18 @@ export async function embedInWorker(texts: string[]): Promise<number[][]> {
   return runTask('embed', { texts })
 }
 
+export async function initRerankerInWorker(
+  modelName: string,
+  cacheDir: string,
+  onProgress?: (p: unknown) => void
+): Promise<unknown> {
+  return runTask('initReranker', { modelName, cacheDir }, onProgress)
+}
+
+export async function rerankInWorker(query: string, documents: string[]): Promise<number[]> {
+  return runTask('rerank', { query, documents })
+}
+
 /**
  * 终止文档处理 Worker
  */

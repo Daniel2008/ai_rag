@@ -89,7 +89,7 @@ export function renameTag(oldName: string, newName: string): DocumentTag | null 
   const tags = getAllTags()
   const tag = tags.find((t) => t.name.toLowerCase() === oldName.toLowerCase())
 
-  if (!tag) return null
+  if (!tag || !tag.id) return null
 
   return updateTag(tag.id, { name: newName })
 }
@@ -155,4 +155,46 @@ export function getTagsForFile(filePath: string): DocumentTag[] {
   return record.tags
     .map((tagId) => allTags.find((t) => t.id === tagId))
     .filter(Boolean) as DocumentTag[]
+}
+
+// 获取带有特定标签的所有文件路径
+export function getFilesForTag(tagId: string): string[] {
+  const { getIndexedFileRecords } = require('./knowledgeBase')
+  const records = getIndexedFileRecords()
+  return records
+    .filter((r) => r.tags && Array.isArray(r.tags) && r.tags.includes(tagId))
+    .map((r) => r.path)
+}
+
+// 获取带有任何给定标签的所有文件路径
+export function getFilesForTags(tagIds: string[]): string[] {
+  const { getIndexedFileRecords } = require('./knowledgeBase')
+  const records = getIndexedFileRecords()
+  return records
+    .filter((r) => r.tags && Array.isArray(r.tags) && tagIds.some((tid) => r.tags.includes(tid)))
+    .map((r) => r.path)
+}
+
+// 获取标签统计信息
+export function getTagStatistics(): Array<{ tag: DocumentTag; count: number }> {
+  const { getIndexedFileRecords } = require('./knowledgeBase')
+  const records = getIndexedFileRecords()
+  const allTags = getAllTags()
+
+  const statsMap = new Map<string, number>()
+
+  records.forEach((record) => {
+    if (record.tags && Array.isArray(record.tags)) {
+      record.tags.forEach((tagId) => {
+        statsMap.set(tagId, (statsMap.get(tagId) || 0) + 1)
+      })
+    }
+  })
+
+  return allTags
+    .filter((t) => !!t.id)
+    .map((tag) => ({
+      tag,
+      count: statsMap.get(tag.id!) || 0
+    }))
 }

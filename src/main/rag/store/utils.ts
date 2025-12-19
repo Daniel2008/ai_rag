@@ -103,12 +103,29 @@ export function distanceToScore(distance: number): number {
 }
 
 /**
- * 构建来源过滤的 where 子句
+ * 构建过滤的 where 子句
  */
-export function buildSourceWhereClause(sources: string[]): string {
-  const normalizedSources = sources.map((s) => normalizePath(s))
-  const escapedSources = normalizedSources.map((s) => `"${escapePredicateValue(s)}"`)
-  return `source IN (${escapedSources.join(', ')}) OR metadata.source IN (${escapedSources.join(', ')})`
+export function buildWhereClause(sources?: string[], tags?: string[]): string | undefined {
+  const clauses: string[] = []
+
+  if (sources && sources.length > 0) {
+    const normalizedSources = sources.map((s) => normalizePath(s))
+    const escapedSources = normalizedSources.map((s) => `"${escapePredicateValue(s)}"`)
+    clauses.push(
+      `(source IN (${escapedSources.join(', ')}) OR metadata.source IN (${escapedSources.join(
+        ', '
+      )}))`
+    )
+  }
+
+  if (tags && tags.length > 0) {
+    // 假设 tags 在 LanceDB 中存储为字符串数组，使用 array_contains 或类似语法
+    // LanceDB 支持 array_contains(column, value)
+    const tagClauses = tags.map((tag) => `array_contains(tags, "${escapePredicateValue(tag)}")`)
+    clauses.push(`(${tagClauses.join(' OR ')})`)
+  }
+
+  return clauses.length > 0 ? clauses.join(' AND ') : undefined
 }
 
 /**

@@ -1,8 +1,10 @@
 import { Document } from '@langchain/core/documents'
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { createChatModel } from '../utils/createChatModel'
 import { getSettings } from '../settings'
 import { logInfo, logWarn, logDebug } from '../utils/logger'
 import { searchSimilarDocuments } from './store/index'
+import { getTagStatistics } from './tagManager'
 
 export interface SmartPromptOptions {
   /** 智能提示数量 */
@@ -39,11 +41,10 @@ export interface ContentAnalysis {
  * 智能提示生成器
  */
 export class SmartPromptGenerator {
-  private model: unknown
+  private model: BaseChatModel
 
   constructor() {
-    const settings = getSettings()
-    this.model = createChatModel(settings.provider)
+    this.model = createChatModel()
   }
 
   /**
@@ -60,14 +61,12 @@ export class SmartPromptGenerator {
         options
       })
 
-      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(
-        prompt
-      )
+      const result = await this.model.invoke(prompt)
       const resultContent =
         typeof result === 'string'
           ? result
-          : typeof (result as { content?: unknown })?.content === 'string'
-            ? String((result as { content?: unknown }).content)
+          : typeof (result as any)?.content === 'string'
+            ? String((result as any).content)
             : String(result)
       const prompts = this.parsePrompts(resultContent)
 
@@ -211,6 +210,37 @@ export class SmartPromptGenerator {
     const fullContext = `相关文档内容：\n${relatedContent}\n\n用户查询：${query}`
 
     return this.generatePrompts(fullContext, options)
+  }
+
+  /**
+   * 生成基于知识库统计的概览和建议
+   */
+  async generateKnowledgeOverview(): Promise<string> {
+    const stats = getTagStatistics()
+    const topTags = stats
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+      .map((s) => `${s.tag.name}(${s.count}篇)`)
+      .join('、')
+
+    const prompt = `你是一个知识管理专家。以下是用户知识库目前的标签统计信息：
+${topTags}
+
+请基于这些信息，为用户提供一段简短的知识库现状分析（100字以内），并建议 2-3 个他们可能感兴趣的进一步探索方向。`
+
+    try {
+      const result = await (this.model as { invoke: (input: unknown) => Promise<unknown> }).invoke(
+        prompt
+      )
+      return typeof result === 'string'
+        ? result
+        : typeof (result as { content?: unknown })?.content === 'string'
+          ? String((result as { content?: unknown }).content)
+          : String(result)
+    } catch (error) {
+      logWarn('知识概览生成失败', 'SmartPrompt', {}, error as Error)
+      return '无法生成知识库概览，请检查知识库是否已索引。'
+    }
   }
 
   // 私有辅助方法

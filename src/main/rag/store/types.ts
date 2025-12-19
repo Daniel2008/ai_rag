@@ -13,6 +13,7 @@ export interface LanceDBSearchResult {
   pageContent?: string
   source?: string
   pageNumber?: number
+  tags?: string[]
   vector?: number[]
   metadata?: {
     source?: string
@@ -40,6 +41,7 @@ export interface LanceDBSearchQuery {
 export interface SearchOptions {
   k?: number
   sources?: string[]
+  tags?: string[]
 }
 
 /**

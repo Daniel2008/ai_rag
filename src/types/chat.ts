@@ -77,6 +77,10 @@ export interface RagSettings {
   searchLimit: number
   maxSearchLimit: number
   minRelevance: number
+  useRerank: boolean
+  useMultiQuery: boolean
+  useWebSearch: boolean
+  tavilyApiKey?: string
 }
 
 /** 应用设置 */
@@ -138,6 +142,7 @@ export interface ChatMessage {
   role: 'user' | 'ai' | 'system'
   content: string
   sources?: ChatSource[]
+  suggestedQuestions?: string[]
   typing?: boolean
   timestamp?: number
   status?: 'success' | 'error' | 'pending'

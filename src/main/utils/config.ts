@@ -23,6 +23,16 @@ export const RAG_CONFIG = {
     VECTOR_WEIGHT: 0.6 // 向量搜索在融合中的权重
   },
 
+  // 重排序配置
+  RERANK: {
+    ENABLED: true,
+    MODEL: 'bge-reranker-base', // 默认重排序模型
+    TOP_K: 5, // 重排序后保留的数量
+    BATCH_SIZE: 16,
+    SCORE_THRESHOLD: 0.3, // 重排序分数阈值
+    PROVIDER: 'local' // 可选 local / api
+  },
+
   // 文档数量缓存
   DOC_COUNT_CACHE: {
     TTL: 60000 // 60秒

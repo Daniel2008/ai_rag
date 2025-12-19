@@ -16,7 +16,8 @@ import {
   InputNumber,
   Row,
   Col,
-  Tabs
+  Tabs,
+  Switch
 } from 'antd'
 import {
   ApiOutlined,
@@ -24,7 +25,9 @@ import {
   KeyOutlined,
   SettingOutlined,
   ToolOutlined,
-  CloudDownloadOutlined
+  CloudDownloadOutlined,
+  GlobalOutlined,
+  RocketOutlined
 } from '@ant-design/icons'
 import type { AppSettings, ModelProvider, EmbeddingProvider } from '../types/chat'
 import UpdateChecker from './UpdateChecker'
@@ -95,7 +98,11 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
         rag: {
           searchLimit: current.rag?.searchLimit ?? 6,
           maxSearchLimit: current.rag?.maxSearchLimit ?? 30,
-          minRelevance: current.rag?.minRelevance ?? 0.25
+          minRelevance: current.rag?.minRelevance ?? 0.25,
+          useRerank: current.rag?.useRerank ?? true,
+          useMultiQuery: current.rag?.useMultiQuery ?? false,
+          useWebSearch: current.rag?.useWebSearch ?? false,
+          tavilyApiKey: current.rag?.tavilyApiKey ?? ''
         }
       }
 
@@ -411,6 +418,86 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
                     >
                       过滤低质量结果的阈值。值越高结果越精准但可能遗漏，值越低召回越多但可能有噪声。
                     </Typography.Text>
+                  </div>
+
+                  <Divider />
+
+                  {/* 检索增强设置 */}
+                  <Typography.Text strong className="mb-3 block">
+                    <RocketOutlined className="mr-1" /> 检索能力增强
+                  </Typography.Text>
+
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Typography.Text strong className="block">
+                          深度重排序 (Rerank)
+                        </Typography.Text>
+                        <Typography.Text type="secondary" className="text-xs">
+                          使用 Cross-Encoder 对初步检索结果进行二次打分，显著提升准确率。
+                        </Typography.Text>
+                      </div>
+                      <Form.Item name={['rag', 'useRerank']} valuePropName="checked" noStyle>
+                        <Switch />
+                      </Form.Item>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Typography.Text strong className="block">
+                          多查询重写 (Multi-Query)
+                        </Typography.Text>
+                        <Typography.Text type="secondary" className="text-xs">
+                          自动将用户问题拆解为多个子查询，提升对复杂问题的召回覆盖度。
+                        </Typography.Text>
+                      </div>
+                      <Form.Item name={['rag', 'useMultiQuery']} valuePropName="checked" noStyle>
+                        <Switch />
+                      </Form.Item>
+                    </div>
+                  </div>
+
+                  <Divider />
+
+                  {/* 联网搜索设置 */}
+                  <Typography.Text strong className="mb-3 block">
+                    <GlobalOutlined className="mr-1" /> 联网搜索功能
+                  </Typography.Text>
+
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <Typography.Text strong className="block">
+                          启用联网搜索
+                        </Typography.Text>
+                        <Typography.Text type="secondary" className="text-xs">
+                          当本地知识库无法回答时，自动搜索互联网获取最新信息。
+                        </Typography.Text>
+                      </div>
+                      <Form.Item name={['rag', 'useWebSearch']} valuePropName="checked" noStyle>
+                        <Switch />
+                      </Form.Item>
+                    </div>
+
+                    <Form.Item
+                      noStyle
+                      shouldUpdate={(prevValues, currentValues) =>
+                        prevValues.rag?.useWebSearch !== currentValues.rag?.useWebSearch
+                      }
+                    >
+                      {({ getFieldValue }) =>
+                        getFieldValue(['rag', 'useWebSearch']) && (
+                          <Form.Item
+                            label="Tavily API Key"
+                            name={['rag', 'tavilyApiKey']}
+                            className="mb-0"
+                            rules={[{ required: true, message: '请输入 Tavily API Key' }]}
+                          >
+                            <Input.Password placeholder="tvly-..." allowClear />
+                          </Form.Item>
+                        )
+                      }
+                    </Form.Item>
                   </div>
                 </>
               )
