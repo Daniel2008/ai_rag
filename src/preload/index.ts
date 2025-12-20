@@ -112,6 +112,13 @@ const api = {
     ipcRenderer.removeAllListeners('rag:chat-error')
     ipcRenderer.on('rag:chat-error', (_, error) => callback(error))
   },
+  removeChatListeners: (): void => {
+    ipcRenderer.removeAllListeners('rag:chat-token')
+    ipcRenderer.removeAllListeners('rag:chat-sources')
+    ipcRenderer.removeAllListeners('rag:chat-suggestions')
+    ipcRenderer.removeAllListeners('rag:chat-done')
+    ipcRenderer.removeAllListeners('rag:chat-error')
+  },
   removeAllChatListeners: (): void => {
     ipcRenderer.removeAllListeners('rag:chat-token')
     ipcRenderer.removeAllListeners('rag:chat-sources')

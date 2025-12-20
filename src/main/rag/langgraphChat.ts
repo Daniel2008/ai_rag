@@ -9,7 +9,8 @@ export async function runLangGraphChat(
   sources?: string[],
   conversationKey?: string,
   onToken?: (chunk: string) => void,
-  tags?: string[]
+  tags?: string[],
+  onSources?: (sources: ChatSource[]) => void
 ): Promise<{
   answer?: string
   sources?: ChatSource[]
@@ -23,6 +24,7 @@ export async function runLangGraphChat(
     question,
     sources,
     onToken,
+    onSources,
     tags
   })
   return {

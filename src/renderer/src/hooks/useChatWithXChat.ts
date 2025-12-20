@@ -288,6 +288,54 @@ export function useChatWithXChat({
     return deduped
   }, [xMessages, historyTimestampMap, newMessageTimestamps])
 
+  // 监听异步推送的智能建议
+  useEffect(() => {
+    if (!window.api?.onChatSuggestions) return
+
+    const handleSuggestions = (suggestions: string[]) => {
+      setXMessages((prevMessages) => {
+        // 找到最后一条 AI 消息
+        const lastIndex = prevMessages.findLastIndex((m) => m.message.role === 'assistant')
+        if (lastIndex === -1) return prevMessages
+
+        const lastMsg = prevMessages[lastIndex]
+        
+        // 如果已经有建议，就不更新了
+        if (lastMsg.message.suggestedQuestions?.length) return prevMessages
+
+        const newMessages = [...prevMessages]
+        newMessages[lastIndex] = {
+          ...lastMsg,
+          message: {
+            ...lastMsg.message,
+            suggestedQuestions: suggestions
+          }
+        }
+        
+        // 同时触发持久化更新
+        if (conversationKey) {
+            const persistKey = messageIdMapRef.current.get(String(lastMsg.id))
+            if (persistKey) {
+                onUpdateMessageRef.current(persistKey, { suggestedQuestions: suggestions })
+            }
+        }
+        
+        return newMessages
+      })
+    }
+
+    window.api.onChatSuggestions(handleSuggestions)
+    return () => {
+      // 检查函数是否存在并调用
+      if (typeof window.api?.removeChatListeners === 'function') {
+        window.api.removeChatListeners()
+      }
+    }
+  }, [setXMessages, conversationKey])
+
+  // 映射 xMessages ID 到 持久化 Key
+  const messageIdMapRef = useRef<Map<string, string>>(new Map())
+
   // 发送消息
   const sendMessage = useCallback(
     (question: string, sources?: string[], tags?: string[]) => {
@@ -338,6 +386,9 @@ export function useChatWithXChat({
             // 生成唯一的持久化 ID，避免与 useXChat 生成的 ID 冲突
             const role = xMsg.message.role === 'user' ? 'user' : 'ai'
             const persistKey = `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+            
+            // 记录映射关系
+            messageIdMapRef.current.set(originalId, persistKey)
 
             const chatMessage: ChatMessage = {
               key: persistKey,

@@ -109,6 +109,7 @@ declare global {
       onChatSuggestions: (callback: (suggestions: string[]) => void) => void
       onChatDone: (callback: () => void) => void
       onChatError: (callback: (error: string) => void) => void
+      removeChatListeners: () => void
       removeAllChatListeners: () => void
       // 嵌入模型进度
       onEmbeddingProgress: (callback: (progress: EmbeddingProgress) => void) => void

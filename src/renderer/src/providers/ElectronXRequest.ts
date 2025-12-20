@@ -123,7 +123,8 @@ export class ElectronXRequest extends AbstractXRequestClass<
     const handleSources = (sources: ChatSource[]): void => {
       const output: ElectronRequestOutput = { type: 'sources', sources }
       this.chunks.push(output)
-      // sources 不触发 onUpdate，只存储
+      // 立即触发更新，以便 UI 能尽早显示来源
+      this.options.callbacks?.onUpdate?.(output, new Headers())
     }
 
     const handleSuggestions = (suggestions: string[]): void => {

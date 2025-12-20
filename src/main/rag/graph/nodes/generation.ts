@@ -53,6 +53,14 @@ export async function generate(state: ChatGraphState): Promise<ChatGraphState> {
       state.onToken?.(chunk)
       answer += chunk
     }
+    
+    // 生成完成后，立即通知前端停止 Loading 状态（虽然请求还没完全结束）
+    // 通过发送一个空的 done 信号或者特殊标记？
+    // ElectronXRequest 目前只识别 'done' 类型作为结束。
+    // 如果我们在这里发送 'done'，前端会认为请求结束，可能会断开连接或忽略后续的 suggestions。
+    // 所以这里不能发送 'done'。
+    // 但是我们可以优化 suggestion 和 memoryUpdate 的速度。
+    
     const next = { ...state, answer, retryCount: (state.retryCount || 0) + (state.answer ? 1 : 0) }
     logStep(next, 'generate', 'end', { ok: true, ms: Date.now() - t0, answerChars: answer.length })
     return next

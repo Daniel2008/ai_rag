@@ -87,6 +87,7 @@ export async function retrieve(state: ChatGraphState): Promise<ChatGraphState> {
       return next
     }
 
+    // 3. 更新状态
     const next = {
       ...state,
       context,
@@ -94,6 +95,16 @@ export async function retrieve(state: ChatGraphState): Promise<ChatGraphState> {
       isGlobalSearch,
       contextMetrics: metrics
     }
+
+    // 立即通知前端引用来源（如果有回调）
+    if (state.onSources && usedSources.length > 0) {
+      try {
+        state.onSources(usedSources)
+      } catch (e) {
+        console.warn('Failed to invoke onSources callback', e)
+      }
+    }
+
     logStep(next, 'retrieve', 'end', {
       ok: true,
       ms: Date.now() - t0,

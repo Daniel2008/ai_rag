@@ -28,6 +28,10 @@ const stateChannels = {
   onToken: {
     value: (prev?: (chunk: string) => void, next?: (chunk: string) => void) => next ?? prev
   },
+  onSources: {
+    value: (prev?: (sources: ChatSource[]) => void, next?: (sources: ChatSource[]) => void) =>
+      next ?? prev
+  },
   documentIntent: { value: (prev: unknown, next: unknown) => next ?? prev },
   translatedQuestion: { value: (prev: string, next: string) => next ?? prev },
   suggestedQuestions: { value: (prev: string[], next: string[]) => next ?? prev },
@@ -63,6 +67,11 @@ export const chatGraph = new StateGraph<ChatGraphState>({
   .addEdge('generate', 'postcheck')
   .addEdge('postcheck', 'groundingCheck')
   .addConditionalEdges('groundingCheck', shouldRegenerate)
+  // 并行执行 memoryUpdate 和 suggest，通过 END 节点结束
+  // 注意：LangGraph 的并行执行是通过从一个节点连接到多个节点实现的
+  // 但这里我们希望它们都执行完，且互不依赖
+  // 由于 LangGraph JS 的并行执行模型限制，我们这里还是保持串行，但可以在节点内部优化
+  .addEdge('groundingCheck', 'suggest')
   .addEdge('suggest', 'memoryUpdate')
   .addEdge('memoryUpdate', END)
   .compile()
