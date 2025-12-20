@@ -28,6 +28,43 @@ const getModelsPath = (): string => {
   return modelsPath
 }
 
+function getMarkerDir(modelsPath: string): string {
+  const dir = path.join(modelsPath, '.ai-rag')
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+  return dir
+}
+
+function sanitizeModelIdForFile(modelId: string): string {
+  return modelId.replace(/[^a-zA-Z0-9._-]+/g, '_')
+}
+
+function getRerankerMarkerPath(modelsPath: string, modelId: string): string {
+  const markerDir = getMarkerDir(modelsPath)
+  return path.join(markerDir, `reranker__${sanitizeModelIdForFile(modelId)}.json`)
+}
+
+function hasRerankerMarker(modelsPath: string, modelId: string): boolean {
+  return fs.existsSync(getRerankerMarkerPath(modelsPath, modelId))
+}
+
+function writeRerankerMarker(modelsPath: string, modelId: string): void {
+  const markerPath = getRerankerMarkerPath(modelsPath, modelId)
+  fs.writeFileSync(
+    markerPath,
+    JSON.stringify({ modelId, updatedAt: Date.now(), kind: 'reranker' }, null, 2),
+    'utf-8'
+  )
+}
+
+function removeRerankerMarker(modelsPath: string, modelId: string): void {
+  const markerPath = getRerankerMarkerPath(modelsPath, modelId)
+  if (fs.existsSync(markerPath)) {
+    fs.rmSync(markerPath, { force: true })
+  }
+}
+
 export const LOCAL_RERANKER_MODELS = {
   'bge-reranker-base': 'Xenova/bge-reranker-base',
   'bge-reranker-v2-m3': 'Xenova/bge-reranker-v2-m3'
@@ -63,6 +100,14 @@ export async function initLocalReranker(
     while (retryCount <= maxRetries) {
       try {
         const modelsPath = getModelsPath()
+        const modelLegacyPath = path.join(modelsPath, modelId.split('/').join('--'))
+        const modelNestedPath = path.join(modelsPath, modelId.split('/').join(path.sep))
+        const modelFlatPath = path.join(modelsPath, sanitizeModelIdForFile(modelId))
+        const offlineFirst =
+          hasRerankerMarker(modelsPath, modelId) ||
+          fs.existsSync(modelLegacyPath) ||
+          fs.existsSync(modelNestedPath) ||
+          fs.existsSync(modelFlatPath)
 
         const startingProgress = {
           status: ProgressStatus.DOWNLOADING,
@@ -74,67 +119,86 @@ export async function initLocalReranker(
         sendRerankerProgress(startingProgress)
 
         console.log(`[Reranker] Starting initialization for ${modelId}...`)
-        await initRerankerInWorker(modelId, modelsPath, (payload) => {
-          const payloadObj = payload as Record<string, unknown>
-          const base = {
-            taskType: TaskType.RERANKER_DOWNLOAD
-          } satisfies Partial<Parameters<ProgressCallback>[0]>
+        await initRerankerInWorker(
+          modelId,
+          modelsPath,
+          (payload) => {
+            const payloadObj = payload as Record<string, unknown>
+            const base = {
+              taskType: TaskType.RERANKER_DOWNLOAD
+            } satisfies Partial<Parameters<ProgressCallback>[0]>
 
-          let progressMessage: Parameters<ProgressCallback>[0]
+            let progressMessage: Parameters<ProgressCallback>[0]
 
-          if (typeof payloadObj.status === 'string' && typeof payloadObj.message === 'string') {
-            const progressValue =
-              typeof payloadObj.progress === 'number' ? (payloadObj.progress as number) : undefined
-            const fileNameValue =
-              typeof payloadObj.fileName === 'string'
-                ? (payloadObj.fileName as string)
-                : typeof payloadObj.file === 'string'
-                  ? (payloadObj.file as string)
+            if (typeof payloadObj.status === 'string' && typeof payloadObj.message === 'string') {
+              const progressValue =
+                typeof payloadObj.progress === 'number'
+                  ? (payloadObj.progress as number)
                   : undefined
-            const stepValue =
-              typeof payloadObj.step === 'string' ? (payloadObj.step as string) : undefined
+              const fileNameValue =
+                typeof payloadObj.fileName === 'string'
+                  ? (payloadObj.fileName as string)
+                  : typeof payloadObj.file === 'string'
+                    ? (payloadObj.file as string)
+                    : undefined
+              const stepValue =
+                typeof payloadObj.step === 'string' ? (payloadObj.step as string) : undefined
 
-            progressMessage = {
-              ...base,
-              status: payloadObj.status as ProgressStatus,
-              message: payloadObj.message as string,
-              progress: progressValue,
-              fileName: fileNameValue,
-              step: stepValue
+              progressMessage = {
+                ...base,
+                status: payloadObj.status as ProgressStatus,
+                message: payloadObj.message as string,
+                progress: progressValue,
+                fileName: fileNameValue,
+                step: stepValue
+              }
+            } else if (
+              typeof payloadObj.progress === 'number' &&
+              typeof payloadObj.file === 'string'
+            ) {
+              const rawFile = payloadObj.file as string
+              const baseFile =
+                rawFile.split('?')[0]?.replace(/\\/g, '/').split('/').pop()?.trim() || rawFile
+              const isOpaque =
+                (baseFile.length >= 24 &&
+                  !baseFile.includes('.') &&
+                  /^[a-f0-9]+$/i.test(baseFile)) ||
+                /^[a-f0-9]{32,}$/i.test(baseFile)
+              const displayFile = isOpaque ? '模型分片' : baseFile
+              progressMessage = {
+                ...base,
+                status: ProgressStatus.DOWNLOADING,
+                progress: payloadObj.progress as number,
+                fileName: displayFile,
+                message: `下载中: ${displayFile} (${Math.round(payloadObj.progress as number)}%)`
+              }
+            } else if (typeof payloadObj.message === 'string') {
+              const progressValue =
+                typeof payloadObj.progress === 'number'
+                  ? (payloadObj.progress as number)
+                  : undefined
+              progressMessage = {
+                ...base,
+                status: ProgressStatus.DOWNLOADING,
+                message: payloadObj.message as string,
+                progress: progressValue
+              }
+            } else {
+              progressMessage = {
+                ...base,
+                status: ProgressStatus.DOWNLOADING,
+                message: '正在下载重排序模型...'
+              }
             }
-          } else if (
-            typeof payloadObj.progress === 'number' &&
-            typeof payloadObj.file === 'string'
-          ) {
-            progressMessage = {
-              ...base,
-              status: ProgressStatus.DOWNLOADING,
-              progress: payloadObj.progress as number,
-              fileName: payloadObj.file as string,
-              message: `下载中: ${payloadObj.file} (${Math.round(payloadObj.progress as number)}%)`
-            }
-          } else if (typeof payloadObj.message === 'string') {
-            const progressValue =
-              typeof payloadObj.progress === 'number' ? (payloadObj.progress as number) : undefined
-            progressMessage = {
-              ...base,
-              status: ProgressStatus.DOWNLOADING,
-              message: payloadObj.message as string,
-              progress: progressValue
-            }
-          } else {
-            progressMessage = {
-              ...base,
-              status: ProgressStatus.DOWNLOADING,
-              message: '正在下载重排序模型...'
-            }
-          }
 
-          onProgress?.(progressMessage)
-          sendRerankerProgress(progressMessage)
-        })
+            onProgress?.(progressMessage)
+            sendRerankerProgress(progressMessage)
+          },
+          offlineFirst
+        )
         console.log(`[Reranker] Initialization successful for ${modelId}`)
 
+        writeRerankerMarker(modelsPath, modelId)
         cachedModelName = modelId
         isInitializing = false
         initPromise = null
@@ -161,10 +225,11 @@ export async function initLocalReranker(
           // 尝试清理损坏的模型目录
           try {
             const modelsPath = getModelsPath()
+            removeRerankerMarker(modelsPath, modelId)
             // 常见的缓存目录结构处理
-            const modelDirName = modelId.replace('/', path.sep)
+            const modelDirName = modelId.split('/').join(path.sep)
             const modelFullPath = path.join(modelsPath, modelDirName)
-            const modelLegacyPath = path.join(modelsPath, modelId.replace('/', '--'))
+            const modelLegacyPath = path.join(modelsPath, modelId.split('/').join('--'))
 
             if (fs.existsSync(modelFullPath)) {
               console.log(`正在清理损坏的模型目录: ${modelFullPath}`)
@@ -225,11 +290,14 @@ export async function rerank(
 
   await initLocalReranker(modelName)
 
-  const scores = await rerankInWorker(query, documents)
+  const { indices, scores } = await rerankInWorker(query, documents)
 
-  // 映射回索引和分数，并排序
-  const results = scores.map((score, index) => ({ index, score }))
-  results.sort((a, b) => b.score - a.score)
+  // 映射回索引和分数
+  // Worker 已经对结果进行了排序
+  const results = indices.map((originalIndex, i) => ({
+    index: originalIndex,
+    score: scores[i]
+  }))
 
   if (options.topK) {
     return results.slice(0, options.topK)

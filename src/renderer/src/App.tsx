@@ -8,6 +8,7 @@ import { DatabaseOutlined, MenuOutlined } from '@ant-design/icons'
 import { getTheme } from './theme'
 import type { AppSettings } from '../../types/chat'
 import { ChatSidebar, WelcomeScreen, ChatArea, ChatInput, CollectionModal } from './components/chat'
+import type { AssistantPhase } from './components/chat'
 import { GlobalProgress } from './components/GlobalProgress'
 import { UpdateNotification } from './components/UpdateNotification'
 import { useConversations, useChatWithXChat, useKnowledgeBase, useProgress } from './hooks'
@@ -151,15 +152,29 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     return false
   }, [activeConversationKey, displayMessages])
 
-  const assistantPhase = useMemo(() => {
-    const lastAi = [...displayMessages].reverse().find((m) => m.role === 'ai')
-    if (lastAi?.status === 'error') return 'error' as const
-    if (isTyping) {
-      if (lastAi?.typing && !lastAi.content.trim()) return 'thinking' as const
-      return 'answering' as const
+  const assistantPhase = useMemo<AssistantPhase>(() => {
+    // 1. 优先检查后台任务进度
+    if (progress) {
+      if (progress.error) return 'error'
+      // 如果任务未完成且不是错误状态，显示处理中
+      if (
+        progress.taskType?.toLowerCase() !== 'completed' &&
+        progress.taskType?.toLowerCase() !== 'error' &&
+        progress.percent < 100
+      ) {
+        return 'processing'
+      }
     }
-    return 'idle' as const
-  }, [displayMessages, isTyping])
+
+    // 2. 检查对话状态
+    const lastAi = [...displayMessages].reverse().find((m) => m.role === 'ai')
+    if (lastAi?.status === 'error') return 'error'
+    if (isTyping) {
+      if (lastAi?.typing && !lastAi.content.trim()) return 'thinking'
+      return 'answering'
+    }
+    return 'idle'
+  }, [displayMessages, isTyping, progress])
 
   // 初始化
   useEffect(() => {
@@ -193,7 +208,13 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         setInitializing(false)
       }
     })()
-  }, [syncKnowledgeBase, setActiveDocument, setActiveCollectionId, loadConversations])
+  }, [
+    syncKnowledgeBase,
+    setActiveDocument,
+    setActiveCollectionId,
+    loadConversations,
+    setQuestionScope
+  ])
 
   // 窄屏自动隐藏知识库，宽屏恢复显示
   useEffect(() => {
@@ -481,6 +502,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             activeConversationKey={activeConversationKey}
             readyDocuments={readyDocuments}
             assistantPhase={assistantPhase}
+            processingStatus={progress?.stage}
             onThemeChange={onThemeChange}
             onActiveConversationChange={handleActiveConversationChange}
             onCreateNewConversation={createNewConversation}

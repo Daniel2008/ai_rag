@@ -1,6 +1,18 @@
 import type { LanceDB } from '@langchain/community/vectorstores/lancedb'
 import type { Connection, Table } from '@lancedb/lancedb'
 import { Document } from '@langchain/core/documents'
+import {
+  Bool,
+  Field,
+  FixedSizeList,
+  Float32,
+  Float64,
+  Int32,
+  List,
+  Schema,
+  Struct,
+  Utf8
+} from 'apache-arrow'
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -83,6 +95,83 @@ export async function createVectorIndexIfNeeded(tableRef: Table): Promise<void> 
   }
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const result: string[] = []
+  for (const item of value) {
+    if (typeof item === 'string') result.push(item)
+  }
+  return result
+}
+
+function normalizeNullableString(value: unknown): string | null {
+  if (typeof value === 'string' && value.length > 0) return value
+  return null
+}
+
+function normalizeNullableNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const num = Number(value)
+    return Number.isFinite(num) ? num : null
+  }
+  return null
+}
+
+function normalizeBoolean(value: unknown): boolean {
+  return !!value
+}
+
+function normalizeHeadingText(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function buildDocumentTableSchema(embeddingDimension: number): Schema {
+  const utf8 = new Utf8()
+  const float32 = new Float32()
+  const float64 = new Float64()
+  const int32 = new Int32()
+  const bool = new Bool()
+
+  const tagsType = new List(new Field('item', utf8, true))
+  const vectorType = new FixedSizeList(embeddingDimension, new Field('item', float32, false))
+
+  const metadataStruct = new Struct([
+    new Field('source', utf8, true),
+    new Field('tags', tagsType, true),
+    new Field('fileName', utf8, true),
+    new Field('fileType', utf8, true),
+    new Field('pageNumber', int32, true),
+    new Field('position', int32, true),
+    new Field('sourceType', utf8, true),
+    new Field('importedAt', float64, true),
+    new Field('chunkIndex', int32, true),
+    new Field('blockTypes', tagsType, true),
+    new Field('hasHeading', bool, true),
+    new Field('headingText', utf8, true),
+    new Field('chunkingStrategy', utf8, true)
+  ])
+
+  return new Schema([
+    new Field('vector', vectorType, false),
+    new Field('text', utf8, true),
+    new Field('metadata', metadataStruct, true),
+    new Field('source', utf8, true),
+    new Field('tags', tagsType, true),
+    new Field('fileName', utf8, true),
+    new Field('fileType', utf8, true),
+    new Field('pageNumber', int32, true),
+    new Field('position', int32, true),
+    new Field('sourceType', utf8, true),
+    new Field('importedAt', float64, true),
+    new Field('chunkIndex', int32, true),
+    new Field('blockTypes', tagsType, true),
+    new Field('hasHeading', bool, true),
+    new Field('headingText', utf8, true),
+    new Field('chunkingStrategy', utf8, true)
+  ])
+}
+
 /**
  * 确保表存在并包含文档
  */
@@ -94,6 +183,7 @@ export async function ensureTableWithDocuments(
   const embeddings = getEmbeddings()
 
   if (!db) {
+    logDebug('Connecting to LanceDB', 'VectorStore', { dbPath })
     await loadLanceModules()
     db = await connectFn!(dbPath)
   }
@@ -111,6 +201,7 @@ export async function ensureTableWithDocuments(
     try {
       // 确保 table 引用存在
       if (!table) {
+        logDebug('Opening existing table', 'VectorStore', { tableName: TABLE_NAME })
         table = await conn.openTable(TABLE_NAME)
       }
 
@@ -121,7 +212,9 @@ export async function ensureTableWithDocuments(
 
       // 生成向量嵌入
       const texts = docs.map((d) => d.pageContent)
+      logDebug('Generating embeddings for append', 'VectorStore', { count: texts.length })
       const vectors = await embeddings.embedDocuments(texts)
+      logDebug('Embeddings generated', 'VectorStore', { count: vectors.length })
 
       const records = docs.map((doc, i) => {
         const record: Record<string, unknown> = {
@@ -223,33 +316,61 @@ export async function ensureTableWithDocuments(
   // 这里的逻辑也需要改进：如果是为了修复架构而重建，应该确保包含所有字段
   // 生成向量嵌入
   const texts = docs.map((d) => d.pageContent)
+  logDebug('Generating embeddings for create/rebuild', 'VectorStore', { count: texts.length })
   const vectors = await embeddings.embedDocuments(texts)
+  logDebug('Embeddings generated', 'VectorStore', { count: vectors.length })
 
-  const fullRecords = docs.map((doc, i) => ({
-    vector: vectors[i],
-    text: doc.pageContent,
-    metadata: doc.metadata, // 必须包含 metadata 以保持 LangChain 兼容性
-    source: doc.metadata?.source ?? null,
-    tags: doc.metadata?.tags ?? [],
-    fileName: doc.metadata?.fileName ?? null,
-    fileType: doc.metadata?.fileType ?? null,
-    pageNumber: doc.metadata?.pageNumber ?? null,
-    position: doc.metadata?.position ?? null,
-    sourceType: doc.metadata?.sourceType ?? null,
-    importedAt: doc.metadata?.importedAt ?? null,
-    chunkIndex: doc.metadata?.chunkIndex ?? null,
-    blockTypes: doc.metadata?.blockTypes ?? [],
-    hasHeading: doc.metadata?.hasHeading ?? false,
-    headingText: doc.metadata?.headingText ?? '',
-    chunkingStrategy: doc.metadata?.chunkingStrategy ?? null
-  }))
+  const embeddingDimension = vectors[0]?.length ?? 0
+  if (embeddingDimension <= 0) {
+    throw new Error('Failed to determine embedding dimension')
+  }
+  const schema = buildDocumentTableSchema(embeddingDimension)
+
+  const fullRecords = docs.map((doc, i) => {
+    const source = normalizeNullableString(doc.metadata?.source)
+    const tags = normalizeStringArray(doc.metadata?.tags)
+    const fileName = normalizeNullableString(doc.metadata?.fileName)
+    const fileType = normalizeNullableString(doc.metadata?.fileType)
+    const pageNumber = normalizeNullableNumber(doc.metadata?.pageNumber)
+    const position = normalizeNullableNumber(doc.metadata?.position)
+    const sourceType = normalizeNullableString(doc.metadata?.sourceType)
+    const importedAt = normalizeNullableNumber(doc.metadata?.importedAt)
+    const chunkIndex = normalizeNullableNumber(doc.metadata?.chunkIndex)
+    const blockTypes = normalizeStringArray(doc.metadata?.blockTypes)
+    const hasHeading = normalizeBoolean(doc.metadata?.hasHeading)
+    const headingText = normalizeHeadingText(doc.metadata?.headingText)
+    const chunkingStrategy = normalizeNullableString(doc.metadata?.chunkingStrategy)
+
+    const metadata = {
+      source,
+      tags,
+      fileName,
+      fileType,
+      pageNumber: pageNumber === null ? null : Math.trunc(pageNumber),
+      position: position === null ? null : Math.trunc(position),
+      sourceType,
+      importedAt,
+      chunkIndex: chunkIndex === null ? null : Math.trunc(chunkIndex),
+      blockTypes,
+      hasHeading,
+      headingText,
+      chunkingStrategy
+    }
+
+    return {
+      vector: vectors[i],
+      text: doc.pageContent,
+      metadata,
+      ...metadata
+    }
+  })
 
   await loadLanceModules()
 
   // 使用原生 createTable 确保包含所有我们想要的列
   if (!db) db = await connectFn!(dbPath)
   const conn2 = db as Connection
-  table = await conn2.createTable(TABLE_NAME, fullRecords, { mode: 'overwrite' })
+  table = await conn2.createTable(TABLE_NAME, fullRecords, { mode: 'overwrite', schema })
   await createVectorIndexIfNeeded(table)
 
   vectorStore = new LanceDBCtor!(embeddings, { table })
@@ -268,7 +389,9 @@ export async function initVectorStore(): Promise<void> {
 
   try {
     await loadLanceModules()
-    db = await connectFn!(dbPath)
+    if (!db) {
+      db = await connectFn!(dbPath)
+    }
 
     const conn = db as Connection
     const tableNames = await conn.tableNames()

@@ -30,6 +30,7 @@ export interface EnhancedCitation extends ChatSource {
     preview?: string
     /** 段落位置 */
     positionInfo?: string
+    ocrQuality?: string
   }
 }
 
@@ -53,7 +54,7 @@ export async function enhanceCitation(
   } = options
 
   const enhanced: EnhancedCitation = { ...baseSource }
-  const enhancedInfo: any = {}
+  const enhancedInfo: NonNullable<EnhancedCitation['enhanced']> = {}
 
   // 1. 获取文档元数据
   if (includeMetadata && baseSource.filePath) {
@@ -130,7 +131,7 @@ export async function enhanceCitation(
 
   // 5. 来源统计
   if (baseSource.searchSources && baseSource.searchSources.length > 0) {
-    const stats: any = {}
+    const stats: Record<string, number> = {}
     baseSource.searchSources.forEach((source) => {
       stats[source] = (stats[source] || 0) + 1
     })

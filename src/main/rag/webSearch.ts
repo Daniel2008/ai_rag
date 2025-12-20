@@ -46,12 +46,17 @@ export class WebSearcher {
         throw new Error(`Tavily API error: ${response.statusText}`)
       }
 
-      const data = await response.json()
-      return (data.results || []).map((r: any) => ({
-        title: r.title,
-        url: r.url,
-        content: r.content
-      }))
+      const data: unknown = await response.json()
+      const results = (data as { results?: unknown[] } | null)?.results
+      if (!Array.isArray(results)) return []
+      return results.map((r) => {
+        const obj = r as { title?: unknown; url?: unknown; content?: unknown }
+        return {
+          title: typeof obj.title === 'string' ? obj.title : '',
+          url: typeof obj.url === 'string' ? obj.url : '',
+          content: typeof obj.content === 'string' ? obj.content : ''
+        }
+      })
     } catch (error) {
       logDebug(`WebSearcher error: ${error}`, 'WebSearch')
       return []

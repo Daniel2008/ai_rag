@@ -50,7 +50,23 @@ export async function buildRagContext(
   let retrievedPairs: { doc: Document; score: number }[] = []
   try {
     const useHybrid =
-      /[a-zA-Z0-9]/.test(question) || question.includes(' ') || question.length >= 20
+      settings.rag?.useRerank ||
+      settings.rag?.useMultiQuery ||
+      /[a-zA-Z0-9]/.test(question) ||
+      question.includes(' ') ||
+      question.length >= 20
+
+    logDebug('Context build strategy', 'Chat', {
+      useHybrid,
+      reason: {
+        useRerank: settings.rag?.useRerank,
+        useMultiQuery: settings.rag?.useMultiQuery,
+        regexMatch: /[a-zA-Z0-9]/.test(question),
+        hasSpace: question.includes(' '),
+        length: question.length
+      }
+    })
+
     if (useHybrid && isGlobalSearch) {
       const { HybridSearcher } = await import('../hybridSearch')
       const searcher = new HybridSearcher({ topK: searchLimit })

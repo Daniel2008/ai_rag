@@ -1,5 +1,7 @@
 import { createChatModel } from '../utils/createChatModel'
 import { getSettings } from '../settings'
+import type { ModelProvider } from '../settings'
+import { ensureProviderAvailable } from '../utils/providerAvailability'
 import { logDebug } from '../utils/logger'
 
 export interface AnalysisOptions {
@@ -7,15 +9,24 @@ export interface AnalysisOptions {
   maxChunks?: number
 }
 
+type ChatModelLike = {
+  invoke: (input: string) => Promise<string | { content: string }>
+}
+
 /**
  * 长文分析类
  */
 export class LongContextAnalyzer {
-  private model: any
+  private model: ChatModelLike | null = null
+  private modelProvider: ModelProvider | null = null
 
-  constructor() {
+  private async getModel(): Promise<ChatModelLike> {
     const settings = getSettings()
-    this.model = createChatModel(settings.provider)
+    if (this.model && this.modelProvider === settings.provider) return this.model
+    await ensureProviderAvailable(settings.provider)
+    this.model = createChatModel(settings.provider) as unknown as ChatModelLike
+    this.modelProvider = settings.provider
+    return this.model
   }
 
   /**
@@ -50,7 +61,8 @@ ${chunk}
 
     const mapResults = await Promise.all(
       mapPrompts.map(async (prompt) => {
-        const res = await this.model.invoke(prompt)
+        const model = await this.getModel()
+        const res = await model.invoke(prompt)
         return typeof res === 'string' ? res : res.content
       })
     )
@@ -65,7 +77,8 @@ ${chunk}
 ${mapResults.join('\n\n---\n\n')}
 ---`
 
-    const finalResult = await this.model.invoke(reducePrompt)
+    const model = await this.getModel()
+    const finalResult = await model.invoke(reducePrompt)
     return typeof finalResult === 'string' ? finalResult : finalResult.content
   }
 
@@ -77,7 +90,8 @@ ${mapResults.join('\n\n---\n\n')}
 ---
 ${content}
 ---`
-    const res = await this.model.invoke(prompt)
+    const model = await this.getModel()
+    const res = await model.invoke(prompt)
     return typeof res === 'string' ? res : res.content
   }
 

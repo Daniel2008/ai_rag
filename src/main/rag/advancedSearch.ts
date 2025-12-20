@@ -210,7 +210,7 @@ export class AdvancedRetriever {
     const bm25Stats = this.hybridSearcher.getIndexStats()
     return {
       bm25: bm25Stats,
-      config: (this.hybridSearcher as any).config
+      config: this.hybridSearcher.getConfig()
     }
   }
 }

@@ -8,6 +8,61 @@ import { ChatOllama } from '@langchain/ollama'
 import { ChatAnthropic } from '@langchain/anthropic'
 import { ChatZhipuAI } from '@langchain/community/chat_models/zhipuai'
 import { getCachedTranslation, cacheTranslation } from '../utils/translationCache'
+import { logDebug, logWarn } from '../utils/logger'
+
+const OLLAMA_HEALTH_TTL_MS = 10_000
+const OLLAMA_DOWN_COOLDOWN_MS = 30_000
+const ollamaHealthCache = new Map<string, { ok: boolean; checkedAt: number }>()
+const ollamaDownUntil = new Map<string, number>()
+
+function toHttpUrl(input: string): URL | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  try {
+    return new URL(trimmed)
+  } catch {
+    try {
+      return new URL(`http://${trimmed}`)
+    } catch {
+      return null
+    }
+  }
+}
+
+async function checkOllamaAvailable(baseUrl: string): Promise<boolean> {
+  const parsed = toHttpUrl(baseUrl)
+  if (!parsed) return false
+
+  const key = parsed.toString()
+  const now = Date.now()
+  const downUntil = ollamaDownUntil.get(key)
+  if (downUntil && now < downUntil) return false
+
+  const cached = ollamaHealthCache.get(key)
+  if (cached && now - cached.checkedAt < OLLAMA_HEALTH_TTL_MS) {
+    return cached.ok
+  }
+
+  const healthUrl = new URL('/api/version', parsed).toString()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 1200)
+  try {
+    const resp = await fetch(healthUrl, { method: 'GET', signal: controller.signal })
+    const ok = resp.ok
+    ollamaHealthCache.set(key, { ok, checkedAt: now })
+    if (!ok) {
+      ollamaDownUntil.set(key, now + OLLAMA_DOWN_COOLDOWN_MS)
+    }
+    return ok
+  } catch (e) {
+    ollamaHealthCache.set(key, { ok: false, checkedAt: now })
+    ollamaDownUntil.set(key, now + OLLAMA_DOWN_COOLDOWN_MS)
+    logWarn('Ollama 不可用，跳过翻译', 'QueryTranslator', { baseUrl: key }, e as Error)
+    return false
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 
 /**
  * 检测文本语言（简单检测）
@@ -40,7 +95,10 @@ export async function translateQuery(query: string, targetLang: 'zh' | 'en'): Pr
   // 检查缓存
   const cached = getCachedTranslation(query, targetLang)
   if (cached) {
-    console.log(`[translateQuery] Cache hit for "${query}" -> "${cached}"`)
+    logDebug('翻译缓存命中', 'QueryTranslator', {
+      targetLang,
+      queryPreview: query.slice(0, 80)
+    })
     return cached
   }
 
@@ -78,9 +136,16 @@ Translation:`
         }
       })
     } else if (settings.provider === 'ollama') {
+      const baseUrl = (settings.ollamaUrl || settings.ollama.baseUrl || '').trim()
+      if (!baseUrl) {
+        logWarn('Ollama baseUrl 未配置，跳过翻译', 'QueryTranslator')
+        return query
+      }
+      const available = await checkOllamaAvailable(baseUrl)
+      if (!available) return query
       model = new ChatOllama({
         model: settings.ollama.chatModel,
-        baseUrl: settings.ollama.baseUrl,
+        baseUrl,
         temperature: 0
       })
     } else if (settings.provider === 'anthropic') {
@@ -113,7 +178,7 @@ Translation:`
       })
     } else {
       // 如果没有配置 LLM，返回原始查询
-      console.log('[translateQuery] No LLM configured, returning original query')
+      logDebug('未配置 LLM，跳过翻译', 'QueryTranslator')
       return query
     }
 
@@ -126,12 +191,22 @@ Translation:`
     // 缓存翻译结果
     cacheTranslation(query, targetLang, translated)
 
-    console.log(
-      `[translateQuery] Translated "${query}" (${sourceLang}) -> "${translated}" (${targetLang})`
-    )
+    logDebug('翻译完成', 'QueryTranslator', {
+      sourceLang,
+      targetLang,
+      queryPreview: query.slice(0, 80),
+      translatedPreview: translated.slice(0, 80)
+    })
     return translated
   } catch (error) {
-    console.error('[translateQuery] Translation failed:', error)
+    if (settings.provider === 'ollama') {
+      const baseUrl = (settings.ollamaUrl || settings.ollama.baseUrl || '').trim()
+      const parsed = toHttpUrl(baseUrl)
+      if (parsed) {
+        ollamaDownUntil.set(parsed.toString(), Date.now() + OLLAMA_DOWN_COOLDOWN_MS)
+      }
+    }
+    logWarn('翻译失败，降级为原始查询', 'QueryTranslator', { targetLang }, error as Error)
     // 翻译失败时返回原始查询
     return query
   }
@@ -253,7 +328,12 @@ export async function generateCrossLanguageQueries(
       queries: [...new Set(allQueries)] // 去重
     }
   } catch (error) {
-    console.error('[generateCrossLanguageQueries] Failed to generate translated query:', error)
+    logWarn(
+      '生成跨语言查询失败，降级为中文扩展',
+      'QueryTranslator',
+      { queryPreview: query.slice(0, 80) },
+      error as Error
+    )
     return {
       original: query,
       queries: chineseExpansions

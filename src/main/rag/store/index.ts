@@ -12,11 +12,11 @@ import {
   getDocCountCached,
   pruneExpiredCaches,
   getQueryCacheStats
-} from './query_cache'
+} from './queryCache'
 import {
   searchSimilarDocumentsWithScores as searchWithScores,
   searchSimilarDocuments as searchDocs
-} from './vector_search'
+} from './vectorSearch'
 import {
   addDocumentsToStore as addDocs,
   removeSourceFromStore as removeSource,
@@ -130,7 +130,7 @@ export async function getVectorStoreStats(): Promise<VectorStoreStats> {
 export async function clearEmbeddingsCache(): Promise<void> {
   await clearEmbeddingsInternal()
   await closeVectorStore()
-  const { queryEmbeddingCache } = await import('./query_cache')
+  const { queryEmbeddingCache } = await import('./queryCache')
   queryEmbeddingCache.clear()
   const { clearBM25Cache } = await import('./bm25')
   clearBM25Cache()

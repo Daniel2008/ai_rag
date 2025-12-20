@@ -9,6 +9,11 @@ import fs from 'fs'
 import { initEmbeddingInWorker, embedInWorker } from './workerManager'
 import { ProgressCallback, ProgressStatus, TaskType, ProgressMessage } from './progressTypes'
 import { RAG_CONFIG } from '../utils/config'
+import {
+  extractFileBaseName,
+  isOpaqueFileName,
+  describeModelArtifact
+} from './modelUtils'
 
 // 配置模型缓存路径到应用数据目录
 const getModelsPath = (): string => {
@@ -21,17 +26,54 @@ const getModelsPath = (): string => {
   return modelsPath
 }
 
+function getMarkerDir(modelsPath: string): string {
+  const dir = path.join(modelsPath, '.ai-rag')
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+  return dir
+}
+
+function sanitizeModelIdForFile(modelId: string): string {
+  return modelId.replace(/[^a-zA-Z0-9._-]+/g, '_')
+}
+
+function getEmbeddingMarkerPath(modelsPath: string, modelId: string): string {
+  const markerDir = getMarkerDir(modelsPath)
+  return path.join(markerDir, `embedding__${sanitizeModelIdForFile(modelId)}.json`)
+}
+
+function hasEmbeddingMarker(modelsPath: string, modelId: string): boolean {
+  return fs.existsSync(getEmbeddingMarkerPath(modelsPath, modelId))
+}
+
+function writeEmbeddingMarker(modelsPath: string, modelId: string): void {
+  const markerPath = getEmbeddingMarkerPath(modelsPath, modelId)
+  fs.writeFileSync(
+    markerPath,
+    JSON.stringify({ modelId, updatedAt: Date.now(), kind: 'embedding' }, null, 2),
+    'utf-8'
+  )
+}
+
+function removeEmbeddingMarker(modelsPath: string, modelId: string): void {
+  const markerPath = getEmbeddingMarkerPath(modelsPath, modelId)
+  if (fs.existsSync(markerPath)) {
+    fs.rmSync(markerPath, { force: true })
+  }
+}
+
 // 支持的本地嵌入模型
 // 推荐使用 multilingual-e5-small 或 bge-m3 用于多语言场景
 export const LOCAL_EMBEDDING_MODELS = {
   // 多语言模型（推荐用于中英文混合场景）
-  'multilingual-e5-small': 'intfloat/multilingual-e5-small', // 多语言，效果好
-  'multilingual-e5-base': 'intfloat/multilingual-e5-base', // 多语言，更大更准
-  'bge-m3': 'BAAI/bge-m3', // 多语言，最新最强
+  'multilingual-e5-small': 'Xenova/multilingual-e5-small', // 多语言，效果好
+  'multilingual-e5-base': 'Xenova/multilingual-e5-base', // 多语言，更大更准
+  'bge-m3': 'Xenova/bge-m3', // 多语言，最新最强
 
   // 中文专用模型
-  'bge-small-zh': 'BAAI/bge-small-zh-v1.5', // 中文专用
-  'bge-base-zh': 'BAAI/bge-base-zh-v1.5', // 中文专用，更大
+  'bge-small-zh': 'Xenova/bge-small-zh-v1.5', // 中文专用
+  'bge-base-zh': 'Xenova/bge-base-zh-v1.5', // 中文专用，更大
 
   // 英文模型
   'nomic-embed-text': 'nomic-ai/nomic-embed-text-v1.5', // 英文，效果好
@@ -153,6 +195,14 @@ export async function initLocalEmbeddings(
     while (retryCount <= maxRetries) {
       try {
         const modelsPath = getModelsPath()
+        const modelLegacyPath = path.join(modelsPath, modelId.split('/').join('--'))
+        const modelNestedPath = path.join(modelsPath, modelId.split('/').join(path.sep))
+        const modelFlatPath = path.join(modelsPath, sanitizeModelIdForFile(modelId))
+        const offlineFirst =
+          hasEmbeddingMarker(modelsPath, modelId) ||
+          fs.existsSync(modelLegacyPath) ||
+          fs.existsSync(modelNestedPath) ||
+          fs.existsSync(modelFlatPath)
 
         currentProgressCallback?.({
           status: ProgressStatus.DOWNLOADING,
@@ -161,30 +211,34 @@ export async function initLocalEmbeddings(
           taskType: TaskType.MODEL_DOWNLOAD
         })
 
-        await initEmbeddingInWorker(modelId, modelsPath, (payload) => {
-          // Handle progress from worker
-          const payloadObj = payload as Record<string, unknown>
-          let progressMessage: ProgressMessage
+        await initEmbeddingInWorker(
+          modelId,
+          modelsPath,
+          (payload) => {
+            const payloadObj = payload as Record<string, unknown>
+            let progressMessage: ProgressMessage
 
-          // Check if it's already a standard ProgressMessage
-          if (typeof payloadObj.status === 'string' && typeof payloadObj.taskType === 'string') {
-            progressMessage = payload as ProgressMessage
-          } else {
-            // Convert old format to standard ProgressMessage
-            if (typeof payloadObj.progress === 'number' && typeof payloadObj.file === 'string') {
-              // 处理模型文件下载进度
+            if (typeof payloadObj.status === 'string' && typeof payloadObj.taskType === 'string') {
+              progressMessage = payload as ProgressMessage
+            } else if (
+              typeof payloadObj.progress === 'number' &&
+              typeof payloadObj.file === 'string'
+            ) {
+              const fileBaseName = extractFileBaseName(payloadObj.file)
+              const artifactLabel = isOpaqueFileName(fileBaseName)
+                ? '模型分片'
+                : describeModelArtifact(fileBaseName)
               progressMessage = {
                 status: ProgressStatus.DOWNLOADING,
                 progress: payloadObj.progress,
-                fileName: payloadObj.file,
-                message: `下载中: ${payloadObj.file} (${Math.round(payloadObj.progress)}%)`,
+                fileName: artifactLabel,
+                message: `下载中: ${modelName} · ${artifactLabel} (${Math.round(payloadObj.progress)}%)`,
                 taskType: TaskType.MODEL_DOWNLOAD
               }
             } else if (
               payloadObj.step === 'downloading' &&
               typeof payloadObj.message === 'string'
             ) {
-              // 处理镜像切换等进度消息
               progressMessage = {
                 status: ProgressStatus.DOWNLOADING,
                 message: payloadObj.message,
@@ -192,7 +246,6 @@ export async function initLocalEmbeddings(
                 progress: (payloadObj.progress as number) || undefined
               }
             } else {
-              // Default case: handle unexpected payloads
               progressMessage = {
                 status: ProgressStatus.DOWNLOADING,
                 message: (payloadObj.message as string) || '处理中...',
@@ -200,12 +253,13 @@ export async function initLocalEmbeddings(
                 progress: (payloadObj.progress as number) || undefined
               }
             }
-          }
 
-          // Forward the unified progress message using the current callback
-          currentProgressCallback?.(progressMessage)
-        })
+            currentProgressCallback?.(progressMessage)
+          },
+          offlineFirst
+        )
 
+        writeEmbeddingMarker(modelsPath, modelId)
         cachedModelName = modelId
         isInitializing = false
         initPromise = null
@@ -234,10 +288,11 @@ export async function initLocalEmbeddings(
           // 尝试清理损坏的模型目录
           try {
             const modelsPath = getModelsPath()
+            removeEmbeddingMarker(modelsPath, modelId)
             // 常见的缓存目录结构处理
-            const modelDirName = modelId.replace('/', path.sep)
+            const modelDirName = modelId.split('/').join(path.sep)
             const modelFullPath = path.join(modelsPath, modelDirName)
-            const modelLegacyPath = path.join(modelsPath, modelId.replace('/', '--'))
+            const modelLegacyPath = path.join(modelsPath, modelId.split('/').join('--'))
 
             if (fs.existsSync(modelFullPath)) {
               console.log(`正在清理损坏的模型目录: ${modelFullPath}`)
@@ -312,8 +367,10 @@ export async function getLocalEmbeddings(
 export function isModelDownloaded(modelName: LocalEmbeddingModelName): boolean {
   const modelId = LOCAL_EMBEDDING_MODELS[modelName]
   const modelsPath = getModelsPath()
-  const modelPath = path.join(modelsPath, modelId.replace('/', '--'))
-  return fs.existsSync(modelPath)
+  if (hasEmbeddingMarker(modelsPath, modelId)) return true
+  const modelLegacyPath = path.join(modelsPath, modelId.split('/').join('--'))
+  const modelNestedPath = path.join(modelsPath, modelId.split('/').join(path.sep))
+  return fs.existsSync(modelLegacyPath) || fs.existsSync(modelNestedPath)
 }
 
 /**

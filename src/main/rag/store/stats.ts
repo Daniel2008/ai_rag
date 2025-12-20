@@ -1,5 +1,5 @@
 import { getDbPath, table } from './core'
-import { queryEmbeddingCache } from './query_cache'
+import { queryEmbeddingCache } from './queryCache'
 import { logWarn } from '../../utils/logger'
 import type { VectorStoreStats } from './types'
 

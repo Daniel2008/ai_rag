@@ -66,6 +66,22 @@ const store = new (StoreConstructor as new (
   config: Record<string, unknown>
 ) => ElectronStore<AppSettings>)(storeConfig)
 
+function normalizeEndpoint(input: unknown): string | undefined {
+  if (typeof input !== 'string') return undefined
+  let s = input.trim()
+  while (true) {
+    const next = s
+      .replace(/^[`"'“”‘’]+/, '')
+      .replace(/[`"'“”‘’]+$/, '')
+      .trim()
+    if (next === s) break
+    s = next
+  }
+  if (!s) return ''
+  if (s.endsWith('/')) return s.replace(/\/+$/, '')
+  return s
+}
+
 function normalizeRagSettings(
   input: Partial<RagSettings> | undefined,
   base: RagSettings
@@ -112,8 +128,11 @@ function mergeProviderConfig(
 ): ProviderConfig {
   if (!stored) return defaultConfig
   return {
-    apiKey: stored.apiKey ?? defaultConfig.apiKey,
-    baseUrl: stored.baseUrl ?? defaultConfig.baseUrl,
+    apiKey: typeof stored.apiKey === 'string' ? stored.apiKey.trim() : defaultConfig.apiKey,
+    baseUrl:
+      normalizeEndpoint(stored.baseUrl) ??
+      normalizeEndpoint(defaultConfig.baseUrl) ??
+      defaultConfig.baseUrl,
     chatModel: stored.chatModel ?? defaultConfig.chatModel,
     embeddingModel: stored.embeddingModel ?? defaultConfig.embeddingModel
   }
@@ -123,11 +142,6 @@ export function getSettings(): AppSettings {
   const provider = store.get('provider') || defaults.provider
   const openaiStored = store.get('openai')
   const deepseekStored = store.get('deepseek')
-
-  // 调试日志
-  console.log('[Settings] Current provider:', provider)
-  console.log('[Settings] OpenAI stored:', JSON.stringify(openaiStored))
-  console.log('[Settings] DeepSeek stored:', JSON.stringify(deepseekStored))
 
   return {
     provider,
@@ -139,7 +153,7 @@ export function getSettings(): AppSettings {
     moonshot: mergeProviderConfig(store.get('moonshot'), defaults.moonshot),
     embeddingProvider: store.get('embeddingProvider') || defaults.embeddingProvider,
     embeddingModel: store.get('embeddingModel') || defaults.embeddingModel,
-    ollamaUrl: store.get('ollamaUrl') || defaults.ollamaUrl,
+    ollamaUrl: normalizeEndpoint(store.get('ollamaUrl')) ?? defaults.ollamaUrl,
     rag: normalizeRagSettings(store.get('rag'), defaults.rag)
   }
 }
@@ -157,10 +171,14 @@ export function saveSettings(settings: Partial<AppSettings>): void {
         ['openai', 'anthropic', 'deepseek', 'zhipu', 'moonshot', 'ollama'].includes(key)
       ) {
         // 自动修剪 API Key 和 Base URL 的空格
-        const config = { ...(value as Record<string, any>) }
-        if (typeof config.apiKey === 'string') config.apiKey = config.apiKey.trim()
-        if (typeof config.baseUrl === 'string') config.baseUrl = config.baseUrl.trim()
+        const config = { ...(value as unknown as Record<string, unknown>) }
+        if (typeof config['apiKey'] === 'string') config['apiKey'] = config['apiKey'].trim()
+        if (typeof config['baseUrl'] === 'string') {
+          config['baseUrl'] = normalizeEndpoint(config['baseUrl']) ?? ''
+        }
         store.set(key as keyof AppSettings, config)
+      } else if (key === 'ollamaUrl' && typeof value === 'string') {
+        store.set(key as keyof AppSettings, normalizeEndpoint(value) ?? '')
       } else {
         store.set(key as keyof AppSettings, value)
       }

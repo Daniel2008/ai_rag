@@ -82,27 +82,25 @@ export class OCRProcessor {
       // 读取图像文件为buffer
       const imageBuffer = await fs.readFile(imagePath)
 
-      // 配置Tesseract
-      const workerConfig: any = {
-        lang: this.config.languages.join('+'),
-        logger: (m: any) => {
+      const lang = this.config.languages.join('+')
+      const options = {
+        logger: (m: { status?: string; progress?: number }) => {
           if (onProgress && m.status === 'recognizing text') {
             onProgress({
               status: 'processing',
-              progress: m.progress * 100,
-              message: `正在识别文本... ${Math.round(m.progress * 100)}%`,
+              progress: (m.progress || 0) * 100,
+              message: `正在识别文本... ${Math.round((m.progress || 0) * 100)}%`,
               page: 1,
               totalPages: 1
             })
           }
         }
-      }
+      } as Parameters<typeof Tesseract.recognize>[2]
 
-      // 质量设置
       if (this.config.quality === 'fast') {
-        workerConfig.psm = 6 // PSM.SINGLE_BLOCK
+        ;(options as Record<string, unknown>)['psm'] = 6
       } else if (this.config.quality === 'high') {
-        workerConfig.psm = 7 // PSM.SINGLE_LINE
+        ;(options as Record<string, unknown>)['psm'] = 7
       }
 
       // 使用Tesseract进行OCR识别
@@ -112,7 +110,7 @@ export class OCRProcessor {
         quality: this.config.quality
       })
 
-      const result = await Tesseract.recognize(imageBuffer, workerConfig)
+      const result = await Tesseract.recognize(imageBuffer, lang, options)
 
       const processingTime = Date.now() - startTime
 
@@ -124,7 +122,10 @@ export class OCRProcessor {
 
       // 如果需要保留布局，添加额外的格式化
       if (this.config.preserveLayout && result.data.blocks) {
-        text = this.formatTextWithLayout(result.data.blocks, text)
+        text = this.formatTextWithLayout(
+          result.data.blocks as Array<{ text?: string; bbox?: { x0?: number; y0?: number } }>,
+          text
+        )
       }
 
       logInfo('OCR处理完成', 'OCRProcessor', {
@@ -206,7 +207,7 @@ export class OCRProcessor {
   /**
    * 创建LangChain文档
    */
-  createDocumentsFromOCR(ocrResult: OCRResult, metadata: Record<string, any> = {}): Document[] {
+  createDocumentsFromOCR(ocrResult: OCRResult, metadata: Record<string, unknown> = {}): Document[] {
     if (!ocrResult.success || !ocrResult.text) {
       return []
     }
@@ -236,7 +237,10 @@ export class OCRProcessor {
   /**
    * 格式化文本保留布局
    */
-  private formatTextWithLayout(blocks: any[], rawText: string): string {
+  private formatTextWithLayout(
+    blocks: Array<{ text?: string; bbox?: { x0?: number; y0?: number } }>,
+    rawText: string
+  ): string {
     if (!blocks || blocks.length === 0) {
       return rawText
     }

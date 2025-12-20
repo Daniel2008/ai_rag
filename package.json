@@ -30,7 +30,7 @@
     "icon:fix-windows": "node scripts/fix-windows-icon.js",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "test:ui": "vitest --ui"
   },
@@ -40,6 +40,7 @@
     "@ant-design/x": "^2.1.0",
     "@ant-design/x-markdown": "^2.1.0",
     "@ant-design/x-sdk": "^2.1.0",
+    "@huggingface/hub": "^2.7.1",
     "@huggingface/transformers": "^3.8.1",
     "@lancedb/lancedb": "^0.19.1",
     "@langchain/anthropic": "^1.2.3",
@@ -97,6 +98,7 @@
     "react-dom": "^19.2.1",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6"
+    "vite": "^7.2.6",
+    "vitest": "^4.0.16"
   }
 }

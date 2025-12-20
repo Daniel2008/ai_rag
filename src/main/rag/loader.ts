@@ -197,6 +197,8 @@ export async function loadAndSplitFile(
   const importedAt = new Date().toISOString()
   let docs: Document[]
 
+  console.log(`[Loader] Starting to load file: ${filePath}, type: ${fileType}`)
+
   // 默认使用语义分块
   const strategy = chunkingConfig?.strategy ?? 'semantic'
 
@@ -218,7 +220,8 @@ export async function loadAndSplitFile(
 
   try {
     await fs.access(filePath, fs.constants.F_OK)
-  } catch {
+  } catch (error) {
+    console.error(`[Loader] File not found: ${filePath}`, error)
     onProgress?.({
       taskType: TaskType.DOCUMENT_PARSE,
       status: ProgressStatus.ERROR,
@@ -237,7 +240,8 @@ export async function loadAndSplitFile(
 
   try {
     await fs.access(filePath, fs.constants.R_OK)
-  } catch {
+  } catch (error) {
+    console.error(`[Loader] Permission denied: ${filePath}`, error)
     onProgress?.({
       taskType: TaskType.DOCUMENT_PARSE,
       status: ProgressStatus.ERROR,
@@ -255,11 +259,13 @@ export async function loadAndSplitFile(
     })
 
     try {
+      console.log(`[Loader] Initializing PDFLoader for ${filePath}`)
       const loader = new PDFLoader(filePath, {
         // 尝试按页分割以便更好地处理
         splitPages: true
       })
       docs = await loader.load()
+      console.log(`[Loader] PDF loaded, pages: ${docs.length}`)
 
       // 检查是否有乱码
       let garbledPageCount = 0
@@ -277,6 +283,8 @@ export async function loadAndSplitFile(
       // 如果超过 50% 的页面是乱码，使用 OCR
       const garbledRatio = docs.length > 0 ? garbledPageCount / docs.length : 0
       const meaningfulRatio = totalTextLength > 0 ? meaningfulCharsTotal / totalTextLength : 0
+
+      console.log(`[Loader] PDF Quality Check - Garbled Ratio: ${garbledRatio}, Meaningful Ratio: ${meaningfulRatio}`)
 
       // 判定：页面乱码比例超过 20% 或整体有效字符比例低于 40%，则认为无法解析
       const isUnparsable = garbledRatio > 0.2 || meaningfulRatio < 0.4
@@ -301,6 +309,7 @@ export async function loadAndSplitFile(
         progress: 60
       })
     } catch (error) {
+      console.error(`[Loader] PDF parsing failed: ${filePath}`, error)
       onProgress?.({
         taskType: TaskType.DOCUMENT_PARSE,
         status: ProgressStatus.ERROR,
@@ -322,7 +331,9 @@ export async function loadAndSplitFile(
     })
 
     try {
+      console.log(`[Loader] Parsing Office file: ${filePath}`)
       const content = await officeParser.parseOfficeAsync(filePath)
+      console.log(`[Loader] Office file parsed, length: ${content?.length}`)
       docs = [
         new Document({
           pageContent: content,
@@ -337,6 +348,7 @@ export async function loadAndSplitFile(
         progress: 60
       })
     } catch (error) {
+      console.error(`[Loader] Office parsing failed: ${filePath}`, error)
       onProgress?.({
         taskType: TaskType.DOCUMENT_PARSE,
         status: ProgressStatus.ERROR,
@@ -355,6 +367,7 @@ export async function loadAndSplitFile(
     }
     const format = formatMap[ext] || { name: '文档', newExt: '' }
 
+    console.warn(`[Loader] Unsupported legacy format: ${ext}`)
     onProgress?.({
       taskType: TaskType.DOCUMENT_PARSE,
       status: ProgressStatus.ERROR,
@@ -373,8 +386,10 @@ export async function loadAndSplitFile(
     })
 
     try {
+      console.log(`[Loader] Reading text file: ${filePath}`)
       const buffer = await fs.readFile(filePath)
       const { text: content, encoding } = decodeTextBuffer(buffer)
+      console.log(`[Loader] Text file read, encoding: ${encoding}, length: ${content.length}`)
       docs = [
         new Document({
           pageContent: content,
@@ -389,6 +404,7 @@ export async function loadAndSplitFile(
         progress: 60
       })
     } catch (error) {
+      console.error(`[Loader] Text reading failed: ${filePath}`, error)
       onProgress?.({
         taskType: TaskType.DOCUMENT_PARSE,
         status: ProgressStatus.ERROR,
@@ -397,6 +413,7 @@ export async function loadAndSplitFile(
       throw new Error(`文本文件读取失败: ${fileName}。错误详情: ${String(error)}`)
     }
   } else {
+    console.error(`[Loader] Unsupported file type: ${ext}`)
     throw new Error(
       `不支持的文件类型: ${ext}。当前支持 PDF、Word(.doc/.docx/.odt)、Excel(.xls/.xlsx/.ods)、PPT(.ppt/.pptx/.odp)、TXT 和 Markdown 文件。`
     )

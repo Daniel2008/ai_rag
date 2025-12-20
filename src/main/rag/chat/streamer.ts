@@ -3,6 +3,7 @@ import { PromptTemplate } from '@langchain/core/prompts'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { getSettings } from '../../settings'
 import { createChatModel } from '../../utils/createChatModel'
+import { ensureProviderAvailable } from '../../utils/providerAvailability'
 import { logInfo } from '../../utils/logger'
 
 /** 构建 RAG 提示词 */
@@ -125,6 +126,8 @@ export async function streamAnswer(
     : ''
   const fullContext = memoryBlock + context
   const promptText = buildPrompt(fullContext, question, isGlobalSearch)
+
+  await ensureProviderAvailable(settings.provider)
 
   if (settings.provider === 'deepseek' && settings.deepseek.chatModel.includes('reasoner')) {
     logInfo('Using DeepSeek Reasoner', 'Chat')

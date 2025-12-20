@@ -14,18 +14,19 @@ import {
 } from '@ant-design/icons'
 import type { ConversationItem } from '../../types/chat'
 
-type AssistantPhase = 'idle' | 'thinking' | 'answering' | 'error'
+export type AssistantPhase = 'idle' | 'thinking' | 'answering' | 'error' | 'processing'
 
 interface ChatSidebarProps {
   themeMode: 'light' | 'dark'
   sidebarCollapsed: boolean
   conversationItems: ConversationItem[]
-  activeConversationKey: string | undefined
+  activeConversationKey?: string
   readyDocuments: number
   assistantPhase: AssistantPhase
+  processingStatus?: string
   onThemeChange: (mode: 'light' | 'dark') => void
-  onActiveConversationChange: (key: string | undefined) => void
-  onCreateNewConversation: () => void
+  onActiveConversationChange: (key: string) => void
+  onCreateNewConversation: () => Promise<string>
   onDeleteConversation: (key: string) => void
   onOpenSettings: () => void
 }
@@ -37,6 +38,7 @@ export function ChatSidebar({
   activeConversationKey,
   readyDocuments,
   assistantPhase,
+  processingStatus,
   onThemeChange,
   onActiveConversationChange,
   onCreateNewConversation,
@@ -45,16 +47,19 @@ export function ChatSidebar({
 }: ChatSidebarProps): ReactElement {
   const { token } = antdTheme.useToken()
 
+  // 助手状态文案
   const assistantSubtitle =
     assistantPhase === 'thinking'
       ? '思考中…'
       : assistantPhase === 'answering'
         ? '回答中…'
-        : assistantPhase === 'error'
-          ? '出错了，点“重试”再试一次'
-          : readyDocuments > 0
-            ? '已就绪'
-            : '导入文档后开始问答'
+        : assistantPhase === 'processing'
+          ? (processingStatus || '处理中…')
+          : assistantPhase === 'error'
+            ? '出错了，点“重试”再试一次'
+            : readyDocuments > 0
+              ? '已就绪'
+              : '导入文档后开始问答'
 
   // Conversations 组件的菜单配置
   const conversationsMenuConfig: ConversationsProps['menu'] = useCallback(
@@ -105,7 +110,7 @@ export function ChatSidebar({
         <Flex align="center" gap={12} className="mb-4" style={{ margin: 20, marginLeft: 40 }}>
           <div className="avatar-glow" style={{ borderRadius: 12 }}>
             <div
-              className={`cartoon-assistant cartoon-assistant--${assistantPhase}`}
+              className={`cartoon-assistant cartoon-assistant--${assistantPhase === 'processing' ? 'thinking' : assistantPhase}`}
               style={
                 {
                   '--assistant-primary': token.colorPrimary

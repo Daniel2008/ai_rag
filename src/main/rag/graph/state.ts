@@ -18,7 +18,7 @@ export interface ChatGraphState {
   error?: string
   onToken?: (chunk: string) => void
   // 进阶扩展
-  documentIntent?: any // 文档生成意图
+  documentIntent?: unknown // 文档生成意图
   searchIntent?: boolean // 联网搜索意图
   analysisIntent?: boolean // 长文分析意图
   kbOverviewIntent?: boolean // 知识库概览意图

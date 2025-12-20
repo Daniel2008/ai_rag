@@ -3,9 +3,11 @@ import { PromptTemplate } from '@langchain/core/prompts'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { getSettings } from '../../settings'
 import { createChatModel } from '../../utils/createChatModel'
+import { ensureProviderAvailable } from '../../utils/providerAvailability'
 
 export async function generateConversationTitle(question: string, answer: string): Promise<string> {
   const settings = getSettings()
+  await ensureProviderAvailable(settings.provider)
   const model = createChatModel(settings.provider)
 
   const template = `Summarize the following conversation into a short title (max 10 characters).

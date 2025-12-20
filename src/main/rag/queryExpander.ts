@@ -2,6 +2,7 @@ import { StringOutputParser } from '@langchain/core/output_parsers'
 import { PromptTemplate } from '@langchain/core/prompts'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { createChatModel } from '../utils/createChatModel'
+import { ensureProviderAvailable } from '../utils/providerAvailability'
 import { getSettings } from '../settings'
 import { logDebug, logWarn } from '../utils/logger'
 
@@ -17,6 +18,7 @@ export class QueryExpander {
   async expandQuery(query: string, count: number = 3): Promise<string[]> {
     try {
       const settings = getSettings()
+      await ensureProviderAvailable(settings.provider)
       const model = createChatModel(settings.provider)
 
       const template = `你是一个 AI 语言模型助手。你的任务是生成 {count} 个不同版本的用户查询，以从向量数据库中检索相关文档。

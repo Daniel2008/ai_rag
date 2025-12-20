@@ -1,5 +1,6 @@
 import { Worker } from 'worker_threads'
 import path from 'path'
+import { logger } from '../utils/logger'
 
 // 扩展Error类型，添加detailedError属性
 declare interface DetailedError extends Error {
@@ -46,7 +47,18 @@ export function initWorker(): Worker {
   worker = new Worker(workerPath)
 
   worker.on('message', (msg) => {
-    const { id, success, result, error, detailedError, type, payload } = msg
+    const { id, type, payload, error, detailedError } = msg
+
+    if (type === 'log') {
+      const { level, args } = payload
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const message = args.map((a: any) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')
+      if (level === 'error') logger.error(message, 'Worker')
+      else if (level === 'warn') logger.warn(message, 'Worker')
+      else logger.info(message, 'Worker')
+      return
+    }
+
     const task = pendingTasks.get(id)
     if (!task) return
 
@@ -55,10 +67,10 @@ export function initWorker(): Worker {
       return
     }
 
-    if (success) {
-      task.resolve(result)
+    if (type === 'result') {
+      task.resolve(payload)
       pendingTasks.delete(id)
-    } else {
+    } else if (type === 'error') {
       // Create a more informative error object
       const errorObj = new Error(error) as DetailedError
       if (detailedError) {
@@ -94,34 +106,37 @@ function runTask<T>(type: string, payload: unknown, onProgress?: (p: unknown) =>
 
 export async function loadAndSplitFileInWorker(filePath: string): Promise<Document[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await runTask<any[]>('loadAndSplit', { filePath })
+  const result = await runTask<{ chunks: any[] }>('loadAndSplit', { filePath })
 
   // Rehydrate Documents
   const { Document } = await import('@langchain/core/documents')
-  return result.map((d) => new Document({ pageContent: d.pageContent, metadata: d.metadata }))
+  return result.chunks.map((d) => new Document({ pageContent: d.pageContent, metadata: d.metadata }))
 }
 
 export async function initEmbeddingInWorker(
   modelName: string,
   cacheDir: string,
-  onProgress?: (p: unknown) => void
+  onProgress?: (p: unknown) => void,
+  offlineFirst?: boolean
 ): Promise<unknown> {
-  return runTask('initEmbedding', { modelName, cacheDir }, onProgress)
+  return runTask('initEmbedding', { modelName, cacheDir, offlineFirst }, onProgress)
 }
 
 export async function embedInWorker(texts: string[]): Promise<number[][]> {
-  return runTask('embed', { texts })
+  const result = await runTask<{ embeddings: number[][] }>('embed', { texts })
+  return result.embeddings
 }
 
 export async function initRerankerInWorker(
   modelName: string,
   cacheDir: string,
-  onProgress?: (p: unknown) => void
+  onProgress?: (p: unknown) => void,
+  offlineFirst?: boolean
 ): Promise<unknown> {
-  return runTask('initReranker', { modelName, cacheDir }, onProgress)
+  return runTask('initReranker', { modelName, cacheDir, offlineFirst }, onProgress)
 }
 
-export async function rerankInWorker(query: string, documents: string[]): Promise<number[]> {
+export async function rerankInWorker(query: string, documents: string[]): Promise<{ indices: number[]; scores: number[] }> {
   return runTask('rerank', { query, documents })
 }
 

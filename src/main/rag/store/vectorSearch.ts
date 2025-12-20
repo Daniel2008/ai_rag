@@ -27,9 +27,6 @@ import { getSettings } from '../../settings'
 import { getBM25Searcher } from './bm25'
 import { searchByFileName, extractFileNameKeywords, filterByRelevanceThreshold } from './search'
 
-/**
- * 执行 LanceDB 原生搜索
- */
 export async function performNativeSearch(
   tableRef: Table,
   vector: number[],
@@ -53,16 +50,13 @@ export async function performNativeSearch(
     if (searchQuery.refineFactor && typeof searchQuery.refineFactor === 'function') {
       searchQuery = searchQuery.refineFactor(refineFactor)
     }
-  } catch {
-    // refineFactor 可能不支持
+  } catch (refineError) {
+    logWarn('Refine factor not supported', 'Search', undefined, refineError as Error)
   }
 
   return await searchQuery.limit(searchLimit).toArray()
 }
 
-/**
- * 执行跨语言搜索
- */
 export async function performCrossLanguageSearch(
   tableRef: Table,
   query: string,
@@ -124,9 +118,6 @@ export async function performCrossLanguageSearch(
   }
 }
 
-/**
- * 转换搜索结果为 ScoredDocuments
- */
 export function convertToScoredDocuments(
   searchResults: LanceDBSearchResult[]
 ): DocumentWithDistance[] {
@@ -146,9 +137,6 @@ export function convertToScoredDocuments(
     .sort((a, b) => a.distance - b.distance)
 }
 
-/**
- * 当原生搜索失败时回退到 LangChain 搜索
- */
 export async function fallbackToLangChainSearch(
   query: string,
   k: number,
@@ -191,9 +179,6 @@ export async function fallbackToLangChainSearch(
   }
 }
 
-/**
- * 搜索相似文档并返回分数
- */
 export async function searchSimilarDocumentsWithScores(
   query: string,
   options: SearchOptions,
@@ -246,7 +231,6 @@ export async function searchSimilarDocumentsWithScores(
   try {
     const whereClause = buildWhereClause(sources, options.tags)
 
-    // 0. 获取所有文档用于 BM25 搜索
     let allDocsForBM25: LanceDBSearchResult[] = []
     if (isGlobalSearch) {
       try {
@@ -256,7 +240,6 @@ export async function searchSimilarDocumentsWithScores(
       }
     }
 
-    // 1. BM25 搜索
     let bm25Results: LanceDBSearchResult[] = []
     const bm25Start = Date.now()
     if (isGlobalSearch && allDocsForBM25.length > 0) {
@@ -277,7 +260,6 @@ export async function searchSimilarDocumentsWithScores(
     }
     metrics.bm25SearchMs = Date.now() - bm25Start
 
-    // 2. 文件名搜索
     let fileNameMatches: LanceDBSearchResult[] = []
     if (isGlobalSearch) {
       const fnStart = Date.now()
@@ -286,7 +268,6 @@ export async function searchSimilarDocumentsWithScores(
       metrics.fileNameSearchMs = Date.now() - fnStart
     }
 
-    // 3. 向量搜索
     const vectorSearchStart = Date.now()
     const embeddings = getEmbeddings()
     const searchResults = await performCrossLanguageSearch(
@@ -299,7 +280,6 @@ export async function searchSimilarDocumentsWithScores(
     )
     metrics.vectorSearchMs = Date.now() - vectorSearchStart
 
-    // 4. RRF 融合
     const getResultKey = (r: LanceDBSearchResult): string => {
       return r.text || r.pageContent || JSON.stringify(r.metadata?.source || '')
     }
@@ -347,7 +327,6 @@ export async function searchSimilarDocumentsWithScores(
       score: distanceToScore(r.distance)
     }))
 
-    // 5. 相关性过滤
     const minRelevance = settings.rag?.minRelevance ?? RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
     finalResultsRaw = filterByRelevanceThreshold(finalResultsRaw, query, minRelevance)
 
@@ -355,7 +334,6 @@ export async function searchSimilarDocumentsWithScores(
 
     let finalResults = finalResultsRaw
 
-    // 6. MMR 重排序
     const mmrEnabled = RAG_CONFIG.SEARCH.MMR_ENABLED
     const mmrLambda = RAG_CONFIG.SEARCH.MMR_LAMBDA
 
@@ -371,7 +349,8 @@ export async function searchSimilarDocumentsWithScores(
 
     logDebug('Search completed', 'Search', {
       resultCount: Math.min(finalResults.length, k),
-      latencyMs: elapsed
+      latencyMs: elapsed,
+      query: query.slice(0, 50)
     })
 
     return finalResults.slice(0, k)
@@ -381,9 +360,6 @@ export async function searchSimilarDocumentsWithScores(
   }
 }
 
-/**
- * 搜索相似文档
- */
 export async function searchSimilarDocuments(
   query: string,
   options: SearchOptions,

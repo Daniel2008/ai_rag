@@ -62,12 +62,15 @@ export class SmartPromptGenerator {
       })
 
       const result = await this.model.invoke(prompt)
-      const resultContent =
-        typeof result === 'string'
-          ? result
-          : typeof (result as any)?.content === 'string'
-            ? String((result as any).content)
-            : String(result)
+      const resultContent = (() => {
+        if (typeof result === 'string') return result
+        if (typeof result === 'object' && result !== null && 'content' in result) {
+          const content = (result as { content?: unknown }).content
+          if (typeof content === 'string') return content
+          return String(content ?? '')
+        }
+        return String(result)
+      })()
       const prompts = this.parsePrompts(resultContent)
 
       logInfo('智能提示生成完成', 'SmartPrompt', {

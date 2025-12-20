@@ -9,6 +9,7 @@ import { generatePPTDocument } from './pptGenerator'
 import type { DocumentOutline, SectionContent, DocumentTheme } from './types'
 import { getSettings } from '../settings'
 import { createChatModel } from '../utils/createChatModel'
+import { ensureProviderAvailable } from '../utils/providerAvailability'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 
 /** 文档生成请求（从聊天中解析） */
@@ -183,6 +184,7 @@ export async function* streamDocumentGeneration(
 
     let model: BaseChatModel
     try {
+      await ensureProviderAvailable(settings.provider)
       model = createChatModel(settings.provider)
       console.log('[DocumentChat] Model created successfully')
     } catch (modelError) {

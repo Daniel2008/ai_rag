@@ -14,7 +14,7 @@ import {
   setTable,
   setVectorStore
 } from './core'
-import { invalidateDocCountCache } from './query_cache'
+import { invalidateDocCountCache } from './queryCache'
 import { clearBM25Cache } from './bm25'
 import { normalizePath, escapePredicateValue } from './utils'
 import type { ProgressCallback } from './types'

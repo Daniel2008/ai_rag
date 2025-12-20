@@ -56,6 +56,13 @@ export interface SectionContent {
   bulletPoints?: string[]
   /** 引用来源 */
   sources?: string[]
+  /** 引用块 */
+  quotes?: string[]
+  /** 表格数据 */
+  tables?: {
+    headers: string[]
+    rows: string[][]
+  }[]
 }
 
 /** 文档生成进度 */

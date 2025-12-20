@@ -48,6 +48,25 @@ function optimizeStageDescription(stage: string): string {
     return STAGE_DESCRIPTIONS[stage]
   }
 
+  const isOpaqueFileToken = (token: string): boolean => {
+    const t = token.trim()
+    if (!t) return true
+    if (/^[a-f0-9]{32,}$/i.test(t)) return true
+    if (t.length >= 24 && !t.includes('.') && /^[a-f0-9]+$/i.test(t)) return true
+    if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(t)) return true
+    return false
+  }
+
+  const sanitizePrefixedFileStage = (prefix: string, replacement: string): string => {
+    const rest = stage.slice(prefix.length).trim()
+    if (!rest) return stage
+    const tokenMatch = rest.match(/^([^\s(（]+)/)
+    const token = tokenMatch?.[1]
+    if (!token) return stage
+    if (!isOpaqueFileToken(token)) return stage
+    return stage.replace(token, replacement)
+  }
+
   // 处理动态内容（如包含文件名或数量的描述）
   // 例如：「正在解析文档 (1/3)...」保持原样
   // 例如：「文档解析完成，共 5 个片段」保持原样
@@ -59,8 +78,23 @@ function optimizeStageDescription(stage: string): string {
   }
 
   if (stage.startsWith('下载中:')) {
-    // 模型下载进度，保持原样
-    return stage
+    return sanitizePrefixedFileStage('下载中:', '模型文件')
+  }
+
+  if (stage.startsWith('开始下载:')) {
+    return sanitizePrefixedFileStage('开始下载:', '模型文件')
+  }
+
+  if (stage.startsWith('文件下载完成:')) {
+    return sanitizePrefixedFileStage('文件下载完成:', '模型文件')
+  }
+
+  if (stage.startsWith('下载模型文件:')) {
+    return sanitizePrefixedFileStage('下载模型文件:', '模型文件')
+  }
+
+  if (stage.startsWith('下载模型文件：')) {
+    return sanitizePrefixedFileStage('下载模型文件：', '模型文件')
   }
 
   if (stage.startsWith('Still downloading model')) {

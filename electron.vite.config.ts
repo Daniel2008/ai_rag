@@ -47,15 +47,28 @@ export default defineConfig({
         ? {
             name: 'bundle-analyze-log',
             generateBundle(_, bundle) {
-              const entries = Object.values(bundle) as any[]
+              const entries = Object.values(bundle) as unknown[]
               const report = entries
-                .filter((entry) => entry && entry.type === 'chunk')
-                .map((chunk) => ({
-                  fileName: chunk.fileName,
-                  sizeKB: +(chunk.code.length / 1024).toFixed(2),
-                  imports: chunk.imports,
-                  modules: Object.keys(chunk.modules || {}).length
-                }))
+                .filter((entry) => {
+                  if (!entry || typeof entry !== 'object') return false
+                  return (entry as Record<string, unknown>).type === 'chunk'
+                })
+                .map((entry) => {
+                  const chunk = entry as Record<string, unknown>
+                  const code = typeof chunk.code === 'string' ? chunk.code : ''
+                  const fileName = typeof chunk.fileName === 'string' ? chunk.fileName : ''
+                  const imports = Array.isArray(chunk.imports) ? (chunk.imports as string[]) : []
+                  const modulesCount =
+                    chunk.modules && typeof chunk.modules === 'object'
+                      ? Object.keys(chunk.modules as Record<string, unknown>).length
+                      : 0
+                  return {
+                    fileName,
+                    sizeKB: +(code.length / 1024).toFixed(2),
+                    imports,
+                    modules: modulesCount
+                  }
+                })
                 .sort((a, b) => b.sizeKB - a.sizeKB)
               console.log('Renderer bundle report:', report)
             }

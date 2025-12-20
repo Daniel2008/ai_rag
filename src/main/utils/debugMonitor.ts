@@ -5,7 +5,7 @@ export interface PerformanceMetric {
   name: string
   duration: number
   timestamp: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 export interface DebugInfo {
@@ -23,12 +23,12 @@ export interface DebugInfo {
   }
   app: {
     version: string
-    settings: any
+    settings: unknown
     uptime: number
   }
   rag: {
     docCount?: number
-    cacheStats?: any
+    cacheStats?: unknown
     embeddingsReady?: boolean
   }
   performance: PerformanceMetric[]
@@ -86,7 +86,7 @@ export class DebugMonitor {
   /**
    * 记录性能指标
    */
-  recordMetric(name: string, duration: number, metadata?: Record<string, any>): void {
+  recordMetric(name: string, duration: number, metadata?: Record<string, unknown>): void {
     if (!this.enabled) return
 
     const metric: PerformanceMetric = {
@@ -117,7 +117,7 @@ export class DebugMonitor {
   async measurePerformance<T>(
     name: string,
     fn: () => Promise<T>,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): Promise<T> {
     const start = performance.now()
     try {
@@ -236,7 +236,7 @@ export class DebugMonitor {
     const memory = process.memoryUsage()
 
     // 获取RAG相关统计（异步）
-    const ragStats: any = {}
+    const ragStats: Record<string, unknown> = {}
     try {
       const { getDocCount } = await import('../rag/store/index')
       const { getQueryCacheStats } = await import('../rag/store/index')
@@ -287,7 +287,7 @@ export class DebugMonitor {
   exportData(): {
     metrics: PerformanceMetric[]
     errors: ErrorInfo[]
-    summary: any
+    summary: unknown
   } {
     const perfStats = this.getPerformanceStats()
     const errorStats = this.getErrorStats()
@@ -366,7 +366,7 @@ export class DebugMonitor {
 export async function measurePerformance<T>(
   name: string,
   fn: () => Promise<T>,
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 ): Promise<T> {
   return DebugMonitor.getInstance().measurePerformance(name, fn, metadata)
 }
@@ -415,7 +415,7 @@ export class PerformanceAnalyzer {
    * 获取分析结果
    */
   getAnalysis(): Record<string, { avg: number; min: number; max: number; count: number }> {
-    const result: Record<string, any> = {}
+    const result: Record<string, { avg: number; min: number; max: number; count: number }> = {}
 
     this.timings.forEach((durations, name) => {
       const avg = durations.reduce((a, b) => a + b, 0) / durations.length
@@ -459,7 +459,8 @@ export class PerformanceAnalyzer {
  * 事件性能监控器 - 监控特定事件的性能
  */
 export class EventPerformanceMonitor {
-  private eventTimings: Map<string, { start: number; end: number }[]> = new Map()
+  private eventTimings: Map<string, { timing: { start: number; end: number }; eventId: string }[]> =
+    new Map()
 
   /**
    * 开始记录事件
@@ -472,8 +473,7 @@ export class EventPerformanceMonitor {
     }
 
     const timing = { start: performance.now(), end: 0 }
-    // 使用临时存储，稍后更新
-    ;(this.eventTimings.get(eventName) as any[]).push({ timing, eventId })
+    this.eventTimings.get(eventName)!.push({ timing, eventId })
 
     return eventId
   }
@@ -486,7 +486,7 @@ export class EventPerformanceMonitor {
 
     // 查找并更新对应的事件
     for (const [eventName, timings] of this.eventTimings.entries()) {
-      const event = (timings as any[]).find((t: any) => t.eventId === eventId)
+      const event = timings.find((t) => t.eventId === eventId)
       if (event) {
         event.timing.end = end
         const duration = event.timing.end - event.timing.start
@@ -504,13 +504,13 @@ export class EventPerformanceMonitor {
    * 获取事件统计
    */
   getEventStats(): Record<string, { avgDuration: number; count: number }> {
-    const result: Record<string, any> = {}
+    const result: Record<string, { avgDuration: number; count: number }> = {}
 
     for (const [eventName, timings] of this.eventTimings.entries()) {
-      const completedTimings = (timings as any[]).filter((t: any) => t.timing.end > 0)
+      const completedTimings = timings.filter((t) => t.timing.end > 0)
       if (completedTimings.length === 0) continue
 
-      const durations = completedTimings.map((t: any) => t.timing.end - t.timing.start)
+      const durations = completedTimings.map((t) => t.timing.end - t.timing.start)
       const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length
 
       result[eventName] = {

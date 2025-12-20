@@ -1083,7 +1083,7 @@ export function ChatArea({
     onScroll()
     container.addEventListener('scroll', onScroll, { passive: true })
     return () => container.removeEventListener('scroll', onScroll)
-  }, [currentMessages])
+  }, [currentMessages, computeCumulative])
 
   const filteredMessagesForRender = useMemo(() => {
     const filtered = currentMessages.filter(

@@ -28,10 +28,10 @@ const stateChannels = {
   onToken: {
     value: (prev?: (chunk: string) => void, next?: (chunk: string) => void) => next ?? prev
   },
-  documentIntent: { value: (prev: any, next: any) => next ?? prev },
+  documentIntent: { value: (prev: unknown, next: unknown) => next ?? prev },
   translatedQuestion: { value: (prev: string, next: string) => next ?? prev },
   suggestedQuestions: { value: (prev: string[], next: string[]) => next ?? prev },
-  kbOverviewData: { value: (prev: any, next: any) => next ?? prev },
+  kbOverviewData: { value: (prev: unknown, next: unknown) => next ?? prev },
   groundingStatus: { value: (prev: string, next: string) => next ?? prev },
   retryCount: { value: (prev: number, next: number) => next ?? prev }
 }

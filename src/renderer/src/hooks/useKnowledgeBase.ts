@@ -78,7 +78,7 @@ export function useKnowledgeBase({ messageApi }: UseKnowledgeBaseOptions): UseKn
         setAvailableTags(
           snapshot.availableTags.map((t) => ({
             name: t.name,
-            count: (t as any).count, // 兼容主进程返回的 count
+            count: t.count,
             color: t.color
           }))
         )
