@@ -11,7 +11,7 @@ interface TitleBarProps {
   title?: string
 }
 
-export function TitleBar({ title = '智汇' }: TitleBarProps): ReactElement {
+export function TitleBar({ title = 'RAG' }: TitleBarProps): ReactElement {
   const { token } = antdTheme.useToken()
   const [isMaximized, setIsMaximized] = useState(false)
   // 安全地获取平台信息，默认为非 macOS

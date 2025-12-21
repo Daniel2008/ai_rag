@@ -486,7 +486,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     >
       {/* 自定义标题栏 */}
       <Suspense fallback={<div className="h-10" style={{ background: token.colorBgElevated }} />}>
-        <TitleBar title="智汇" />
+        <TitleBar title="RAG" />
       </Suspense>
 
       {/* 全局进度条 */}
