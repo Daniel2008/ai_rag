@@ -532,6 +532,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
                 onLoadMore={loadMoreMessages}
                 hasMore={hasMore}
                 conversationKey={activeConversationKey}
+                onPromptClick={handlePromptClick}
               />
             )}
           </main>

@@ -55,6 +55,7 @@ interface ChatAreaProps {
   onLoadMore?: () => Promise<void>
   hasMore?: boolean
   conversationKey?: string // 用于检测会话切换
+  onPromptClick?: (question: string) => void
 }
 
 // 性能优化：最大渲染消息数量，超过此数量只渲染最近的消息
@@ -448,6 +449,10 @@ interface MessageActionsProps {
   onToggleSpeech: (message: ChatMessage) => void
 }
 
+import { Prompts } from '@ant-design/x'
+
+// ... (existing imports)
+
 const MessageActions = memo(
   ({
     message,
@@ -458,87 +463,119 @@ const MessageActions = memo(
     ttsSupported,
     isSpeaking,
     isTtsLoading,
-    onToggleSpeech
-  }: MessageActionsProps) => {
+    onToggleSpeech,
+    onPromptClick
+  }: MessageActionsProps & { onPromptClick?: (question: string) => void }) => {
     const { token } = antdTheme.useToken()
-
-    if (message.role === 'system') return null
-
-    const timeStr = formatTimestamp(message.timestamp)
     const isUserMessage = message.role === 'user'
     const isAiMessage = message.role === 'ai'
+    const timeStr = formatTimestamp(message.timestamp)
+
+    const hasSuggestions = message.role === 'ai' && message.suggestedQuestions && message.suggestedQuestions.length > 0
 
     return (
-      <div
-        className={`message-actions flex items-center gap-2 mt-1 ${isUserMessage ? 'justify-end' : ''}`}
-      >
-        {/* 时间戳 */}
-        {timeStr && (
-          <span
-            className="text-xs"
-            style={{
-              color: token.colorTextSecondary,
-              opacity: 0.6
-            }}
-          >
-            {timeStr}
-          </span>
-        )}
-        {isAiMessage && (
-          <Tooltip
-            title={
-              ttsSupported
-                ? isTtsLoading
-                  ? '生成语音中...'
-                  : isSpeaking
-                    ? '停止朗读'
-                    : '朗读'
-                : '当前环境不支持语音'
-            }
-          >
+      <div className={`message-actions flex flex-col gap-2 mt-1 ${isUserMessage ? 'items-end' : ''}`}>
+        <div className={`flex items-center gap-2 ${isUserMessage ? 'justify-end' : ''}`}>
+          {/* 时间戳 */}
+          {timeStr && (
+            <span
+              className="text-xs"
+              style={{
+                color: token.colorTextSecondary,
+                opacity: 0.6
+              }}
+            >
+              {timeStr}
+            </span>
+          )}
+          {isAiMessage && (
+            <Tooltip
+              title={
+                ttsSupported
+                  ? isTtsLoading
+                    ? '生成语音中...'
+                    : isSpeaking
+                      ? '停止朗读'
+                      : '朗读'
+                  : '当前环境不支持语音'
+              }
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={
+                  isSpeaking ? (
+                    <StopOutlined />
+                  ) : isTtsLoading ? (
+                    <LoadingOutlined />
+                  ) : (
+                    <SoundOutlined />
+                  )
+                }
+                onClick={() => onToggleSpeech(message)}
+                disabled={!ttsSupported || isTyping || message.typing || isTtsLoading}
+              />
+            </Tooltip>
+          )}
+          <Tooltip title={copiedMessageKey === message.key ? '已复制' : '复制'}>
             <Button
               type="text"
               size="small"
+              className={isUserMessage ? 'user-action-btn' : ''}
               icon={
-                isSpeaking ? (
-                  <StopOutlined />
-                ) : isTtsLoading ? (
-                  <LoadingOutlined />
+                copiedMessageKey === message.key ? (
+                  <CheckOutlined style={{ color: token.colorSuccess }} />
                 ) : (
-                  <SoundOutlined />
+                  <CopyOutlined />
                 )
               }
-              onClick={() => onToggleSpeech(message)}
-              disabled={!ttsSupported || isTyping || message.typing || isTtsLoading}
+              onClick={() => onCopyMessage(message.content, message.key)}
             />
           </Tooltip>
-        )}
-        <Tooltip title={copiedMessageKey === message.key ? '已复制' : '复制'}>
-          <Button
-            type="text"
-            size="small"
-            className={isUserMessage ? 'user-action-btn' : ''}
-            icon={
-              copiedMessageKey === message.key ? (
-                <CheckOutlined style={{ color: token.colorSuccess }} />
-              ) : (
-                <CopyOutlined />
-              )
-            }
-            onClick={() => onCopyMessage(message.content, message.key)}
-          />
-        </Tooltip>
-        {message.role === 'user' && (
-          <Tooltip title="重新发送">
-            <Button
-              type="text"
-              size="small"
-              className="user-action-btn"
-              icon={<ReloadOutlined />}
-              onClick={() => onRetryMessage(message.content)}
-              disabled={isTyping}
+          {message.role === 'user' && (
+            <Tooltip title="重新发送">
+              <Button
+                type="text"
+                size="small"
+                className="user-action-btn"
+                icon={<ReloadOutlined />}
+                onClick={() => onRetryMessage(message.content)}
+                disabled={isTyping}
+              />
+            </Tooltip>
+          )}
+        </div>
+        
+        {/* 智能建议 (Prompts) */}
+        {hasSuggestions && (
+          <div className="mt-2 w-full">
+            <Prompts
+              items={message.suggestedQuestions!.map(q => ({
+                key: q,
+                label: q,
+                icon: <BulbOutlined />
+              }))}
+              onItemClick={(info) => onPromptClick?.(info.data.label as string)}
+              styles={{
+                list: {
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  width: '100%'
+                },
+                item: {
+                  background: token.colorFillQuaternary,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: 16,
+                  padding: '8px 16px',
+                  fontSize: 13,
+                  width: 'fit-content',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }
+              }}
             />
-          </Tooltip>
+          </div>
         )}
       </div>
     )
@@ -637,7 +674,8 @@ export function ChatArea({
   onRetryMessage,
   onLoadMore,
   hasMore,
-  conversationKey
+  conversationKey,
+  onPromptClick
 }: ChatAreaProps): ReactElement {
   const { token } = antdTheme.useToken()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -1163,6 +1201,7 @@ export function ChatArea({
                     isSpeaking={speakingMessageKey === message.key}
                     isTtsLoading={ttsLoadingMessageKey === message.key}
                     onToggleSpeech={toggleSpeech}
+                    onPromptClick={onPromptClick}
                   />
                 </div>
               )
@@ -1189,7 +1228,8 @@ export function ChatArea({
             ttsSupported,
             speakingMessageKey,
             ttsLoadingMessageKey,
-            toggleSpeech
+            toggleSpeech,
+            onPromptClick
           ])}
         />
         {spacerHeights.bottom > 0 && <div style={{ height: spacerHeights.bottom }} />}

@@ -41,7 +41,7 @@ export function getMessages(
   // 先获取最新的 N 条消息，然后按时间正序返回
   const stmt = db.prepare(`
     SELECT * FROM (
-      SELECT id as key, role, content, timestamp, status, sources
+      SELECT id as key, role, content, timestamp, status, sources, suggestedQuestions
       FROM messages
       WHERE conversation_key = ?
       ORDER BY timestamp DESC
@@ -56,6 +56,7 @@ export function getMessages(
     timestamp: number
     status: 'success' | 'error' | 'pending'
     sources: string | null
+    suggestedQuestions: string | null
   }>
 
   return rows.map((row) => ({
@@ -65,6 +66,7 @@ export function getMessages(
     timestamp: row.timestamp,
     status: row.status,
     sources: row.sources ? JSON.parse(row.sources) : undefined,
+    suggestedQuestions: row.suggestedQuestions ? JSON.parse(row.suggestedQuestions) : undefined,
     typing: false // Stored messages are never typing
   }))
 }
@@ -74,8 +76,8 @@ export function saveMessage(conversationKey: string, message: ChatMessage): void
   const db = getDB()
 
   const insertMsg = db.prepare(`
-    INSERT OR REPLACE INTO messages (id, conversation_key, role, content, timestamp, status, sources)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO messages (id, conversation_key, role, content, timestamp, status, sources, suggestedQuestions)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const updateConv = db.prepare('UPDATE conversations SET timestamp = ? WHERE key = ?')
 
@@ -88,7 +90,8 @@ export function saveMessage(conversationKey: string, message: ChatMessage): void
       message.content,
       message.timestamp || Date.now(),
       message.status || 'success',
-      message.sources ? JSON.stringify(message.sources) : null
+      message.sources ? JSON.stringify(message.sources) : null,
+      message.suggestedQuestions ? JSON.stringify(message.suggestedQuestions) : null
     )
     updateConv.run(Date.now(), conversationKey)
   })
@@ -103,8 +106,8 @@ export function saveMessages(conversationKey: string, messages: ChatMessage[]): 
   const db = getDB()
 
   const insertMsg = db.prepare(`
-    INSERT OR REPLACE INTO messages (id, conversation_key, role, content, timestamp, status, sources)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO messages (id, conversation_key, role, content, timestamp, status, sources, suggestedQuestions)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const updateConv = db.prepare('UPDATE conversations SET timestamp = ? WHERE key = ?')
 
@@ -118,7 +121,8 @@ export function saveMessages(conversationKey: string, messages: ChatMessage[]): 
         message.content,
         message.timestamp || Date.now(),
         message.status || 'success',
-        message.sources ? JSON.stringify(message.sources) : null
+        message.sources ? JSON.stringify(message.sources) : null,
+        message.suggestedQuestions ? JSON.stringify(message.suggestedQuestions) : null
       )
     }
     updateConv.run(Date.now(), conversationKey)
@@ -135,7 +139,7 @@ export function updateMessage(messageKey: string, updates: Partial<ChatMessage>)
   const sets = keys.map((k) => `${k === 'key' ? 'id' : k} = ?`).join(', ')
   const values = keys.map((k) => {
     const val = updates[k as keyof ChatMessage]
-    if (k === 'sources') return JSON.stringify(val)
+    if (k === 'sources' || k === 'suggestedQuestions') return JSON.stringify(val)
     return val
   })
 

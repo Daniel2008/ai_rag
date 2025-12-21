@@ -127,12 +127,6 @@ export class ElectronXRequest extends AbstractXRequestClass<
       this.options.callbacks?.onUpdate?.(output, new Headers())
     }
 
-    const handleSuggestions = (suggestions: string[]): void => {
-      const output: ElectronRequestOutput = { type: 'suggestions', suggestions }
-      this.chunks.push(output)
-      // suggestions 不触发 onUpdate，由 transformMessage 处理
-    }
-
     const handleDone = (): void => {
       // 刷新剩余的 token
       flushTokenBuffer()
@@ -165,8 +159,12 @@ export class ElectronXRequest extends AbstractXRequestClass<
         this.batchTimer = null
       }
       // 安全地清理监听器
-      if (window.api && typeof window.api.removeAllChatListeners === 'function') {
-        window.api.removeAllChatListeners()
+      if (window.api) {
+        if (typeof window.api.removeChatListeners === 'function') {
+          window.api.removeChatListeners()
+        } else if (typeof window.api.removeAllChatListeners === 'function') {
+          window.api.removeAllChatListeners()
+        }
       }
     }
     this.cleanup = cleanup
@@ -177,9 +175,6 @@ export class ElectronXRequest extends AbstractXRequestClass<
     }
     if (typeof window.api.onChatSources === 'function') {
       window.api.onChatSources(handleSources)
-    }
-    if (typeof window.api.onChatSuggestions === 'function') {
-      window.api.onChatSuggestions(handleSuggestions)
     }
     if (typeof window.api.onChatDone === 'function') {
       window.api.onChatDone(handleDone)

@@ -32,12 +32,16 @@ const stateChannels = {
     value: (prev?: (sources: ChatSource[]) => void, next?: (sources: ChatSource[]) => void) =>
       next ?? prev
   },
+  onSuggestions: {
+    value: (prev?: (suggestions: string[]) => void, next?: (suggestions: string[]) => void) =>
+      next ?? prev
+  },
   documentIntent: { value: (prev: unknown, next: unknown) => next ?? prev },
-  translatedQuestion: { value: (prev: string, next: string) => next ?? prev },
-  suggestedQuestions: { value: (prev: string[], next: string[]) => next ?? prev },
+  translatedQuestion: { value: (prev?: string, next?: string) => next ?? prev },
+  suggestedQuestions: { value: (prev?: string[], next?: string[]) => next ?? prev },
   kbOverviewData: { value: (prev: unknown, next: unknown) => next ?? prev },
-  groundingStatus: { value: (prev: string, next: string) => next ?? prev },
-  retryCount: { value: (prev: number, next: number) => next ?? prev }
+  groundingStatus: { value: (prev?: string, next?: string) => next ?? prev },
+  retryCount: { value: (prev?: number, next?: number) => next ?? prev }
 }
 
 // 扩展图结构：支持文档生成路由、翻译和引用校验

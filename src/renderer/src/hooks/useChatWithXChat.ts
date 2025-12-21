@@ -67,7 +67,8 @@ function toXChatMessage(msg: ChatMessage): {
     message: {
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: msg.content,
-      sources: msg.sources
+      sources: msg.sources,
+      suggestedQuestions: msg.suggestedQuestions
     },
     status: msg.status === 'error' ? 'error' : 'local'
   }

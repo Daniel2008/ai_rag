@@ -840,7 +840,8 @@ app.whenReady().then(async () => {
         normalized.conversationKey,
         (chunk) => event.reply('rag:chat-token', chunk),
         normalized.tags,
-        (sources) => event.reply('rag:chat-sources', sources)
+        (sources) => event.reply('rag:chat-sources', sources),
+        (suggestions) => event.reply('rag:chat-suggestions', suggestions)
       )
 
       if (result.error) {
@@ -851,9 +852,6 @@ app.whenReady().then(async () => {
       // 注意：result.sources 已经在 retrieve 阶段通过 onSources 回调发送过了，这里不再重复发送
       // event.reply('rag:chat-sources', result.sources || [])
 
-      if (result.suggestedQuestions && result.suggestedQuestions.length > 0) {
-        event.reply('rag:chat-suggestions', result.suggestedQuestions)
-      }
       // 注意：不要再次发送 result.answer，因为已经通过 onToken 回调流式发送过了
       // 重复发送会导致前端重复渲染
       event.reply('rag:chat-done')

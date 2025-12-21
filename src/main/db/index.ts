@@ -35,6 +35,7 @@ function initSchema(): void {
       timestamp INTEGER,
       status TEXT,
       sources TEXT, -- JSON string
+      suggestedQuestions TEXT, -- JSON string
       FOREIGN KEY(conversation_key) REFERENCES conversations(key) ON DELETE CASCADE
     );
 
@@ -52,4 +53,13 @@ function initSchema(): void {
       FOREIGN KEY(conversation_key) REFERENCES conversations(key) ON DELETE CASCADE
     );
   `)
+
+  const columns = db
+    .prepare(`PRAGMA table_info(messages)`)
+    .all() as Array<{ name: string }>
+
+  const hasSuggestedQuestions = columns.some((c) => c.name === 'suggestedQuestions')
+  if (!hasSuggestedQuestions) {
+    db.exec(`ALTER TABLE messages ADD COLUMN suggestedQuestions TEXT`)
+  }
 }
