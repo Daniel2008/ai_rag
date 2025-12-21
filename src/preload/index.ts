@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { KnowledgeBaseSnapshot } from '../types/files'
-import type { ChatSource, AppSettings, ProcessFileResult } from '../types/chat'
+import type { ChatSource, AppSettings, ProcessFileResult, ChatMessage } from '../types/chat'
 
 // 重新导出共享类型，保持向后兼容
 export type {
@@ -189,17 +189,21 @@ const api = {
   },
 
   // Database APIs
-  getConversations: () => ipcRenderer.invoke('db:getConversations'),
-  createConversation: (key: string, label: string) =>
+  getConversations: (): Promise<Array<{ key: string; label: string; timestamp: number }>> =>
+    ipcRenderer.invoke('db:getConversations'),
+  createConversation: (key: string, label: string): Promise<void> =>
     ipcRenderer.invoke('db:createConversation', key, label),
-  deleteConversation: (key: string) => ipcRenderer.invoke('db:deleteConversation', key),
-  getMessages: (key: string, limit?: number, offset?: number) =>
+  updateConversation: (key: string, label: string): Promise<void> =>
+    ipcRenderer.invoke('db:updateConversation', key, label),
+  deleteConversation: (key: string): Promise<void> =>
+    ipcRenderer.invoke('db:deleteConversation', key),
+  getMessages: (key: string, limit?: number, offset?: number): Promise<ChatMessage[]> =>
     ipcRenderer.invoke('db:getMessages', key, limit, offset),
-  saveMessage: (conversationKey: string, message: unknown) =>
+  saveMessage: (conversationKey: string, message: ChatMessage): Promise<void> =>
     ipcRenderer.invoke('db:saveMessage', conversationKey, message),
-  updateMessage: (messageKey: string, updates: unknown) =>
+  updateMessage: (messageKey: string, updates: Partial<ChatMessage>): Promise<void> =>
     ipcRenderer.invoke('db:updateMessage', messageKey, updates),
-  generateTitle: (conversationKey: string, question: string, answer: string) =>
+  generateTitle: (conversationKey: string, question: string, answer: string): Promise<string> =>
     ipcRenderer.invoke('rag:generateTitle', conversationKey, question, answer),
   getMetricsRecent: (
     count?: number

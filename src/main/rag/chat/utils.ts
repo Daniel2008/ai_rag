@@ -44,9 +44,11 @@ export function deduplicateSources(sources: ChatSource[]): ChatSource[] {
   const seen = new Map<string, ChatSource>()
 
   for (const source of sources) {
-    // 使用文件名+页码+内容前50字符作为主键，允许同文件同页的不同内容片段
+    // 使用文件路径/URL+页码+内容前50字符作为主键
+    // 优先使用 filePath 或 url 作为唯一标识，避免不同文件同名导致被去重
+    const pathKey = source.filePath || source.url || source.fileName || 'unknown'
     const contentKey = source.content?.slice(0, 50) || ''
-    const key = `${source.fileName}:${source.pageNumber || 0}:${contentKey}`
+    const key = `${pathKey}:${source.pageNumber || 0}:${contentKey}`
     const existing = seen.get(key)
 
     // 保留分数更高的（仅对完全相同的内容去重）

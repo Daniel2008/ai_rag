@@ -1,19 +1,27 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react'
-import { MessageOutlined } from '@ant-design/icons'
+import { MessageOutlined, StarFilled } from '@ant-design/icons'
 import { createElement } from 'react'
 import type { ChatMessage, ConversationItem } from '../types/chat'
 import { INITIAL_MESSAGE } from '../constants/chat'
-import { saveActiveConversationKey, loadActiveConversationKey } from '../utils/chat'
+import {
+  saveActiveConversationKey,
+  loadActiveConversationKey,
+  loadStarredConversationKeys,
+  saveStarredConversationKeys
+} from '../utils/chat'
 
 export interface UseConversationsReturn {
   activeConversationKey: string | undefined
   currentMessages: ChatMessage[]
   conversationItems: ConversationItem[]
+  starredConversationKeys: string[]
   showWelcome: boolean
   hasMore: boolean
   loading: boolean
   handleActiveConversationChange: (key: string | undefined) => void
   createNewConversation: () => Promise<string>
+  renameConversation: (key: string, label: string) => Promise<void>
+  toggleStarConversation: (key: string) => void
   updateCurrentMessages: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void
   handleDeleteConversation: (key: string) => void
   loadConversations: () => Promise<void>
@@ -27,14 +35,23 @@ export function useConversations(): UseConversationsReturn {
   const [currentMessages, setCurrentMessages] = useState<ChatMessage[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [starredConversationKeys, setStarredConversationKeys] = useState<string[]>(() =>
+    loadStarredConversationKeys()
+  )
 
   // 使用 ref 存储最新的 activeConversationKey，避免 updateCurrentMessages 频繁重建
   const activeKeyRef = useRef<string | undefined>(activeConversationKey)
+  const starredKeysRef = useRef<string[]>(starredConversationKeys)
+  const lastConversationsRef = useRef<Array<{ key: string; label: string; timestamp: number }>>([])
 
   // 更新 activeKeyRef
   useEffect(() => {
     activeKeyRef.current = activeConversationKey
   }, [activeConversationKey])
+
+  useEffect(() => {
+    starredKeysRef.current = starredConversationKeys
+  }, [starredConversationKeys])
 
   // 是否显示欢迎页面
   const showWelcome = useMemo(() => {
@@ -49,22 +66,37 @@ export function useConversations(): UseConversationsReturn {
     return false
   }, [activeConversationKey, currentMessages])
 
+  const buildConversationItems = useCallback(
+    (convs: Array<{ key: string; label: string; timestamp: number }>, starredKeys: string[]) => {
+      const starredSet = new Set(starredKeys)
+      const starred: typeof convs = []
+      const rest: typeof convs = []
+      for (const c of convs) {
+        if (starredSet.has(c.key)) starred.push(c)
+        else rest.push(c)
+      }
+
+      const ordered = [...starred, ...rest]
+      return ordered.map((c) => ({
+        key: c.key,
+        label: c.label,
+        icon: createElement(starredSet.has(c.key) ? StarFilled : MessageOutlined),
+        timestamp: c.timestamp
+      }))
+    },
+    []
+  )
+
   // 加载对话列表
   const refreshConversations = useCallback(async () => {
     try {
       const convs = await window.api.getConversations()
-      setConversationItems(
-        convs.map((c) => ({
-          key: c.key,
-          label: c.label,
-          icon: createElement(MessageOutlined),
-          timestamp: c.timestamp
-        }))
-      )
+      lastConversationsRef.current = convs
+      setConversationItems(buildConversationItems(convs, starredKeysRef.current))
     } catch (error) {
       console.error('Failed to load conversations:', error)
     }
-  }, [])
+  }, [buildConversationItems])
 
   // 加载特定对话的消息
   const loadMessages = useCallback(async (key: string, offset = 0) => {
@@ -153,11 +185,39 @@ export function useConversations(): UseConversationsReturn {
     })
   }, [])
 
+  const renameConversation = useCallback(
+    async (key: string, label: string) => {
+      const trimmed = label.trim()
+      if (!trimmed) return
+      await window.api.updateConversation(key, trimmed)
+      await refreshConversations()
+    },
+    [refreshConversations]
+  )
+
+  const toggleStarConversation = useCallback(
+    (key: string) => {
+      setStarredConversationKeys((prev) => {
+        const next = prev.includes(key) ? prev.filter((k) => k !== key) : [key, ...prev]
+        saveStarredConversationKeys(next)
+        setConversationItems(buildConversationItems(lastConversationsRef.current, next))
+        return next
+      })
+    },
+    [buildConversationItems]
+  )
+
   // 删除对话
   const handleDeleteConversation = useCallback(
     async (key: string) => {
       try {
         await window.api.deleteConversation(key)
+        setStarredConversationKeys((prev) => {
+          if (!prev.includes(key)) return prev
+          const next = prev.filter((k) => k !== key)
+          saveStarredConversationKeys(next)
+          return next
+        })
         await refreshConversations()
 
         if (activeKeyRef.current === key) {
@@ -196,11 +256,14 @@ export function useConversations(): UseConversationsReturn {
     activeConversationKey,
     currentMessages,
     conversationItems,
+    starredConversationKeys,
     showWelcome,
     hasMore,
     loading,
     handleActiveConversationChange,
     createNewConversation,
+    renameConversation,
+    toggleStarConversation,
     updateCurrentMessages,
     handleDeleteConversation,
     loadConversations,

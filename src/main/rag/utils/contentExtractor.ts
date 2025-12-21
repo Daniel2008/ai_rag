@@ -1,4 +1,9 @@
-import { decodeHtmlEntities, extractTitleFromUrl, extractMetaInfo, type PageMeta } from './htmlUtils'
+import {
+  decodeHtmlEntities,
+  extractTitleFromUrl,
+  extractMetaInfo,
+  type PageMeta
+} from './htmlUtils'
 
 // 常见的内容区域选择器权重
 export const CONTENT_SELECTORS = [

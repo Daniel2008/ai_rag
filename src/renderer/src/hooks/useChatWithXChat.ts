@@ -300,7 +300,7 @@ export function useChatWithXChat({
         if (lastIndex === -1) return prevMessages
 
         const lastMsg = prevMessages[lastIndex]
-        
+
         // 如果已经有建议，就不更新了
         if (lastMsg.message.suggestedQuestions?.length) return prevMessages
 
@@ -312,15 +312,15 @@ export function useChatWithXChat({
             suggestedQuestions: suggestions
           }
         }
-        
+
         // 同时触发持久化更新
         if (conversationKey) {
-            const persistKey = messageIdMapRef.current.get(String(lastMsg.id))
-            if (persistKey) {
-                onUpdateMessageRef.current(persistKey, { suggestedQuestions: suggestions })
-            }
+          const persistKey = messageIdMapRef.current.get(String(lastMsg.id))
+          if (persistKey) {
+            onUpdateMessageRef.current(persistKey, { suggestedQuestions: suggestions })
+          }
         }
-        
+
         return newMessages
       })
     }
@@ -387,7 +387,7 @@ export function useChatWithXChat({
             // 生成唯一的持久化 ID，避免与 useXChat 生成的 ID 冲突
             const role = xMsg.message.role === 'user' ? 'user' : 'ai'
             const persistKey = `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-            
+
             // 记录映射关系
             messageIdMapRef.current.set(originalId, persistKey)
 

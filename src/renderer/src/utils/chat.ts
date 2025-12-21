@@ -2,7 +2,11 @@ import { MessageOutlined } from '@ant-design/icons'
 import { createElement } from 'react'
 import type { Conversation, SerializableConversation } from '../types/chat'
 import type { IndexedFile, IndexedFileRecord } from '../types/files'
-import { CONVERSATIONS_STORAGE_KEY, ACTIVE_CONVERSATION_KEY } from '../constants/chat'
+import {
+  CONVERSATIONS_STORAGE_KEY,
+  ACTIVE_CONVERSATION_KEY,
+  STARRED_CONVERSATIONS_KEY
+} from '../constants/chat'
 
 /** 保存对话到 localStorage */
 export function saveConversationsToStorage(conversations: Conversation[]): void {
@@ -62,6 +66,26 @@ export function loadActiveConversationKey(): string | undefined {
   } catch (error) {
     console.error('Failed to load active conversation key:', error)
     return undefined
+  }
+}
+
+export function saveStarredConversationKeys(keys: string[]): void {
+  try {
+    localStorage.setItem(STARRED_CONVERSATIONS_KEY, JSON.stringify(keys))
+  } catch (error) {
+    console.error('Failed to save starred conversation keys:', error)
+  }
+}
+
+export function loadStarredConversationKeys(): string[] {
+  try {
+    const raw = localStorage.getItem(STARRED_CONVERSATIONS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : []
+  } catch (error) {
+    console.error('Failed to load starred conversation keys:', error)
+    return []
   }
 }
 

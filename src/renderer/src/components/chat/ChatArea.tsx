@@ -1,16 +1,17 @@
 import { memo, useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import type { ReactElement, ReactNode } from 'react'
-import { Bubble, ThoughtChain } from '@ant-design/x'
+import { Bubble, ThoughtChain, Prompts, Sources, Actions } from '@ant-design/x'
 import XMarkdown from '@ant-design/x-markdown'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
 import type { RoleType } from '@ant-design/x/es/bubble/interface'
 import {
   Avatar,
   Button,
+  Input,
+  Modal,
   Tooltip,
   Progress,
   Tag,
-  Collapse,
   theme as antdTheme,
   FloatButton
 } from 'antd'
@@ -37,7 +38,9 @@ import {
   LinkOutlined,
   ClockCircleOutlined,
   SoundOutlined,
-  StopOutlined
+  StopOutlined,
+  StarFilled,
+  StarOutlined
 } from '@ant-design/icons'
 import { Drawer, List } from 'antd'
 import { BarChartOutlined } from '@ant-design/icons'
@@ -47,7 +50,7 @@ import type { ChatMessage, ChatSource } from '../../types/chat'
 interface ChatAreaProps {
   themeMode: 'light' | 'dark'
   currentMessages: ChatMessage[]
-  bubbleListRef: React.MutableRefObject<BubbleListRef | null>
+  bubbleListRef: React.RefObject<BubbleListRef | null>
   isTyping: boolean
   copiedMessageKey: string | null
   onCopyMessage: (content: string, key: string) => void
@@ -55,6 +58,10 @@ interface ChatAreaProps {
   onLoadMore?: () => Promise<void>
   hasMore?: boolean
   conversationKey?: string // 用于检测会话切换
+  conversationLabel?: string
+  isConversationStarred?: boolean
+  onRenameConversation?: (key: string, label: string) => Promise<void>
+  onToggleStarConversation?: (key: string) => void
   onPromptClick?: (question: string) => void
 }
 
@@ -81,6 +88,80 @@ function getFileTypeIcon(fileType?: ChatSource['fileType']): ReactElement {
     default:
       return <FileOutlined />
   }
+}
+
+/** 根据文件名猜测文件类型 */
+function guessFileType(fileName: string): ChatSource['fileType'] {
+  if (!fileName) return 'text'
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'pdf':
+      return 'pdf'
+    case 'doc':
+    case 'docx':
+      return 'word'
+    case 'md':
+    case 'markdown':
+      return 'markdown'
+    case 'xls':
+    case 'xlsx':
+    case 'csv':
+      return 'excel'
+    case 'ppt':
+    case 'pptx':
+      return 'ppt'
+    default:
+      return 'text'
+  }
+}
+
+function toLowerSafe(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase()
+}
+
+function decodeNamePart(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function extractNameFromPath(path: string): string {
+  const part = path.split(/[\\/]/).pop() ?? path
+  return decodeNamePart(part)
+}
+
+function extractNameFromUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    const last = u.pathname.split('/').filter(Boolean).pop()
+    if (last) return decodeNamePart(last)
+    return u.hostname
+  } catch {
+    return url
+  }
+}
+
+function deriveSourceId(source: ChatSource): string {
+  if (source.filePath) return source.filePath.replace(/\\/g, '/')
+  if (source.sourceType === 'url' && source.url) return source.url
+  const nameLower = toLowerSafe(source.fileName)
+  if (nameLower && nameLower !== 'unknown') return source.fileName
+  if (source.fileName) return source.fileName
+  return 'unknown'
+}
+
+function deriveSourceDisplayName(source: ChatSource): string {
+  const nameLower = toLowerSafe(source.fileName)
+  if (nameLower && nameLower !== 'unknown') return source.fileName
+  if (source.sourceType === 'url') {
+    if (source.siteName?.trim()) return source.siteName
+    if (source.url) return extractNameFromUrl(source.url)
+    return '网页'
+  }
+  if (source.filePath) return extractNameFromPath(source.filePath)
+  return '引用来源'
 }
 
 /** 获取文件类型标签颜色 */
@@ -125,6 +206,7 @@ function formatTime(dateStr?: string | number): string {
 
 /** 合并后的文件来源类型 */
 interface MergedSource {
+  id: string
   fileName: string
   fileType?: ChatSource['fileType']
   filePath?: string
@@ -146,7 +228,7 @@ function mergeSourcesByFile(sources: ChatSource[]): MergedSource[] {
   const byFile = new Map<string, MergedSource>()
 
   for (const source of sources) {
-    const key = source.fileName
+    const key = deriveSourceId(source)
     const existing = byFile.get(key)
 
     if (existing) {
@@ -158,11 +240,37 @@ function mergeSourcesByFile(sources: ChatSource[]): MergedSource[] {
       })
       // 更新最高分
       existing.maxScore = Math.max(existing.maxScore, source.score || 0)
+
+      const nextName = deriveSourceDisplayName(source)
+      if (toLowerSafe(existing.fileName) === 'unknown' && toLowerSafe(nextName) !== 'unknown') {
+        existing.fileName = nextName
+      }
+
+      const nextRawType = source.fileType
+      const nextType =
+        nextRawType && nextRawType !== 'unknown'
+          ? nextRawType
+          : source.sourceType === 'url'
+            ? 'url'
+            : guessFileType(source.fileName)
+      if (!existing.fileType || existing.fileType === 'unknown') {
+        existing.fileType = nextType
+      }
     } else {
       // 创建新的合并来源
+      const displayName = deriveSourceDisplayName(source)
+      const rawType = source.fileType
+      const type =
+        rawType && rawType !== 'unknown'
+          ? rawType
+          : source.sourceType === 'url'
+            ? 'url'
+            : guessFileType(source.fileName)
+
       byFile.set(key, {
-        fileName: source.fileName,
-        fileType: source.fileType,
+        id: key,
+        fileName: displayName,
+        fileType: type,
         filePath: source.filePath,
         sourceType: source.sourceType,
         siteName: source.siteName,
@@ -192,128 +300,176 @@ function mergeSourcesByFile(sources: ChatSource[]): MergedSource[] {
   return result.sort((a, b) => b.maxScore - a.maxScore)
 }
 
-/** 自定义引用来源显示组件 */
 const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactElement => {
   const { token } = antdTheme.useToken()
+  const mergedSources = useMemo(() => mergeSourcesByFile(sources), [sources])
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState<string>(() => mergedSources[0]?.id ?? '')
+  const [popoverOverlayWidth, setPopoverOverlayWidth] = useState(360)
 
-  // 合并同一文件的来源
-  const mergedSources = mergeSourcesByFile(sources)
+  useEffect(() => {
+    const compute = (): void => {
+      const w = typeof window !== 'undefined' ? window.innerWidth : 360
+      const next = Math.min(360, Math.max(240, w - 48))
+      setPopoverOverlayWidth(next)
+    }
+    compute()
+    window.addEventListener('resize', compute, { passive: true })
+    return () => window.removeEventListener('resize', compute)
+  }, [])
 
-  const items = mergedSources.map((source, index) => ({
-    key: `source-${index}`,
-    label: (
-      <div className="flex items-center gap-2 w-full">
-        {getFileTypeIcon(source.fileType)}
-        <span className="flex-1 truncate font-medium">{source.fileName}</span>
-        <Tag color="blue" style={{ margin: 0 }}>
-          {source.chunks.length} 段
-        </Tag>
-        {source.maxScore !== undefined && (
-          <Progress
-            percent={Math.round(source.maxScore * 100)}
-            size="small"
-            style={{ width: 60 }}
-            strokeColor={
-              source.maxScore > 0.7 ? '#52c41a' : source.maxScore > 0.5 ? '#faad14' : '#ff4d4f'
-            }
-            format={(percent): string => `${percent}%`}
-          />
-        )}
-      </div>
-    ),
-    children: (
-      <div className="space-y-3 text-sm">
-        {/* 元信息标签 */}
-        <div className="flex flex-wrap gap-1">
-          {source.fileType && (
-            <Tag color={getFileTypeColor(source.fileType)} style={{ margin: 0 }}>
-              {source.fileType === 'url' ? '网页' : source.fileType.toUpperCase()}
-            </Tag>
-          )}
-          {source.sourceType === 'url' && source.siteName && (
-            <Tag icon={<GlobalOutlined />} style={{ margin: 0 }}>
-              {source.siteName}
-            </Tag>
-          )}
-        </div>
+  const activeKey = useMemo(() => {
+    if (!mergedSources.length) return ''
+    const exists = mergedSources.some((s) => s.id === active)
+    if (exists) return active
+    return mergedSources[0]?.id ?? ''
+  }, [active, mergedSources])
 
-        {/* 引用内容片段列表 */}
-        <div className="space-y-2">
-          {source.chunks.map((chunk, chunkIndex) => (
-            <div
-              key={chunkIndex}
-              className="p-2 rounded text-xs leading-relaxed"
-              style={{
-                background: token.colorFillQuaternary,
-                border: `1px solid ${token.colorBorderSecondary}`
-              }}
-            >
-              <div
-                className="flex items-center gap-2 mb-1"
-                style={{ color: token.colorTextTertiary }}
-              >
-                {chunk.pageNumber && chunk.pageNumber > 0 && (
-                  <Tag color="cyan" style={{ margin: 0, fontSize: 10 }}>
-                    第 {chunk.pageNumber} 页
-                  </Tag>
-                )}
-                <span className="ml-auto text-xs">相关度: {Math.round(chunk.score * 100)}%</span>
-              </div>
-              <div style={{ color: token.colorTextSecondary }}>{chunk.content}</div>
-            </div>
-          ))}
-        </div>
+  const items = useMemo(
+    () =>
+      mergedSources.map((s) => ({
+        key: s.id,
+        title: s.fileName,
+        url: s.sourceType === 'url' ? s.url : undefined,
+        icon: getFileTypeIcon(s.fileType),
+        description: (
+          <span style={{ color: token.colorTextSecondary }}>
+            {s.chunks.length} 段 · 最高相关度 {Math.round((s.maxScore || 0) * 100)}%
+          </span>
+        )
+      })),
+    [mergedSources, token.colorTextSecondary]
+  )
 
-        {/* 底部信息 */}
-        <div className="flex items-center gap-3 text-xs" style={{ color: token.colorTextTertiary }}>
-          {source.sourceType === 'url' && source.url && (
-            <Tooltip title={source.url}>
-              <span className="flex items-center gap-1 cursor-pointer hover:text-blue-500">
-                <LinkOutlined />
-                <span className="truncate max-w-[200px]">{source.url}</span>
-              </span>
-            </Tooltip>
-          )}
-          {source.filePath && source.sourceType !== 'url' && (
-            <Tooltip title={source.filePath}>
-              <span className="flex items-center gap-1">
-                <FileOutlined />
-                <span className="truncate max-w-[200px]">{source.filePath}</span>
-              </span>
-            </Tooltip>
-          )}
-          {source.fetchedAt && (
-            <span className="flex items-center gap-1">
-              <ClockCircleOutlined />
-              {formatTime(source.fetchedAt)}
-            </span>
-          )}
-        </div>
-      </div>
-    )
-  }))
+  const activeSource = useMemo(() => {
+    return mergedSources.find((s) => s.id === activeKey) ?? mergedSources[0]
+  }, [mergedSources, activeKey])
 
   return (
     <div className="sources-detail mt-2">
-      <div
-        className="flex items-center gap-2 mb-2 text-sm font-medium"
-        style={{ color: token.colorTextSecondary }}
-      >
-        <DatabaseOutlined />
-        <span>
-          引用来源 ({mergedSources.length} 个文件，{sources.length} 段引用)
-        </span>
+      <div className="flex items-center justify-between gap-2">
+        <Sources
+          inline
+          title={
+            <span style={{ color: token.colorTextSecondary }}>
+              引用来源（{mergedSources.length}）
+            </span>
+          }
+          items={items}
+          activeKey={activeKey}
+          popoverOverlayWidth={popoverOverlayWidth}
+          onClick={(item: any) => {
+            // 兼容不同的事件参数格式
+            const nextKey = String(item?.key ?? item?.id ?? (typeof item === 'string' ? item : '') ?? '')
+            if (nextKey) {
+              setActive(nextKey)
+              setOpen(true)
+            }
+          }}
+        />
+        <Button
+          type="link"
+          size="small"
+          disabled={!activeSource}
+          onClick={() => setOpen(true)}
+          style={{ paddingInline: 4 }}
+        >
+          详情
+        </Button>
       </div>
-      <Collapse
-        items={items}
-        size="small"
-        bordered={false}
-        style={{
-          background: token.colorFillAlter,
-          borderRadius: token.borderRadius
-        }}
-        expandIconPlacement="end"
-      />
+
+      <Drawer
+        title={activeSource?.fileName || '引用来源'}
+        placement="bottom"
+        open={open}
+        onClose={() => setOpen(false)}
+        styles={{ wrapper: { height: '60vh' } }}
+      >
+        {activeSource && (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2 items-center">
+              <Tag color={getFileTypeColor(activeSource.fileType)} style={{ margin: 0 }}>
+                {activeSource.fileType === 'url'
+                  ? '网页'
+                  : (activeSource.fileType || 'unknown').toUpperCase()}
+              </Tag>
+              <Tag color="blue" style={{ margin: 0 }}>
+                {activeSource.chunks.length} 段
+              </Tag>
+              <Progress
+                percent={Math.round((activeSource.maxScore || 0) * 100)}
+                size="small"
+                style={{ width: 120 }}
+                strokeColor={
+                  (activeSource.maxScore || 0) > 0.7
+                    ? '#52c41a'
+                    : (activeSource.maxScore || 0) > 0.5
+                      ? '#faad14'
+                      : '#ff4d4f'
+                }
+                format={(p): string => `${p}%`}
+              />
+              <span style={{ color: token.colorTextTertiary }}>
+                平均相关度 {Math.round((activeSource.avgScore || 0) * 100)}%
+              </span>
+            </div>
+
+            <div
+              className="flex items-center gap-3 text-xs"
+              style={{ color: token.colorTextTertiary }}
+            >
+              {activeSource.sourceType === 'url' && activeSource.url && (
+                <Tooltip title={activeSource.url}>
+                  <span className="flex items-center gap-1 cursor-pointer hover:text-blue-500">
+                    <LinkOutlined />
+                    <span className="truncate max-w-[360px]">{activeSource.url}</span>
+                  </span>
+                </Tooltip>
+              )}
+              {activeSource.filePath && activeSource.sourceType !== 'url' && (
+                <Tooltip title={activeSource.filePath}>
+                  <span className="flex items-center gap-1">
+                    <FileOutlined />
+                    <span className="truncate max-w-[360px]">{activeSource.filePath}</span>
+                  </span>
+                </Tooltip>
+              )}
+              {activeSource.fetchedAt && (
+                <span className="flex items-center gap-1">
+                  <ClockCircleOutlined />
+                  {formatTime(activeSource.fetchedAt)}
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              {activeSource.chunks.map((chunk, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded text-xs leading-relaxed"
+                  style={{
+                    background: token.colorFillQuaternary,
+                    border: `1px solid ${token.colorBorderSecondary}`
+                  }}
+                >
+                  <div
+                    className="flex items-center gap-2 mb-2"
+                    style={{ color: token.colorTextTertiary }}
+                  >
+                    {chunk.pageNumber && chunk.pageNumber > 0 && (
+                      <Tag color="cyan" style={{ margin: 0, fontSize: 10 }}>
+                        第 {chunk.pageNumber} 页
+                      </Tag>
+                    )}
+                    <span className="ml-auto">相关度: {Math.round((chunk.score || 0) * 100)}%</span>
+                  </div>
+                  <div style={{ color: token.colorTextSecondary }}>{chunk.content}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Drawer>
     </div>
   )
 })
@@ -442,14 +598,19 @@ interface MessageActionsProps {
   copiedMessageKey: string | null
   onCopyMessage: (content: string, key: string) => void
   onRetryMessage: (content: string) => void
+  retryContentForAi?: string
+  conversationKey?: string
+  isConversationStarred?: boolean
+  onOpenRenameConversation?: () => void
+  onToggleStarConversation?: (key: string) => void
   isTyping: boolean
   ttsSupported: boolean
   isSpeaking: boolean
   isTtsLoading: boolean
   onToggleSpeech: (message: ChatMessage) => void
+  feedbackValue: 'like' | 'dislike' | 'default'
+  onFeedbackChange: (value: 'like' | 'dislike' | 'default') => void
 }
-
-import { Prompts } from '@ant-design/x'
 
 // ... (existing imports)
 
@@ -459,11 +620,18 @@ const MessageActions = memo(
     copiedMessageKey,
     onCopyMessage,
     onRetryMessage,
+    retryContentForAi,
+    conversationKey,
+    isConversationStarred,
+    onOpenRenameConversation,
+    onToggleStarConversation,
     isTyping,
     ttsSupported,
     isSpeaking,
     isTtsLoading,
     onToggleSpeech,
+    feedbackValue,
+    onFeedbackChange,
     onPromptClick
   }: MessageActionsProps & { onPromptClick?: (question: string) => void }) => {
     const { token } = antdTheme.useToken()
@@ -471,10 +639,16 @@ const MessageActions = memo(
     const isAiMessage = message.role === 'ai'
     const timeStr = formatTimestamp(message.timestamp)
 
-    const hasSuggestions = message.role === 'ai' && message.suggestedQuestions && message.suggestedQuestions.length > 0
+    const hasSuggestions =
+      message.role === 'ai' && message.suggestedQuestions && message.suggestedQuestions.length > 0
+
+    const canRetryAi = !!retryContentForAi && !isTyping && !message.typing
+    const canOperateConversation = !!conversationKey
 
     return (
-      <div className={`message-actions flex flex-col gap-2 mt-1 ${isUserMessage ? 'items-end' : ''}`}>
+      <div
+        className={`message-actions flex flex-col gap-2 mt-1 ${isUserMessage ? 'items-end' : ''}`}
+      >
         <div className={`flex items-center gap-2 ${isUserMessage ? 'justify-end' : ''}`}>
           {/* 时间戳 */}
           {timeStr && (
@@ -488,69 +662,132 @@ const MessageActions = memo(
               {timeStr}
             </span>
           )}
-          {isAiMessage && (
-            <Tooltip
-              title={
-                ttsSupported
-                  ? isTtsLoading
-                    ? '生成语音中...'
-                    : isSpeaking
-                      ? '停止朗读'
-                      : '朗读'
-                  : '当前环境不支持语音'
-              }
-            >
-              <Button
-                type="text"
-                size="small"
-                icon={
-                  isSpeaking ? (
-                    <StopOutlined />
-                  ) : isTtsLoading ? (
-                    <LoadingOutlined />
-                  ) : (
-                    <SoundOutlined />
-                  )
-                }
-                onClick={() => onToggleSpeech(message)}
-                disabled={!ttsSupported || isTyping || message.typing || isTtsLoading}
-              />
-            </Tooltip>
-          )}
-          <Tooltip title={copiedMessageKey === message.key ? '已复制' : '复制'}>
-            <Button
-              type="text"
-              size="small"
-              className={isUserMessage ? 'user-action-btn' : ''}
-              icon={
-                copiedMessageKey === message.key ? (
-                  <CheckOutlined style={{ color: token.colorSuccess }} />
-                ) : (
-                  <CopyOutlined />
-                )
-              }
-              onClick={() => onCopyMessage(message.content, message.key)}
-            />
-          </Tooltip>
-          {message.role === 'user' && (
-            <Tooltip title="重新发送">
-              <Button
-                type="text"
-                size="small"
-                className="user-action-btn"
-                icon={<ReloadOutlined />}
-                onClick={() => onRetryMessage(message.content)}
-                disabled={isTyping}
-              />
-            </Tooltip>
-          )}
+          <Actions
+            variant="borderless"
+            fadeInLeft
+            items={
+              isAiMessage
+                ? [
+                    {
+                      key: 'audio',
+                      actionRender: (
+                        <Tooltip
+                          title={
+                            ttsSupported
+                              ? isTtsLoading
+                                ? '生成语音中...'
+                                : isSpeaking
+                                  ? '停止朗读'
+                                  : '朗读'
+                              : '当前环境不支持语音'
+                          }
+                        >
+                          <Actions.Item
+                            defaultIcon={<SoundOutlined />}
+                            runningIcon={<StopOutlined />}
+                            status={
+                              !ttsSupported
+                                ? 'default'
+                                : isTtsLoading
+                                  ? 'loading'
+                                  : isSpeaking
+                                    ? 'running'
+                                    : 'default'
+                            }
+                            label="朗读"
+                            onClick={() => onToggleSpeech(message)}
+                            style={{
+                              opacity:
+                                !ttsSupported || isTyping || message.typing || isTtsLoading
+                                  ? 0.5
+                                  : 1,
+                              pointerEvents:
+                                !ttsSupported || isTyping || message.typing || isTtsLoading
+                                  ? 'none'
+                                  : 'auto'
+                            }}
+                          />
+                        </Tooltip>
+                      )
+                    },
+                    {
+                      key: 'copy',
+                      actionRender: <Actions.Copy text={message.content} />
+                    },
+                    ...(canOperateConversation
+                      ? [
+                          {
+                            key: 'renameConversation',
+                            actionRender: (
+                              <Actions.Item
+                                defaultIcon={<EditOutlined />}
+                                label="重命名"
+                                onClick={() => onOpenRenameConversation?.()}
+                              />
+                            )
+                          },
+                          {
+                            key: 'starConversation',
+                            actionRender: (
+                              <Actions.Item
+                                defaultIcon={
+                                  isConversationStarred ? <StarFilled /> : <StarOutlined />
+                                }
+                                label={isConversationStarred ? '取消收藏' : '收藏'}
+                                onClick={() => {
+                                  if (!conversationKey) return
+                                  onToggleStarConversation?.(conversationKey)
+                                }}
+                              />
+                            )
+                          }
+                        ]
+                      : []),
+                    {
+                      key: 'retry',
+                      icon: <ReloadOutlined />,
+                      label: '重试',
+                      onItemClick: () => {
+                        if (!canRetryAi || !retryContentForAi) return
+                        onRetryMessage(retryContentForAi)
+                      }
+                    },
+                    {
+                      key: 'feedback',
+                      actionRender: (
+                        <Actions.Feedback value={feedbackValue} onChange={onFeedbackChange} />
+                      )
+                    }
+                  ]
+                : [
+                    {
+                      key: 'copy',
+                      icon:
+                        copiedMessageKey === message.key ? (
+                          <CheckOutlined style={{ color: token.colorSuccess }} />
+                        ) : (
+                          <CopyOutlined />
+                        ),
+                      label: copiedMessageKey === message.key ? '已复制' : '复制',
+                      onItemClick: () => onCopyMessage(message.content, message.key)
+                    },
+                    {
+                      key: 'retry',
+                      icon: <ReloadOutlined />,
+                      label: '重新发送',
+                      onItemClick: () => onRetryMessage(message.content),
+                      danger: false
+                    }
+                  ]
+            }
+          />
         </div>
-        
+
         {/* 智能建议 (Prompts) */}
         {hasSuggestions && (
           <div className="mt-2 w-full">
             <Prompts
-              items={message.suggestedQuestions!.map(q => ({
+              items={message.suggestedQuestions!.map((q) => ({
                 key: q,
                 label: q,
                 icon: <BulbOutlined />
@@ -675,6 +912,10 @@ export function ChatArea({
   onLoadMore,
   hasMore,
   conversationKey,
+  conversationLabel,
+  isConversationStarred,
+  onRenameConversation,
+  onToggleStarConversation,
   onPromptClick
 }: ChatAreaProps): ReactElement {
   const { token } = antdTheme.useToken()
@@ -690,6 +931,12 @@ export function ChatArea({
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [speakingMessageKey, setSpeakingMessageKey] = useState<string | null>(null)
   const [ttsLoadingMessageKey, setTtsLoadingMessageKey] = useState<string | null>(null)
+  const [feedbackByKey, setFeedbackByKey] = useState<
+    Record<string, 'like' | 'dislike' | 'default'>
+  >({})
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const [renameLoading, setRenameLoading] = useState(false)
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
   const ttsSupported = useMemo(() => {
     return (
@@ -747,6 +994,25 @@ export function ChatArea({
     },
     [ttsSupported, speakingMessageKey, speak, stopSpeech]
   )
+
+  const openRenameConversation = useCallback(() => {
+    if (!conversationKey) return
+    setRenameValue(conversationLabel ?? '')
+    setRenameOpen(true)
+  }, [conversationKey, conversationLabel])
+
+  const handleRenameOk = useCallback(async () => {
+    if (!conversationKey || !onRenameConversation) return
+    const next = renameValue.trim()
+    if (!next) return
+    setRenameLoading(true)
+    try {
+      await onRenameConversation(conversationKey, next)
+      setRenameOpen(false)
+    } finally {
+      setRenameLoading(false)
+    }
+  }, [conversationKey, onRenameConversation, renameValue])
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -1158,6 +1424,86 @@ export function ChatArea({
     return { top, bottom }
   }, [currentMessages, visibleRange, heightMapSnapshot])
 
+  const bubbleItems = useMemo(() => {
+    const messagesToRender = filteredMessagesForRender
+    return messagesToRender.map((message) => {
+      let retryContentForAi: string | undefined
+      if (message.role === 'ai') {
+        const idx = messagesToRender.findIndex((m) => m.key === message.key)
+        if (idx > 0) {
+          for (let i = idx - 1; i >= 0; i -= 1) {
+            const m = messagesToRender[i]
+            if (m.role === 'user' && m.content.trim()) {
+              retryContentForAi = m.content
+              break
+            }
+          }
+        }
+      }
+      const { think, realContent } = parseContent(message.content)
+      const hasContent = realContent.trim().length > 0
+      const typing = message.typing && hasContent
+      const loading = message.typing && !hasContent && !think
+      const footer = (
+        <div className="flex flex-col w-full">
+          {message.role === 'ai' && message.sources && message.sources.length > 0 && (
+            <SourcesDisplay sources={message.sources} />
+          )}
+          <MessageActions
+            message={message}
+            copiedMessageKey={copiedMessageKey}
+            onCopyMessage={onCopyMessage}
+            onRetryMessage={onRetryMessage}
+            retryContentForAi={retryContentForAi}
+            conversationKey={conversationKey}
+            isConversationStarred={isConversationStarred}
+            onOpenRenameConversation={openRenameConversation}
+            onToggleStarConversation={onToggleStarConversation}
+            isTyping={isTyping}
+            ttsSupported={ttsSupported}
+            isSpeaking={speakingMessageKey === message.key}
+            isTtsLoading={ttsLoadingMessageKey === message.key}
+            onToggleSpeech={toggleSpeech}
+            feedbackValue={feedbackByKey[message.key] || 'default'}
+            onFeedbackChange={(value) =>
+              setFeedbackByKey((prev) => ({ ...prev, [message.key]: value }))
+            }
+            onPromptClick={onPromptClick}
+          />
+        </div>
+      )
+      return {
+        key: message.key,
+        role: message.role,
+        content: (
+          <div ref={(el) => setItemHeight(message.key, el)}>
+            <MessageContent message={message} isTyping={isTyping} />
+          </div>
+        ),
+        typing,
+        loading,
+        footer
+      }
+    })
+  }, [
+    filteredMessagesForRender,
+    isTyping,
+    copiedMessageKey,
+    onCopyMessage,
+    onRetryMessage,
+    conversationKey,
+    isConversationStarred,
+    openRenameConversation,
+    onToggleStarConversation,
+    setItemHeight,
+    ttsSupported,
+    speakingMessageKey,
+    ttsLoadingMessageKey,
+    toggleSpeech,
+    onPromptClick,
+    feedbackByKey
+  ])
+
   return (
     <div
       ref={containerRef}
@@ -1175,63 +1521,7 @@ export function ChatArea({
           </div>
         )}
         {spacerHeights.top > 0 && <div style={{ height: spacerHeights.top }} />}
-        <Bubble.List
-          ref={bubbleListRef}
-          role={roles}
-          autoScroll={false}
-          items={useMemo(() => {
-            const messagesToRender = filteredMessagesForRender
-            return messagesToRender.map((message) => {
-              const { think, realContent } = parseContent(message.content)
-              const hasContent = realContent.trim().length > 0
-              const typing = message.typing && hasContent
-              const loading = message.typing && !hasContent && !think
-              const footer = (
-                <div className="flex flex-col w-full">
-                  {message.role === 'ai' && message.sources && message.sources.length > 0 && (
-                    <SourcesDisplay sources={message.sources} />
-                  )}
-                  <MessageActions
-                    message={message}
-                    copiedMessageKey={copiedMessageKey}
-                    onCopyMessage={onCopyMessage}
-                    onRetryMessage={onRetryMessage}
-                    isTyping={isTyping}
-                    ttsSupported={ttsSupported}
-                    isSpeaking={speakingMessageKey === message.key}
-                    isTtsLoading={ttsLoadingMessageKey === message.key}
-                    onToggleSpeech={toggleSpeech}
-                    onPromptClick={onPromptClick}
-                  />
-                </div>
-              )
-              return {
-                key: message.key,
-                role: message.role,
-                content: (
-                  <div ref={(el) => setItemHeight(message.key, el)}>
-                    <MessageContent message={message} isTyping={isTyping} />
-                  </div>
-                ),
-                typing,
-                loading,
-                footer
-              }
-            })
-          }, [
-            filteredMessagesForRender,
-            isTyping,
-            copiedMessageKey,
-            onCopyMessage,
-            onRetryMessage,
-            setItemHeight,
-            ttsSupported,
-            speakingMessageKey,
-            ttsLoadingMessageKey,
-            toggleSpeech,
-            onPromptClick
-          ])}
-        />
+        <Bubble.List ref={bubbleListRef} role={roles} autoScroll={false} items={bubbleItems} />
         {spacerHeights.bottom > 0 && <div style={{ height: spacerHeights.bottom }} />}
       </div>
       {showScrollToBottom && (
@@ -1243,6 +1533,26 @@ export function ChatArea({
         />
       )}
       <MetricsButton />
+      <Modal
+        title="重命名对话"
+        open={renameOpen}
+        onOk={() => void handleRenameOk()}
+        okButtonProps={{ loading: renameLoading, disabled: !renameValue.trim() }}
+        onCancel={() => {
+          if (renameLoading) return
+          setRenameOpen(false)
+        }}
+        destroyOnHidden
+      >
+        <Input
+          autoFocus
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onPressEnter={() => void handleRenameOk()}
+          placeholder="请输入对话名称"
+          maxLength={50}
+        />
+      </Modal>
     </div>
   )
 }

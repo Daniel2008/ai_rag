@@ -31,12 +31,16 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
   }
 
   // Use a custom fetch with retry logic
-  const hubFetch = createRetryingFetch({ timeoutMs: 60000, maxRetries: 4 }) as unknown as typeof fetch
+  const hubFetch = createRetryingFetch({
+    timeoutMs: 60000,
+    maxRetries: 4
+  }) as unknown as typeof fetch
 
   const hasConfig = fs.existsSync(path.join(targetDir, 'config.json'))
   const hasTokenizer = fs.existsSync(path.join(targetDir, 'tokenizer.json'))
   // Check if directory has any ONNX model file
-  const hasAnyModelFile = fs.existsSync(targetDir) && fs.readdirSync(targetDir).some(f => f.endsWith('.onnx'))
+  const hasAnyModelFile =
+    fs.existsSync(targetDir) && fs.readdirSync(targetDir).some((f) => f.endsWith('.onnx'))
 
   if (hasConfig && hasTokenizer && hasAnyModelFile) {
     debugLog('Essential files exist, skipping download')
@@ -56,7 +60,7 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
       hubUrl: HF_MIRROR,
       fetch: hubFetch
     })
-    
+
     // Handle both array and async iterator if necessary, but listFiles usually returns AsyncIterable or Array depending on version.
     // In @huggingface/hub v2+, it returns an AsyncIterable.
     for await (const file of files) {
@@ -77,58 +81,62 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
   // Filter files to download
   // We want JSONs, ONNX models, and Tokenizer models
   // But we only need ONE onnx model, preferably quantized.
-  
+
   const allFiles = fileList
-  const jsonAndTxtFiles = allFiles.filter(f => f.endsWith('.json') || f.endsWith('.txt') || f.endsWith('.model'))
-  const onnxFiles = allFiles.filter(f => f.endsWith('.onnx'))
-  
+  const jsonAndTxtFiles = allFiles.filter(
+    (f) => f.endsWith('.json') || f.endsWith('.txt') || f.endsWith('.model')
+  )
+  const onnxFiles = allFiles.filter((f) => f.endsWith('.onnx'))
+
   let selectedOnnxFile: string | undefined
-  
-  // Priority: 
+
+  // Priority:
   // 1. onnx/model_quantized.onnx
   // 2. model_quantized.onnx
   // 3. onnx/model.onnx
   // 4. model.onnx
   // 5. Any other quantized model
   // 6. Any other onnx model
-  
+
   const priorities = [
-      'onnx/model_quantized.onnx',
-      'model_quantized.onnx',
-      'onnx/model.onnx',
-      'model.onnx'
+    'onnx/model_quantized.onnx',
+    'model_quantized.onnx',
+    'onnx/model.onnx',
+    'model.onnx'
   ]
-  
+
   for (const p of priorities) {
-      if (onnxFiles.includes(p)) {
-          selectedOnnxFile = p
-          break
-      }
+    if (onnxFiles.includes(p)) {
+      selectedOnnxFile = p
+      break
+    }
   }
-  
+
   if (!selectedOnnxFile) {
-      // If none of the standard names match, try to find *any* quantized model
-      selectedOnnxFile = onnxFiles.find(f => f.includes('quantized') || f.includes('int8') || f.includes('q4'))
+    // If none of the standard names match, try to find *any* quantized model
+    selectedOnnxFile = onnxFiles.find(
+      (f) => f.includes('quantized') || f.includes('int8') || f.includes('q4')
+    )
   }
-  
+
   if (!selectedOnnxFile && onnxFiles.length > 0) {
-      // Fallback to the first onnx file found
-      selectedOnnxFile = onnxFiles[0]
+    // Fallback to the first onnx file found
+    selectedOnnxFile = onnxFiles[0]
   }
-  
+
   const filesToDownload = [...jsonAndTxtFiles]
   if (selectedOnnxFile) {
-      filesToDownload.push(selectedOnnxFile)
-      debugLog(`Selected model file: ${selectedOnnxFile}`)
+    filesToDownload.push(selectedOnnxFile)
+    debugLog(`Selected model file: ${selectedOnnxFile}`)
   } else {
-      debugLog('No ONNX model file found in the repository!')
+    debugLog('No ONNX model file found in the repository!')
   }
 
   // Ensure we have at least config and tokenizer
   const required = new Set<string>()
   required.add('config.json')
   required.add('tokenizer.json')
-  
+
   progressManager.sendUpdate(
     ProgressStatus.DOWNLOADING,
     `Downloading ${filesToDownload.length} files`
@@ -143,12 +151,12 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
   for (const filePath of filesToDownload) {
     const localPath = path.join(targetDir, filePath)
     if (fs.existsSync(localPath)) {
-        const state = fileStates.get(filePath)
-        if (state) {
-            state.completed = true
-            state.loaded = state.total || 1
-        }
-        continue
+      const state = fileStates.get(filePath)
+      if (state) {
+        state.completed = true
+        state.loaded = state.total || 1
+      }
+      continue
     }
 
     const localDir = path.dirname(localPath)
@@ -156,7 +164,7 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
 
     try {
       debugLog(`Downloading ${filePath}...`)
-      
+
       // Use downloadFile from @huggingface/hub
       // Note: downloadFile returns a Blob.
       // We explicitly do NOT use `raw: false` here because the library's LFS handling
@@ -164,30 +172,30 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
       // Instead, we can try to download directly via fetch for LFS files if needed,
       // OR we just use the raw blob if the library fails to resolve LFS automatically without size info.
       // However, `downloadFile` by default (raw: false) tries to resolve LFS.
-      
+
       // The error "Expected size information" typically comes from `downloadFile` when it tries to verify LFS size.
       // Let's try to bypass the strict check by fetching the file directly using our custom logic if the library fails,
       // OR we can try to pass `downloadInfo` if we had it.
-      
+
       // Better approach: We revert to a direct fetch for the file content from the mirror,
       // bypassing the @huggingface/hub downloadFile validation logic which is causing the issue.
       // We already know the URL structure for the mirror.
-      
+
       const url = `${HF_MIRROR}/${fullModelName}/resolve/main/${filePath}`
       const res = await hubFetch(url)
-      
+
       if (!res.ok) {
-         if (res.status === 404 && !required.has(filePath)) {
-             debugLog(`Skipping optional file ${filePath} (not found)`)
-             continue
-         }
-         throw new Error(`Failed to download ${filePath}: ${res.status} ${res.statusText}`)
+        if (res.status === 404 && !required.has(filePath)) {
+          debugLog(`Skipping optional file ${filePath} (not found)`)
+          continue
+        }
+        throw new Error(`Failed to download ${filePath}: ${res.status} ${res.statusText}`)
       }
 
       const total = Number(res.headers.get('content-length')) || 0
       const state = fileStates.get(filePath)
       if (state) {
-          state.total = total
+        state.total = total
       }
 
       // Stream the download to report progress
@@ -197,54 +205,56 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
 
       const reader = res.body.getReader()
       const writer = fs.createWriteStream(localPath)
-      
+
       let loaded = 0
       let lastReportedProgress = 0
-      
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        
+
         if (value) {
-            writer.write(Buffer.from(value))
-            loaded += value.length
-            
-            if (state) {
-                state.loaded = loaded
-                
-                // Throttle updates: Report every 1% or at least every 1MB
-                const currentProgress = progressManager.calculateProgress()
-                if (currentProgress - lastReportedProgress >= 1 || loaded % (1024 * 1024) === 0) {
-                     const loadedStr = formatBytes(loaded)
-                     const totalStr = formatBytes(state.total)
-                     progressManager.sendUpdate(
-                        ProgressStatus.DOWNLOADING,
-                        `Downloading files (${currentProgress.toFixed(0)}%) - ${loadedStr} / ${totalStr}`,
-                        filePath,
-                        loaded / (state.total || 1)
-                      )
-                      lastReportedProgress = currentProgress
-                }
+          writer.write(Buffer.from(value))
+          loaded += value.length
+
+          if (state) {
+            state.loaded = loaded
+
+            // Throttle updates: Report every 1% or at least every 1MB
+            const currentProgress = progressManager.calculateProgress()
+            if (currentProgress - lastReportedProgress >= 1 || loaded % (1024 * 1024) === 0) {
+              const loadedStr = formatBytes(loaded)
+              const totalStr = formatBytes(state.total)
+              progressManager.sendUpdate(
+                ProgressStatus.DOWNLOADING,
+                `Downloading files (${currentProgress.toFixed(0)}%) - ${loadedStr} / ${totalStr}`,
+                filePath,
+                loaded / (state.total || 1)
+              )
+              lastReportedProgress = currentProgress
             }
+          }
         }
       }
-      
+
       writer.end()
-      
+
       await new Promise<void>((resolve, reject) => {
-          writer.on('finish', resolve)
-          writer.on('error', reject)
+        writer.on('finish', resolve)
+        writer.on('error', reject)
       })
 
       // Verify file size
       const stats = await fs.promises.stat(localPath)
       if (stats.size === 0) {
-          throw new Error(`File ${filePath} downloaded but has 0 bytes`)
+        throw new Error(`File ${filePath} downloaded but has 0 bytes`)
       }
       if (state && state.total > 0 && stats.size !== state.total) {
-          debugLog(`[WARN] File ${filePath} size mismatch: expected ${state.total}, got ${stats.size}`)
-          // We could throw here, but sometimes content-length is wrong.
-          // 0 bytes is definitely wrong though.
+        debugLog(
+          `[WARN] File ${filePath} size mismatch: expected ${state.total}, got ${stats.size}`
+        )
+        // We could throw here, but sometimes content-length is wrong.
+        // 0 bytes is definitely wrong though.
       }
 
       if (state) {
@@ -260,7 +270,6 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
         filePath,
         1
       )
-
     } catch (e) {
       if (required.has(filePath)) {
         const msg = `Failed to download essential file ${filePath}: ${e}`

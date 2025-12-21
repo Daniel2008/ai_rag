@@ -1,4 +1,3 @@
-
 export function normalizeHubUrl(input: string): string {
   return input.replace(/\/+$/, '')
 }

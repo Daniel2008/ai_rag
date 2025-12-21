@@ -54,9 +54,7 @@ function initSchema(): void {
     );
   `)
 
-  const columns = db
-    .prepare(`PRAGMA table_info(messages)`)
-    .all() as Array<{ name: string }>
+  const columns = db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>
 
   const hasSuggestedQuestions = columns.some((c) => c.name === 'suggestedQuestions')
   if (!hasSuggestedQuestions) {

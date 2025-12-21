@@ -1,10 +1,7 @@
 import { MessagePort } from 'worker_threads'
 import { ProgressStatus, TaskType } from './progressTypes'
 import { extractResolvedFilePath } from './utils/network'
-import {
-  extractFileBaseName,
-  getDisplayFileName
-} from './modelUtils'
+import { extractFileBaseName, getDisplayFileName } from './modelUtils'
 
 // 文件下载状态接口
 export interface FileDownloadState {
@@ -114,12 +111,7 @@ export class ProgressManager {
     return Math.round(progress)
   }
 
-  public sendUpdate(
-    status: ProgressStatus,
-    message: string,
-    file?: string,
-    fileProgress?: number
-  ) {
+  public sendUpdate(status: ProgressStatus, message: string, file?: string, fileProgress?: number) {
     // 节流控制，避免闪烁
     const now = Date.now()
 
@@ -260,7 +252,7 @@ export class ProgressManager {
 
           // 如果所有文件都下载完成，这里不直接发送完成消息，而是由调用者决定
           if (allFilesDownloaded) {
-             this.sendUpdate(ProgressStatus.PROCESSING, `所有文件下载完成，正在验证...`)
+            this.sendUpdate(ProgressStatus.PROCESSING, `所有文件下载完成，正在验证...`)
           }
           break
         }

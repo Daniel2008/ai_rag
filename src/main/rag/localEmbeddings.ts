@@ -9,11 +9,7 @@ import fs from 'fs'
 import { initEmbeddingInWorker, embedInWorker } from './workerManager'
 import { ProgressCallback, ProgressStatus, TaskType, ProgressMessage } from './progressTypes'
 import { RAG_CONFIG } from '../utils/config'
-import {
-  extractFileBaseName,
-  isOpaqueFileName,
-  describeModelArtifact
-} from './modelUtils'
+import { extractFileBaseName, isOpaqueFileName, describeModelArtifact } from './modelUtils'
 
 // 配置模型缓存路径到应用数据目录
 const getModelsPath = (): string => {

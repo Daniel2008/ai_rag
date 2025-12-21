@@ -60,7 +60,7 @@ import {
   removeSourceFromStore
 } from './rag/store/index'
 import { chatWithRag } from './rag/chat'
-import { logger } from './utils/logger'
+import { logger, logDebug } from './utils/logger'
 import { runLangGraphChat } from './rag/langgraphChat'
 import { getSettings, saveSettings, AppSettings } from './settings'
 import {
@@ -198,6 +198,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('db:createConversation', (_, key: string, label: string) =>
     createConversation(key, label)
   )
+
+  ipcMain.handle('db:updateConversation', (_, key: string, label: string) => {
+    updateConversationTimestamp(key, label)
+  })
 
   ipcMain.handle('db:deleteConversation', (_, key: string) => deleteConversation(key))
 
@@ -812,6 +816,12 @@ app.whenReady().then(async () => {
 
     const normalizePath = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
 
+    logDebug('rag:chat request received', 'IPC', {
+      questionPreview: normalized.question.slice(0, 80),
+      sourcesCount: normalized.sources?.length ?? 0,
+      tagsCount: normalized.tags?.length ?? 0
+    })
+
     // 预处理 sources 和 tags
     if (normalized.sources && normalized.sources.length > 0) {
       const snapshot = getKnowledgeBaseSnapshot()
@@ -819,17 +829,26 @@ app.whenReady().then(async () => {
         snapshot.files.filter((f) => f.status === 'ready').map((f) => normalizePath(f.path))
       )
 
-      console.debug('[rag:chat] incoming sources:', normalized.sources)
+      logDebug('rag:chat incoming sources', 'IPC', {
+        sourcesCount: normalized.sources.length,
+        sourcesPreview: normalized.sources.slice(0, 5)
+      })
 
       const filtered = normalized.sources.filter((s) => readySet.has(normalizePath(s)))
 
       if (filtered.length === 0) {
-        console.debug('[rag:chat] sources filtered out, fallback to full-scope')
+        logDebug('rag:chat sources filtered out, fallback to full-scope', 'IPC')
         normalized.sources = undefined
       } else {
         normalized.sources = filtered
       }
     }
+
+    logDebug('rag:chat normalized params', 'IPC', {
+      isGlobalSearch: !normalized.sources || normalized.sources.length === 0,
+      sourcesCount: normalized.sources?.length ?? 0,
+      tagsCount: normalized.tags?.length ?? 0
+    })
 
     try {
       console.log('Chat question:', normalized.question)

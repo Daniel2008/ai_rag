@@ -674,7 +674,10 @@ export function createTable(
 /**
  * 创建参考文献部分（增强版：更规范的格式）
  */
-export function createReferences(sources: string[], theme: DocumentTheme = 'professional'): Paragraph[] {
+export function createReferences(
+  sources: string[],
+  theme: DocumentTheme = 'professional'
+): Paragraph[] {
   const colors = THEME_COLORS[theme]
 
   const paragraphs: Paragraph[] = [

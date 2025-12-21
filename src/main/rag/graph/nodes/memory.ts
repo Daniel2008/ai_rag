@@ -47,27 +47,27 @@ export async function memoryUpdate(state: ChatGraphState): Promise<ChatGraphStat
     // 不过 LangGraph 的状态流转是同步等待 Promise 的。
     // 如果我们返回一个 Promise 但不 await 内部的耗时操作...
     // 但是我们需要 updateConversationMemory 的结果来存库。
-    
+
     // 权衡：为了用户体验，我们可以接受这里的延迟，或者简化 updateConversationMemory。
     // 目前 updateConversationMemory 会调用 LLM 进行压缩。
     // 我们可以将其放入后台执行（不 await），但这在 Serverless/Lambda 环境可能有问题，
     // 但在 Electron 本地环境通常是可以的，只要进程不退出。
-    
+
     const doUpdate = async () => {
-        try {
-            const nextMemory = await updateConversationMemory(
-                state.memory || null,
-                state.question,
-                state.answer!
-            )
-            if (nextMemory.trim()) {
-                upsertConversationMemory(state.conversationKey!, nextMemory)
-            }
-        } catch (e) {
-            console.warn('Background memory update failed', e)
+      try {
+        const nextMemory = await updateConversationMemory(
+          state.memory || null,
+          state.question,
+          state.answer!
+        )
+        if (nextMemory.trim()) {
+          upsertConversationMemory(state.conversationKey!, nextMemory)
         }
+      } catch (e) {
+        console.warn('Background memory update failed', e)
+      }
     }
-    
+
     // 触发后台更新
     doUpdate()
 

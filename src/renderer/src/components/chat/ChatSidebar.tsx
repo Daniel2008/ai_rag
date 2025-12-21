@@ -1,7 +1,17 @@
 import type { CSSProperties, ReactElement } from 'react'
-import { useCallback } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Conversations, type ConversationsProps } from '@ant-design/x'
-import { Badge, Button, Flex, Space, Tooltip, Typography, theme as antdTheme } from 'antd'
+import {
+  Badge,
+  Button,
+  Flex,
+  Input,
+  Modal,
+  Space,
+  Tooltip,
+  Typography,
+  theme as antdTheme
+} from 'antd'
 import {
   SettingOutlined,
   DeleteOutlined,
@@ -21,12 +31,15 @@ interface ChatSidebarProps {
   sidebarCollapsed: boolean
   conversationItems: ConversationItem[]
   activeConversationKey?: string
+  starredConversationKeys: string[]
   readyDocuments: number
   assistantPhase: AssistantPhase
   processingStatus?: string
   onThemeChange: (mode: 'light' | 'dark') => void
   onActiveConversationChange: (key: string) => void
   onCreateNewConversation: () => Promise<string>
+  onRenameConversation: (key: string, label: string) => Promise<void>
+  onToggleStarConversation: (key: string) => void
   onDeleteConversation: (key: string) => void
   onOpenSettings: () => void
 }
@@ -36,16 +49,49 @@ export function ChatSidebar({
   sidebarCollapsed,
   conversationItems,
   activeConversationKey,
+  starredConversationKeys,
   readyDocuments,
   assistantPhase,
   processingStatus,
   onThemeChange,
   onActiveConversationChange,
   onCreateNewConversation,
+  onRenameConversation,
+  onToggleStarConversation,
   onDeleteConversation,
   onOpenSettings
 }: ChatSidebarProps): ReactElement {
   const { token } = antdTheme.useToken()
+
+  const starredSet = useMemo(() => new Set(starredConversationKeys), [starredConversationKeys])
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const [renamingKey, setRenamingKey] = useState<string | null>(null)
+  const [renameLoading, setRenameLoading] = useState(false)
+
+  const openRename = useCallback(
+    (key: string) => {
+      const current = conversationItems.find((c) => c.key === key)
+      setRenamingKey(key)
+      setRenameValue(current?.label ?? '')
+      setRenameOpen(true)
+    },
+    [conversationItems]
+  )
+
+  const handleRenameOk = useCallback(async () => {
+    if (!renamingKey) return
+    const nextLabel = renameValue.trim()
+    if (!nextLabel) return
+    setRenameLoading(true)
+    try {
+      await onRenameConversation(renamingKey, nextLabel)
+      setRenameOpen(false)
+      setRenamingKey(null)
+    } finally {
+      setRenameLoading(false)
+    }
+  }, [onRenameConversation, renamingKey, renameValue])
 
   // 助手状态文案
   const assistantSubtitle =
@@ -54,7 +100,7 @@ export function ChatSidebar({
       : assistantPhase === 'answering'
         ? '回答中…'
         : assistantPhase === 'processing'
-          ? (processingStatus || '处理中…')
+          ? processingStatus || '处理中…'
           : assistantPhase === 'error'
             ? '出错了，点“重试”再试一次'
             : readyDocuments > 0
@@ -72,8 +118,14 @@ export function ChatSidebar({
         },
         {
           key: 'star',
-          label: '收藏',
-          icon: <StarOutlined />
+          label: starredSet.has(conversation.key) ? '取消收藏' : '收藏',
+          icon: (
+            <StarOutlined
+              style={{
+                color: starredSet.has(conversation.key) ? token.colorWarning : token.colorText
+              }}
+            />
+          )
         },
         {
           type: 'divider' as const
@@ -86,12 +138,25 @@ export function ChatSidebar({
         }
       ],
       onClick: ({ key }: { key: string }) => {
+        if (key === 'rename') {
+          openRename(conversation.key)
+        }
+        if (key === 'star') {
+          onToggleStarConversation(conversation.key)
+        }
         if (key === 'delete') {
           onDeleteConversation(conversation.key)
         }
       }
     }),
-    [onDeleteConversation]
+    [
+      onDeleteConversation,
+      onToggleStarConversation,
+      openRename,
+      starredSet,
+      token.colorText,
+      token.colorWarning
+    ]
   )
 
   return (
@@ -213,6 +278,27 @@ export function ChatSidebar({
           </Badge>
         </Flex>
       </div>
+      <Modal
+        title="重命名对话"
+        open={renameOpen}
+        onOk={() => void handleRenameOk()}
+        okButtonProps={{ loading: renameLoading, disabled: !renameValue.trim() }}
+        onCancel={() => {
+          if (renameLoading) return
+          setRenameOpen(false)
+          setRenamingKey(null)
+        }}
+        destroyOnHidden
+      >
+        <Input
+          autoFocus
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onPressEnter={() => void handleRenameOk()}
+          placeholder="请输入对话名称"
+          maxLength={50}
+        />
+      </Modal>
     </aside>
   )
 }

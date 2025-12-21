@@ -78,6 +78,18 @@ export async function buildRagContext(
       })
       const hybrid = ctx.hybridResults ?? []
       retrievedPairs = hybrid.map((r) => ({ doc: r.doc, score: r.finalScore }))
+      if (retrievedPairs.length === 0) {
+        logDebug('Hybrid search returned empty, fallback to vector search', 'Chat', {
+          searchLimit
+        })
+        retrievedPairs = await withEmbeddingProgressSuppressed(() =>
+          searchSimilarDocumentsWithScores(question, {
+            k: searchLimit,
+            sources: options.sources,
+            tags: options.tags
+          })
+        )
+      }
     } else {
       retrievedPairs = await withEmbeddingProgressSuppressed(() =>
         searchSimilarDocumentsWithScores(question, {

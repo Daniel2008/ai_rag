@@ -84,8 +84,11 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     activeConversationKey,
     currentMessages,
     conversationItems,
+    starredConversationKeys,
     handleActiveConversationChange,
     createNewConversation,
+    renameConversation,
+    toggleStarConversation,
     handleDeleteConversation,
     loadConversations,
     loadMoreMessages,
@@ -500,12 +503,15 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             sidebarCollapsed={sidebarCollapsed}
             conversationItems={conversationItems}
             activeConversationKey={activeConversationKey}
+            starredConversationKeys={starredConversationKeys}
             readyDocuments={readyDocuments}
             assistantPhase={assistantPhase}
             processingStatus={progress?.stage}
             onThemeChange={onThemeChange}
             onActiveConversationChange={handleActiveConversationChange}
             onCreateNewConversation={createNewConversation}
+            onRenameConversation={renameConversation}
+            onToggleStarConversation={toggleStarConversation}
             onDeleteConversation={handleDeleteConversation}
             onOpenSettings={() => setSettingsOpen(true)}
           />
@@ -532,6 +538,16 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
                 onLoadMore={loadMoreMessages}
                 hasMore={hasMore}
                 conversationKey={activeConversationKey}
+                conversationLabel={
+                  activeConversationKey
+                    ? conversationItems.find((c) => c.key === activeConversationKey)?.label
+                    : undefined
+                }
+                isConversationStarred={
+                  !!activeConversationKey && starredConversationKeys.includes(activeConversationKey)
+                }
+                onRenameConversation={renameConversation}
+                onToggleStarConversation={toggleStarConversation}
                 onPromptClick={handlePromptClick}
               />
             )}

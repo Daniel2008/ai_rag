@@ -74,20 +74,19 @@ async function ensureTransformers() {
       // executionMode: 'SEQUENTIAL', // This is not a valid top-level option for env.backends.onnx in recent versions
       // Note: For downloading, Transformers.js uses fetch which has its own timeout mechanism
       // The actual download timeout is handled by the retry logic in our code
-      
       // Attempt to prevent deadlocks by configuring session options if possible.
       // However, env.backends.onnx usually takes `wasm` or other backend specific configs.
       // For node.js environment, it uses onnxruntime-node.
     }
   }
-  
+
   // Disable parallel downloads
   ;(env as unknown as { parallelDownloads?: number }).parallelDownloads = 1
-  
+
   // Set number of threads to 1 to avoid deadlocks in some environments
   // env.backends.onnx.numThreads = 1; // This might not be exposed directly on env.backends.onnx
   // Instead, we can try to set it via session_options when loading the pipeline, but pipeline API doesn't easily expose session options.
-  
+
   // Try to set global ONNX options if available in env
   // (env as any).onnx = { ...(env as any).onnx, numThreads: 1 };
 }
@@ -146,7 +145,7 @@ parentPort.on('message', async (task) => {
 
       // Map short name to full model ID if needed
       const fullModelName = mapModelName(modelName)
-      
+
       // Allow loading models from both local and remote sources
       envRef.allowLocalModels = true
       envRef.allowRemoteModels = !offlineFirst
@@ -155,7 +154,7 @@ parentPort.on('message', async (task) => {
 
       const downloadTaskType =
         type === 'initReranker' ? TaskType.RERANKER_DOWNLOAD : TaskType.MODEL_DOWNLOAD
-      
+
       const progressManager = new ProgressManager(id, downloadTaskType, parentPort)
 
       let progressCheckInterval: NodeJS.Timeout | undefined
@@ -164,7 +163,7 @@ parentPort.on('message', async (task) => {
         progressCheckInterval = setInterval(() => {
           const elapsedTime = Date.now() - startTime
           const lastProgress = progressManager.getLastReportedProgress()
-          
+
           console.log(
             `Progress check: ${elapsedTime}ms since start, last progress: ${lastProgress}`
           )
@@ -197,99 +196,116 @@ parentPort.on('message', async (task) => {
             // Use targetDir if we are sure it exists and we want to load from it
             // This ensures we load from the flattened directory where we downloaded the files
             const modelPath = targetDir
-            
+
             // Check for available model file to determine dtype
             let dtype = 'fp32' // default
             try {
-                const fs = await import('fs')
-                
-                // Helper to find file recursively
-                const findFile = async (dir: string, pattern: RegExp): Promise<boolean> => {
-                    try {
-                        const entries = await fs.promises.readdir(dir, { withFileTypes: true })
-                        for (const entry of entries) {
-                            const fullPath = path.join(dir, entry.name)
-                            if (entry.isDirectory()) {
-                                if (await findFile(fullPath, pattern)) return true
-                            } else if (pattern.test(entry.name)) {
-                                return true
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[WORKER] Failed to runPipelineInit model files:', e)
-                    }
-                    return false
-                }
+              const fs = await import('fs')
 
-                // Check for quantized models
-                // Note: transformers.js expects the model file to be named specific ways or specified via config.
-                // But for ONNX runtime, we just need to tell it which file to load via dtype/quantized options.
-                
-                // If model_quantized.onnx exists (either in root or onnx/ subdir)
-                if (await findFile(modelPath, /^model_quantized\.onnx$/)) {
-                    dtype = 'q8'
-                } else if (await findFile(modelPath, /^model_int8\.onnx$/)) {
-                    dtype = 'int8'
-                } else if (await findFile(modelPath, /^model\.onnx$/)) {
-                    dtype = 'fp32'
+              // Helper to find file recursively
+              const findFile = async (dir: string, pattern: RegExp): Promise<boolean> => {
+                try {
+                  const entries = await fs.promises.readdir(dir, { withFileTypes: true })
+                  for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name)
+                    if (entry.isDirectory()) {
+                      if (await findFile(fullPath, pattern)) return true
+                    } else if (pattern.test(entry.name)) {
+                      return true
+                    }
+                  }
+                } catch (e) {
+                  console.warn('[WORKER] Failed to runPipelineInit model files:', e)
                 }
-                
-                console.log(`[WORKER] Detected model files in ${modelPath}, using dtype: ${dtype} (auto-detection enabled)`)
+                return false
+              }
+
+              // Check for quantized models
+              // Note: transformers.js expects the model file to be named specific ways or specified via config.
+              // But for ONNX runtime, we just need to tell it which file to load via dtype/quantized options.
+
+              // If model_quantized.onnx exists (either in root or onnx/ subdir)
+              if (await findFile(modelPath, /^model_quantized\.onnx$/)) {
+                dtype = 'q8'
+              } else if (await findFile(modelPath, /^model_int8\.onnx$/)) {
+                dtype = 'int8'
+              } else if (await findFile(modelPath, /^model\.onnx$/)) {
+                dtype = 'fp32'
+              }
+
+              console.log(
+                `[WORKER] Detected model files in ${modelPath}, using dtype: ${dtype} (auto-detection enabled)`
+              )
             } catch (e) {
-                console.warn('[WORKER] Failed to detect model files:', e)
+              console.warn('[WORKER] Failed to detect model files:', e)
             }
 
             // NOTE: transformers.js automatic model file selection relies on specific naming or config.
             // If we only have 'model_quantized.onnx', we might need to tell it.
             // Actually, if we pass the directory path, it should find the ONNX file.
             // But if 'model.onnx' is missing and it expects it, we have an issue.
-            // By default transformers.js looks for 'model.onnx'. 
+            // By default transformers.js looks for 'model.onnx'.
             // If we have 'model_quantized.onnx', we should specify { dtype: 'q8' } or similar options if available,
             // or rely on it finding the quantized file.
             // The error says "dtype not specified... Using default dtype (fp32)... file was not found locally at .../model.onnx"
             // This means it defaulted to looking for 'model.onnx'.
-            
+
             // Let's try to pass the correct options.
-            const pipelineOptions: any = {
-                progress_callback: progressManager.customProgressCallback,
-                local_files_only: localFilesOnly,
+            const pipelineOptions: {
+              progress_callback: (progress: Record<string, unknown>) => void
+              local_files_only: boolean
+              dtype?: 'q8' | 'int8' | 'fp32'
+            } = {
+              progress_callback: progressManager.customProgressCallback,
+              local_files_only: localFilesOnly
             }
-            
+
             // If we downloaded a quantized model, we must hint the pipeline to look for it
             // usually via { dtype: 'q8' } or { quantized: true } depending on version.
             // In @huggingface/transformers v3, using dtype: 'q8' should make it look for model_quantized.onnx
             // However, the error suggests it still defaults to 'model.onnx' if not found.
             // Let's be more explicit with model file name if possible, OR just use the correct dtype mapping.
-            
+
             // For older versions or specific setups, dtype: 'q8' maps to 'model_quantized.onnx'.
             // But if the file is in a subdirectory (onnx/model_quantized.onnx), transformers.js might not find it automatically
-            // if it expects it at root. 
+            // if it expects it at root.
             // BUT, we are downloading to a flattened structure OR preserving structure?
             // Our modelDownloader preserves structure (onnx/model_quantized.onnx).
-            // Transformers.js usually handles subdirectories if config.json points to it? 
+            // Transformers.js usually handles subdirectories if config.json points to it?
             // No, config.json doesn't usually point to onnx file location.
-            
+
             // Actually, transformers.js v3 should handle onnx/ subdirectory automatically.
             // The issue might be that we need to pass `dtype: 'q8'` explicitly.
-            
+
             if (dtype === 'q8') {
-                pipelineOptions.dtype = 'q8'
+              pipelineOptions.dtype = 'q8'
             } else if (dtype === 'int8') {
-                pipelineOptions.dtype = 'int8'
+              pipelineOptions.dtype = 'int8'
             } else {
-                // Explicitly set fp32 if that's what we found, to avoid ambiguity
-                pipelineOptions.dtype = 'fp32'
+              // Explicitly set fp32 if that's what we found, to avoid ambiguity
+              pipelineOptions.dtype = 'fp32'
             }
 
-            console.log(`[WORKER] Starting pipeline initialization for ${type} with options:`, JSON.stringify(pipelineOptions))
+            console.log(
+              `[WORKER] Starting pipeline initialization for ${type} with options:`,
+              JSON.stringify(pipelineOptions)
+            )
             const initStart = Date.now()
 
             if (type === 'initEmbedding') {
-              embeddingPipeline = (await pipelineFn('feature-extraction', modelPath, pipelineOptions)) as unknown as FeatureExtractionPipeline
+              embeddingPipeline = (await pipelineFn(
+                'feature-extraction',
+                modelPath,
+                pipelineOptions
+              )) as unknown as FeatureExtractionPipeline
             } else {
-              rerankPipeline = (await pipelineFn('text-classification', modelPath, pipelineOptions)) as unknown as RerankPipeline
+              rerankPipeline = (await pipelineFn(
+                'text-classification',
+                modelPath,
+                pipelineOptions
+              )) as unknown as RerankPipeline
             }
-            
+
             console.log(`[WORKER] Pipeline initialization completed in ${Date.now() - initStart}ms`)
           }
 
@@ -310,7 +326,7 @@ parentPort.on('message', async (task) => {
           )
           // env.localModelPath acts as the root cache directory
           envRef.localModelPath = envRef.cacheDir || '.'
-          
+
           try {
             await downloadModelFiles({
               fullModelName,
@@ -324,7 +340,7 @@ parentPort.on('message', async (task) => {
           // Always force local files only
           envRef.allowRemoteModels = false
           await attemptInit(true)
-          
+
           progressManager.sendUpdate(ProgressStatus.COMPLETED, `模型已完全就绪并可使用`)
 
           parentPort?.postMessage({
@@ -332,7 +348,6 @@ parentPort.on('message', async (task) => {
             type: 'result',
             payload: { success: true }
           })
-
         } catch (error) {
           console.error('[ERROR] Pipeline initialization failed:', error)
           throw error
@@ -354,35 +369,35 @@ parentPort.on('message', async (task) => {
       }
       // Support both 'texts' (from workerManager) and 'chunks' (legacy/internal)
       const chunks = payload.texts || payload.chunks
-      
+
       if (!chunks) {
         throw new Error('No texts provided for embedding')
       }
 
       console.log(`[WORKER] Starting embedding for ${chunks.length} chunks`)
       const embeddings: number[][] = []
-      
+
       const total = chunks.length
       const startTime = Date.now()
-      
+
       for (let i = 0; i < total; i++) {
         const chunkStart = Date.now()
         try {
-            const chunk = chunks[i]
-            // console.log(`[WORKER] Embedding chunk ${i+1}/${total}, length: ${chunk.length}`)
-            const output = await embeddingPipeline(chunk, { pooling: 'mean', normalize: true })
-            embeddings.push(Array.from(output.data))
-            
-            // Log slow chunks
-            const duration = Date.now() - chunkStart
-            if (duration > 1000) {
-                console.warn(`[WORKER] Slow chunk ${i+1}: ${duration}ms`)
-            }
+          const chunk = chunks[i]
+          // console.log(`[WORKER] Embedding chunk ${i+1}/${total}, length: ${chunk.length}`)
+          const output = await embeddingPipeline(chunk, { pooling: 'mean', normalize: true })
+          embeddings.push(Array.from(output.data))
+
+          // Log slow chunks
+          const duration = Date.now() - chunkStart
+          if (duration > 1000) {
+            console.warn(`[WORKER] Slow chunk ${i + 1}: ${duration}ms`)
+          }
         } catch (e) {
-            console.error(`[WORKER] Failed to embed chunk ${i+1}:`, e)
-            throw e
+          console.error(`[WORKER] Failed to embed chunk ${i + 1}:`, e)
+          throw e
         }
-        
+
         // Report progress
         if (i % 10 === 0 || i === total - 1) {
           const progress = Math.round(((i + 1) / total) * 100)
@@ -400,7 +415,7 @@ parentPort.on('message', async (task) => {
           })
         }
       }
-      
+
       console.log(`[WORKER] Embedding completed in ${Date.now() - startTime}ms`)
 
       parentPort?.postMessage({
@@ -415,7 +430,7 @@ parentPort.on('message', async (task) => {
         throw new Error('Rerank pipeline not initialized')
       }
       const { query, documents, topK } = payload
-      
+
       // Construct pairs for reranking
       const pairs = documents.map((doc: string) => {
         return [query, doc]
@@ -424,10 +439,10 @@ parentPort.on('message', async (task) => {
       // Use the pipeline for classification/reranking
       // Note: Transformers.js zero-shot-classification or specific reranking models might have different signatures
       // Here we assume a text-classification pipeline that outputs scores for the pairs
-      // For standard rerankers (CrossEncoder), we usually pass pairs. 
+      // For standard rerankers (CrossEncoder), we usually pass pairs.
       // Transformers.js support for CrossEncoder might vary.
       // Assuming 'text-classification' returns scores.
-      
+
       const results: { index: number; score: number }[] = []
       for (let i = 0; i < pairs.length; i++) {
         // @ts-ignore - The type definition for rerank pipeline above is a bit simplified
@@ -435,63 +450,62 @@ parentPort.on('message', async (task) => {
         // Extract score - this structure depends heavily on the model and pipeline type
         // Usually it returns a list of labels and scores. We need the score for "relevant" or just the raw logit.
         // For BGE-Reranker, it usually outputs a single score.
-        
+
         // Handling different output formats defensively
         let score = 0
         if (Array.isArray(output)) {
           if (typeof output[0] === 'object' && 'score' in output[0]) {
-             // Classification output
-             score = output[0].score
+            // Classification output
+            score = output[0].score
           } else if (typeof output[0] === 'number') {
-             score = output[0]
+            score = output[0]
           }
         } else if (typeof output === 'object' && 'score' in output) {
-           // @ts-ignore - Output type depends on model and pipeline, assuming object with score
-           score = output.score
+          // @ts-ignore - Output type depends on model and pipeline, assuming object with score
+          score = output.score
         }
-        
+
         results.push({ index: i, score })
       }
 
       // Sort by score descending
       results.sort((a, b) => b.score - a.score)
-      
+
       // Take top K
       const topResults = results.slice(0, topK || documents.length)
-      
+
       parentPort?.postMessage({
         id,
         type: 'result',
-        payload: { 
-          indices: topResults.map(r => r.index),
-          scores: topResults.map(r => r.score)
+        payload: {
+          indices: topResults.map((r) => r.index),
+          scores: topResults.map((r) => r.score)
         }
       })
     }
 
     if (type === 'loadAndSplit') {
-        const { filePath, chunkSize, chunkOverlap } = payload
-        
-        parentPort?.postMessage({
-          id,
-          type: 'progress',
-          payload: {
-            taskType: TaskType.DOCUMENT_SPLIT,
-            status: ProgressStatus.PROCESSING,
-            message: 'Reading and splitting file...',
-            progress: 0
-          }
-        })
+      const { filePath, chunkSize, chunkOverlap } = payload
 
-        const chunks = await loadAndSplitFile(filePath, chunkSize, chunkOverlap)
-        
-        parentPort?.postMessage({
-          id,
-          type: 'result',
-          payload: { chunks }
-        })
+      parentPort?.postMessage({
+        id,
+        type: 'progress',
+        payload: {
+          taskType: TaskType.DOCUMENT_SPLIT,
+          status: ProgressStatus.PROCESSING,
+          message: 'Reading and splitting file...',
+          progress: 0
+        }
+      })
+
+      const chunks = await loadAndSplitFile(filePath, chunkSize, chunkOverlap)
+
+      parentPort?.postMessage({
+        id,
+        type: 'result',
+        payload: { chunks }
+      })
     }
-
   } catch (error) {
     console.error('Worker error:', error)
     parentPort?.postMessage({

@@ -75,6 +75,17 @@ export async function addDocumentsToStore(
     invalidateDocCountCache()
     clearBM25Cache()
   } catch (error) {
+    // 如果是追加模式失败，不要自动降级为覆盖，否则会丢失数据
+    if (appendMode) {
+      logError(
+        'Failed to append documents to LanceDB',
+        'VectorStore',
+        undefined,
+        error as Error
+      )
+      throw error
+    }
+
     logError(
       'Failed to add documents, attempting to recover by recreating table (existing data will be lost)',
       'VectorStore',

@@ -36,25 +36,26 @@ export class HybridSearcher {
 
   constructor(config: HybridSearchConfig = {}) {
     const settings = getSettings()
-    
+
     // 显式解析 rerank 配置，确保布尔值正确传递
     // 如果 config.rerank 明确传入（即使是 false），则使用它
     // 否则回退到 settings 中的配置
-    const useRerank = config.rerank !== undefined ? config.rerank : (settings.rag?.useRerank ?? false)
-    
+    const useRerank =
+      config.rerank !== undefined ? config.rerank : (settings.rag?.useRerank ?? false)
+
     this.config = {
       vectorWeight: 0.7,
       keywordWeight: 0.3,
       multiQuery: config.multiQuery ?? settings.rag?.useMultiQuery ?? false,
       topK: 10,
-      minScore: 0.1,
+      minScore: 0,
       rrfK: RAG_CONFIG.CROSS_LANGUAGE?.RRF_K || 60,
       rerankTopK: RAG_CONFIG.RERANK?.TOP_K || 5,
       ...config,
       // 确保 rerank 属性被正确设置，覆盖 ...config 中的可能 undefined
       rerank: useRerank
     }
-    
+
     logDebug('HybridSearcher initialized', 'HybridSearch', {
       rerank: this.config.rerank,
       multiQuery: this.config.multiQuery,
@@ -197,7 +198,7 @@ export class HybridSearcher {
         try {
           const currentHybridResults = context.hybridResults
           const docsToRerank = currentHybridResults.map((r) => r.doc.pageContent)
-          
+
           logDebug('Starting rerank', 'HybridSearch', {
             docsCount: docsToRerank.length,
             model: RAG_CONFIG.RERANK.MODEL

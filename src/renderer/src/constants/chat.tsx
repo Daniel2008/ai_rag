@@ -9,6 +9,7 @@ import type { ChatMessage } from '../types/chat'
 /** 对话持久化存储键名 */
 export const CONVERSATIONS_STORAGE_KEY = 'rag_conversations'
 export const ACTIVE_CONVERSATION_KEY = 'rag_active_conversation'
+export const STARRED_CONVERSATIONS_KEY = 'rag_starred_conversations'
 
 /** 初始系统消息 */
 export const INITIAL_MESSAGE: ChatMessage = {

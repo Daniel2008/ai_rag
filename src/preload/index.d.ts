@@ -122,6 +122,7 @@ declare global {
       // Database APIs
       getConversations: () => Promise<{ key: string; label: string; timestamp: number }[]>
       createConversation: (key: string, label: string) => Promise<void>
+      updateConversation: (key: string, label: string) => Promise<void>
       deleteConversation: (key: string) => Promise<void>
       getMessages: (
         conversationKey: string,

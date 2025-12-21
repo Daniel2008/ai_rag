@@ -35,9 +35,16 @@ export async function suggest(state: ChatGraphState): Promise<ChatGraphState> {
       return next
     }
 
-    const suggestedQuestions = await generator.generatePrompts(context, { count: 3, tone: 'professional' })
+    const suggestedQuestions = await generator.generatePrompts(context, {
+      count: 3,
+      tone: 'professional'
+    })
     const next = { ...state, suggestedQuestions }
-    logStep(next, 'suggest', 'end', { ok: true, ms: Date.now() - t0, count: suggestedQuestions.length })
+    logStep(next, 'suggest', 'end', {
+      ok: true,
+      ms: Date.now() - t0,
+      count: suggestedQuestions.length
+    })
     return next
   } catch (error) {
     logInfo('Failed to generate suggestions', 'LangGraph', { error })

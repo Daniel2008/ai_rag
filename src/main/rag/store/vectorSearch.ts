@@ -91,7 +91,9 @@ export async function performCrossLanguageSearch(
     const allResultLists = await Promise.all(searchPromises)
 
     const getResultKey = (r: LanceDBSearchResult): string => {
-      return r.text || r.pageContent || JSON.stringify(r.metadata?.source || '')
+      const content = r.text || r.pageContent || ''
+      const source = r.source || r.metadata?.source || ''
+      return `${source}::${content}`
     }
 
     const rrfResults = reciprocalRankFusion(allResultLists, getResultKey, rrfK)
@@ -281,7 +283,9 @@ export async function searchSimilarDocumentsWithScores(
     metrics.vectorSearchMs = Date.now() - vectorSearchStart
 
     const getResultKey = (r: LanceDBSearchResult): string => {
-      return r.text || r.pageContent || JSON.stringify(r.metadata?.source || '')
+      const content = r.text || r.pageContent || ''
+      const source = r.source || r.metadata?.source || ''
+      return `${source}::${content}`
     }
 
     const resultLists: LanceDBSearchResult[][] = []

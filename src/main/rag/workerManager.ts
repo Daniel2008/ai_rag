@@ -17,6 +17,35 @@ import type { Document } from '@langchain/core/documents'
 let worker: Worker | null = null
 let taskIdCounter = 0
 
+type WorkerLogMessage = {
+  id?: number
+  type: 'log'
+  payload: { level: 'info' | 'warn' | 'error'; args: unknown[] }
+}
+
+type WorkerProgressMessage = { id: number; type: 'progress'; payload: unknown }
+
+type WorkerResultMessage = { id: number; type: 'result'; payload: unknown }
+
+type WorkerErrorMessage = {
+  id: number
+  type: 'error'
+  error: string
+  detailedError?: DetailedError['detailedError']
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
 // 定义任务类型
 interface Task<T = unknown> {
   resolve: (res: T | PromiseLike<T>) => void
@@ -46,38 +75,43 @@ export function initWorker(): Worker {
 
   worker = new Worker(workerPath)
 
-  worker.on('message', (msg) => {
-    const { id, type, payload, error, detailedError } = msg
+  worker.on('message', (msg: unknown) => {
+    if (!isRecord(msg) || typeof msg.type !== 'string') return
+    const { id, type } = msg as { id?: unknown; type: unknown }
 
     if (type === 'log') {
-      const { level, args } = payload
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const message = args.map((a: any) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')
+      const payload = (msg as WorkerLogMessage).payload
+      const args = Array.isArray(payload?.args) ? payload.args : []
+      const message = args.map((a) => (typeof a === 'string' ? a : safeStringify(a))).join(' ')
+      const level = payload?.level
       if (level === 'error') logger.error(message, 'Worker')
       else if (level === 'warn') logger.warn(message, 'Worker')
       else logger.info(message, 'Worker')
       return
     }
 
-    const task = pendingTasks.get(id)
+    const taskId = typeof id === 'number' ? id : NaN
+    if (!Number.isFinite(taskId)) return
+    const task = pendingTasks.get(taskId)
     if (!task) return
 
     if (type === 'progress') {
-      task.onProgress?.(payload)
+      task.onProgress?.((msg as WorkerProgressMessage).payload)
       return
     }
 
     if (type === 'result') {
-      task.resolve(payload)
-      pendingTasks.delete(id)
+      task.resolve((msg as WorkerResultMessage).payload)
+      pendingTasks.delete(taskId)
     } else if (type === 'error') {
       // Create a more informative error object
-      const errorObj = new Error(error) as DetailedError
-      if (detailedError) {
-        errorObj.detailedError = detailedError
+      const workerError = msg as WorkerErrorMessage
+      const errorObj = new Error(workerError.error) as DetailedError
+      if (workerError.detailedError) {
+        errorObj.detailedError = workerError.detailedError
       }
       task.reject(errorObj)
-      pendingTasks.delete(id)
+      pendingTasks.delete(taskId)
     }
   })
 
@@ -105,12 +139,15 @@ function runTask<T>(type: string, payload: unknown, onProgress?: (p: unknown) =>
 }
 
 export async function loadAndSplitFileInWorker(filePath: string): Promise<Document[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await runTask<{ chunks: any[] }>('loadAndSplit', { filePath })
+  const result = await runTask<{
+    chunks: Array<{ pageContent: string; metadata: Record<string, unknown> }>
+  }>('loadAndSplit', { filePath })
 
   // Rehydrate Documents
   const { Document } = await import('@langchain/core/documents')
-  return result.chunks.map((d) => new Document({ pageContent: d.pageContent, metadata: d.metadata }))
+  return result.chunks.map(
+    (d) => new Document({ pageContent: d.pageContent, metadata: d.metadata })
+  )
 }
 
 export async function initEmbeddingInWorker(
@@ -136,7 +173,10 @@ export async function initRerankerInWorker(
   return runTask('initReranker', { modelName, cacheDir, offlineFirst }, onProgress)
 }
 
-export async function rerankInWorker(query: string, documents: string[]): Promise<{ indices: number[]; scores: number[] }> {
+export async function rerankInWorker(
+  query: string,
+  documents: string[]
+): Promise<{ indices: number[]; scores: number[] }> {
   return runTask('rerank', { query, documents })
 }
 

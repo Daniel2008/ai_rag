@@ -284,7 +284,9 @@ export async function loadAndSplitFile(
       const garbledRatio = docs.length > 0 ? garbledPageCount / docs.length : 0
       const meaningfulRatio = totalTextLength > 0 ? meaningfulCharsTotal / totalTextLength : 0
 
-      console.log(`[Loader] PDF Quality Check - Garbled Ratio: ${garbledRatio}, Meaningful Ratio: ${meaningfulRatio}`)
+      console.log(
+        `[Loader] PDF Quality Check - Garbled Ratio: ${garbledRatio}, Meaningful Ratio: ${meaningfulRatio}`
+      )
 
       // 判定：页面乱码比例超过 20% 或整体有效字符比例低于 40%，则认为无法解析
       const isUnparsable = garbledRatio > 0.2 || meaningfulRatio < 0.4

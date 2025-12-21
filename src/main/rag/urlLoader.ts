@@ -6,13 +6,8 @@
 import { Document } from '@langchain/core/documents'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
 import { SemanticChunkConfig } from './semanticChunker'
-import {
-  extractPageLinks,
-  type PageMeta
-} from './utils/htmlUtils'
-import {
-  processContent
-} from './utils/contentExtractor'
+import { extractPageLinks, type PageMeta } from './utils/htmlUtils'
+import { processContent } from './utils/contentExtractor'
 import {
   isDynamicRenderSite,
   fetchWithJinaReader,
@@ -21,10 +16,7 @@ import {
   fetchWikipediaPlain,
   toGitHubRaw
 } from './utils/siteAdaptors'
-import {
-  splitTextToDocuments,
-  type ChunkingStrategy
-} from './utils/textSplitterUtils'
+import { splitTextToDocuments, type ChunkingStrategy } from './utils/textSplitterUtils'
 
 // Re-export types for compatibility
 export type { ChunkingStrategy, PageMeta }

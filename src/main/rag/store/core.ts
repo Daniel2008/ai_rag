@@ -296,17 +296,23 @@ export async function ensureTableWithDocuments(
         return vectorStore
       } catch (lcError) {
         logError(
-          'LangChain addDocuments also failed, falling back to recreate',
+          'LangChain addDocuments also failed',
           'VectorStore',
           undefined,
           lcError as Error
         )
-        // 最终失败，回退到重建模式
+        // 追加失败时抛出错误，而不是回退到覆盖模式
+        throw new Error(`Failed to append documents: ${lcError instanceof Error ? lcError.message : String(lcError)}`)
       }
     }
   }
 
+  // 如果是追加模式但走到了这里（说明表不存在），或者不是追加模式
   // 创建新表或重建表
+  if (appendMode && tableExists) {
+    // 理论上不应该走到这里，除非上面的逻辑有漏洞
+    throw new Error('Unexpected state: table exists and append mode enabled but append logic skipped')
+  }
   logInfo('Creating/updating LanceDB table with documents', 'VectorStore', {
     docCount: docs.length,
     tableExists,
