@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } fro
 import type { ReactElement } from 'react'
 import { XProvider } from '@ant-design/x'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
-import { Form, FloatButton, message as antdMessage, theme as antdTheme, Skeleton } from 'antd'
+import {
+  ConfigProvider,
+  Drawer,
+  Form,
+  FloatButton,
+  message as antdMessage,
+  theme as antdTheme,
+  Skeleton
+} from 'antd'
 import { DatabaseOutlined, MenuOutlined } from '@ant-design/icons'
 
 import { getTheme } from './theme'
@@ -41,9 +49,11 @@ function App(): ReactElement {
   }, [themeMode])
 
   return (
-    <XProvider theme={providerTheme}>
-      <AppContent themeMode={themeMode} onThemeChange={setThemeMode} />
-    </XProvider>
+    <ConfigProvider theme={providerTheme}>
+      <XProvider theme={providerTheme}>
+        <AppContent themeMode={themeMode} onThemeChange={setThemeMode} />
+      </XProvider>
+    </ConfigProvider>
   )
 }
 
@@ -71,6 +81,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   // 初始状态基于窗口宽度，避免首次渲染后的布局跳动
   const [showKnowledgeBase, setShowKnowledgeBase] = useState(() => window.innerWidth >= 1280)
   const [showChatSidebar, setShowChatSidebar] = useState(() => window.innerWidth >= 1100)
+  const [isChatSidebarNarrow, setIsChatSidebarNarrow] = useState(() => window.innerWidth < 1100)
 
   // 全局进度管理
   const { progress } = useProgress()
@@ -78,6 +89,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   // Refs
   const bubbleListRef = useRef<BubbleListRef | null>(null)
   const userChangedScopeRef = useRef(false)
+  const chatSidebarNarrowRef = useRef(window.innerWidth < 1100)
 
   // 对话管理 Hook
   const {
@@ -224,12 +236,27 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     const handleResize = (): void => {
       const isNarrow = window.innerWidth < 1280
       setShowKnowledgeBase(!isNarrow)
-      setShowChatSidebar(window.innerWidth >= 1100)
+      const nextChatNarrow = window.innerWidth < 1100
+      setIsChatSidebarNarrow(nextChatNarrow)
+      if (chatSidebarNarrowRef.current !== nextChatNarrow) {
+        chatSidebarNarrowRef.current = nextChatNarrow
+        setShowChatSidebar(!nextChatNarrow)
+      }
     }
     handleResize()
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  const handleActiveConversationChangeAndClose = useCallback(
+    (key: string) => {
+      handleActiveConversationChange(key)
+      if (isChatSidebarNarrow) {
+        setShowChatSidebar(false)
+      }
+    },
+    [handleActiveConversationChange, isChatSidebarNarrow]
+  )
 
   // 滚动到底部 (仅当不是加载更多时)
   useEffect(() => {
@@ -497,7 +524,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         {contextHolder}
 
         {/* 左侧：对话历史 */}
-        {showChatSidebar && (
+        {!isChatSidebarNarrow && showChatSidebar && (
           <ChatSidebar
             themeMode={themeMode}
             sidebarCollapsed={sidebarCollapsed}
@@ -508,13 +535,45 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             assistantPhase={assistantPhase}
             processingStatus={progress?.stage}
             onThemeChange={onThemeChange}
-            onActiveConversationChange={handleActiveConversationChange}
+            onActiveConversationChange={handleActiveConversationChangeAndClose}
             onCreateNewConversation={createNewConversation}
             onRenameConversation={renameConversation}
             onToggleStarConversation={toggleStarConversation}
             onDeleteConversation={handleDeleteConversation}
             onOpenSettings={() => setSettingsOpen(true)}
           />
+        )}
+        {isChatSidebarNarrow && (
+          <Drawer
+            placement="left"
+            open={showChatSidebar}
+            onClose={() => setShowChatSidebar(false)}
+            width={320}
+            destroyOnHidden
+            styles={{ body: { padding: 0 } }}
+          >
+            <ChatSidebar
+              mode="drawer"
+              themeMode={themeMode}
+              sidebarCollapsed={false}
+              conversationItems={conversationItems}
+              activeConversationKey={activeConversationKey}
+              starredConversationKeys={starredConversationKeys}
+              readyDocuments={readyDocuments}
+              assistantPhase={assistantPhase}
+              processingStatus={progress?.stage}
+              onThemeChange={onThemeChange}
+              onActiveConversationChange={handleActiveConversationChangeAndClose}
+              onCreateNewConversation={createNewConversation}
+              onRenameConversation={renameConversation}
+              onToggleStarConversation={toggleStarConversation}
+              onDeleteConversation={handleDeleteConversation}
+              onOpenSettings={() => {
+                setSettingsOpen(true)
+                setShowChatSidebar(false)
+              }}
+            />
+          </Drawer>
         )}
 
         {/* 中间：聊天区域 */}

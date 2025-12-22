@@ -181,6 +181,23 @@ body.dark {
       transform: scale(1.02);
     }
   }
+
+  .mention-menu {
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .mention-menu-item {
+    transition: background-color 0.15s ease;
+
+    &:hover {
+      background: rgba(79, 70, 229, 0.06) !important;
+    }
+  }
+
+  .mention-menu-path {
+    color: rgba(71, 85, 105, 0.9);
+  }
 }
 
 .dark .chat-sender {
@@ -196,6 +213,16 @@ body.dark {
 
   .ant-sender-actions-btn-send {
     background: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%) !important;
+  }
+
+  .mention-menu-item {
+    &:hover {
+      background: rgba(129, 140, 248, 0.14) !important;
+    }
+  }
+
+  .mention-menu-path {
+    color: rgba(148, 163, 184, 0.95);
   }
 }
 
@@ -1044,6 +1071,38 @@ body.dark {
     border-color: #4f46e5 !important;
     background: rgba(79, 70, 229, 0.08) !important;
     transform: scale(1.02);
+  }
+}
+
+.settings-drawer {
+  -webkit-app-region: no-drag;
+
+  .ant-form-item {
+    margin-bottom: 16px;
+  }
+
+  .ant-divider {
+    margin: 16px 0;
+  }
+
+  .ant-tabs-nav {
+    margin-bottom: 12px !important;
+  }
+
+  .settings-form-section {
+    .ant-form-item:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .settings-help {
+    margin-top: -8px;
+  }
+
+  .settings-drawer-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
   }
 }
 

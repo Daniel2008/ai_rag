@@ -180,7 +180,7 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     const modelOptions = MODEL_PRESETS[provider].map((m) => ({ value: m, label: m }))
 
     return (
-      <div key={provider} className="space-y-4">
+      <div key={provider} className="settings-form-section">
         {!isOllama && (
           <Form.Item
             label={
@@ -240,11 +240,13 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
       title="系统设置"
       open={isOpen}
       onClose={onClose}
+      rootClassName="settings-drawer"
       destroyOnHidden
       maskClosable={!saving}
       styles={{
-        body: { paddingBottom: 80 },
-        wrapper: { width: 520 }
+        body: { paddingBottom: 88, paddingInline: 20, paddingTop: 16 },
+        header: { paddingInline: 20, paddingBlock: 12 },
+        wrapper: { width: 'min(520px, 100vw)' }
       }}
     >
       <Form form={form} layout="vertical" requiredMark={false} disabled={loading || saving}>
@@ -355,67 +357,55 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
                     <Form.Item label="单次检索数量 (K)">
                       <Row gutter={16}>
-                        <Col span={12}>
+                        <Col span={18}>
                           <Form.Item name={['rag', 'searchLimit']} noStyle>
                             <Slider min={1} max={20} />
                           </Form.Item>
                         </Col>
-                        <Col span={4}>
+                        <Col span={6}>
                           <Form.Item name={['rag', 'searchLimit']} noStyle>
                             <InputNumber min={1} max={20} style={{ width: '100%' }} />
                           </Form.Item>
                         </Col>
                       </Row>
                     </Form.Item>
-                    <Typography.Text
-                      type="secondary"
-                      className="text-xs mb-4 block"
-                      style={{ marginTop: -10 }}
-                    >
+                    <Typography.Text type="secondary" className="settings-help text-xs mb-4 block">
                       每次检索最相关的文档块数量，默认 6。增加可获取更多信息，但可能引入噪声。
                     </Typography.Text>
 
                     <Form.Item label="最大扩展数量 (Max K)">
                       <Row gutter={16}>
-                        <Col span={12}>
+                        <Col span={18}>
                           <Form.Item name={['rag', 'maxSearchLimit']} noStyle>
                             <Slider min={10} max={100} />
                           </Form.Item>
                         </Col>
-                        <Col span={4}>
+                        <Col span={6}>
                           <Form.Item name={['rag', 'maxSearchLimit']} noStyle>
                             <InputNumber min={10} max={100} style={{ width: '100%' }} />
                           </Form.Item>
                         </Col>
                       </Row>
                     </Form.Item>
-                    <Typography.Text
-                      type="secondary"
-                      className="text-xs mb-4 block"
-                      style={{ marginTop: -10 }}
-                    >
+                    <Typography.Text type="secondary" className="settings-help text-xs mb-4 block">
                       在复杂问题或多跳推理场景下，自动扩展检索的最大上限。
                     </Typography.Text>
 
                     <Form.Item label="最低相关度 (Threshold)">
                       <Row gutter={16}>
-                        <Col span={12}>
+                        <Col span={18}>
                           <Form.Item name={['rag', 'minRelevance']} noStyle>
                             <Slider min={0} max={1} step={0.05} />
                           </Form.Item>
                         </Col>
-                        <Col span={4}>
+                        <Col span={6}>
                           <Form.Item name={['rag', 'minRelevance']} noStyle>
                             <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
                           </Form.Item>
                         </Col>
                       </Row>
                     </Form.Item>
-                    <Typography.Text
-                      type="secondary"
-                      className="text-xs mb-0 block"
-                      style={{ marginTop: -10 }}
-                    >
+                    <Typography.Text type="secondary" className="settings-help text-xs mb-0 block">
                       过滤低质量结果的阈值。值越高结果越精准但可能遗漏，值越低召回越多但可能有噪声。
                     </Typography.Text>
                   </div>
@@ -520,7 +510,7 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
         />
       </Form>
 
-      <div className="absolute bottom-0 left-0 w-full border-t border-gray-200 bg-white px-6 py-4 text-right dark:border-gray-700 dark:bg-gray-900">
+      <div className="settings-drawer-footer w-full border-t border-gray-200 bg-white px-6 py-4 text-right dark:border-gray-700 dark:bg-gray-900">
         <Space>
           <Button onClick={onClose} disabled={saving}>
             取消

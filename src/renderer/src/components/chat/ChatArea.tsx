@@ -1,7 +1,7 @@
 import { memo, useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { Bubble, ThoughtChain, Prompts, Sources, Actions } from '@ant-design/x'
-import XMarkdown from '@ant-design/x-markdown'
+import { XMarkdown } from '@ant-design/x-markdown'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
 import type { RoleType } from '@ant-design/x/es/bubble/interface'
 import {
@@ -636,6 +636,7 @@ function toSpeechText(markdown: string): string {
 interface MessageContentProps {
   message: ChatMessage
   isTyping: boolean
+  themeMode: 'light' | 'dark'
 }
 
 // 格式化时间戳
@@ -890,12 +891,13 @@ const MessageActions = memo(
 MessageActions.displayName = 'MessageActions'
 
 const MessageContent = memo(
-  ({ message }: MessageContentProps) => {
+  ({ message, themeMode }: MessageContentProps) => {
     const { think, realContent } = useMemo(() => parseContent(message.content), [message.content])
     const hasContent = realContent.trim().length > 0
     const isThinking = message.typing && !hasContent && !!think
     const [expanded, setExpanded] = useState(false)
     const MAX_MD_CHARS = 3000
+    const markdownThemeClass = themeMode === 'dark' ? 'x-markdown-dark' : 'x-markdown-light'
 
     // 解析结构化的思维链步骤
     const thoughtItems = useMemo(() => {
@@ -920,22 +922,25 @@ const MessageContent = memo(
         {
           key: 'thought',
           title: '思考过程',
-          content: <XMarkdown>{think}</XMarkdown>,
+          content: <XMarkdown className={markdownThemeClass} content={think} />,
           status: isThinking ? ('loading' as const) : ('success' as const)
         }
       ]
-    }, [think, isThinking, message.typing])
+    }, [think, isThinking, markdownThemeClass, message.typing])
 
     return (
       <div className="flex flex-col gap-3">
         {think && thoughtItems.length > 0 && <ThoughtChain items={thoughtItems} />}
         {hasContent ? (
           <div className="markdown-content">
-            <XMarkdown>
-              {expanded || realContent.length <= MAX_MD_CHARS
-                ? realContent
-                : realContent.slice(0, MAX_MD_CHARS)}
-            </XMarkdown>
+            <XMarkdown
+              className={markdownThemeClass}
+              content={
+                expanded || realContent.length <= MAX_MD_CHARS
+                  ? realContent
+                  : realContent.slice(0, MAX_MD_CHARS)
+              }
+            />
             {!expanded && realContent.length > MAX_MD_CHARS && (
               <div className="mt-2">
                 <Button size="small" onClick={() => setExpanded(true)}>
@@ -962,7 +967,8 @@ const MessageContent = memo(
       prev.message.content === next.message.content &&
       prev.message.typing === next.message.typing &&
       prev.message.key === next.message.key &&
-      prev.isTyping === next.isTyping
+      prev.isTyping === next.isTyping &&
+      prev.themeMode === next.themeMode
     )
   }
 )
@@ -1546,7 +1552,7 @@ export function ChatArea({
         role: message.role,
         content: (
           <div ref={(el) => setItemHeight(message.key, el)}>
-            <MessageContent message={message} isTyping={isTyping} />
+            <MessageContent message={message} isTyping={isTyping} themeMode={themeMode} />
           </div>
         ),
         typing,
@@ -1557,6 +1563,7 @@ export function ChatArea({
   }, [
     filteredMessagesForRender,
     isTyping,
+    themeMode,
     copiedMessageKey,
     onCopyMessage,
     onRetryMessage,

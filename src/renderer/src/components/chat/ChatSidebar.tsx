@@ -29,6 +29,7 @@ export type AssistantPhase = 'idle' | 'thinking' | 'answering' | 'error' | 'proc
 interface ChatSidebarProps {
   themeMode: 'light' | 'dark'
   sidebarCollapsed: boolean
+  mode?: 'sidebar' | 'drawer'
   conversationItems: ConversationItem[]
   activeConversationKey?: string
   starredConversationKeys: string[]
@@ -47,6 +48,7 @@ interface ChatSidebarProps {
 export function ChatSidebar({
   themeMode,
   sidebarCollapsed,
+  mode = 'sidebar',
   conversationItems,
   activeConversationKey,
   starredConversationKeys,
@@ -159,9 +161,15 @@ export function ChatSidebar({
     ]
   )
 
+  const widthClass = sidebarCollapsed
+    ? 'w-0 overflow-hidden'
+    : mode === 'drawer'
+      ? 'w-full'
+      : 'w-72'
+
   return (
     <aside
-      className={`glass-sidebar flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-72'}`}
+      className={`glass-sidebar flex flex-col transition-all duration-300 ${widthClass}`}
       style={{
         background: token.colorBgContainer,
         borderRight: `1px solid ${token.colorBorderSecondary}`

@@ -1,4 +1,6 @@
 import 'antd/dist/reset.css'
+import '@ant-design/x-markdown/themes/light.css'
+import '@ant-design/x-markdown/themes/dark.css'
 import './assets/main.css'
 
 import { StrictMode } from 'react'
