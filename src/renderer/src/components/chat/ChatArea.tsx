@@ -40,9 +40,11 @@ import {
   SoundOutlined,
   StopOutlined,
   StarFilled,
-  StarOutlined
+  StarOutlined,
+  ArrowLeftOutlined,
+  ArrowRightOutlined
 } from '@ant-design/icons'
-import { Drawer, List } from 'antd'
+import { Drawer, List, Select } from 'antd'
 import { BarChartOutlined } from '@ant-design/icons'
 import { useMemo as useMemoReact } from 'react'
 import type { ChatMessage, ChatSource } from '../../types/chat'
@@ -345,6 +347,18 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
     return mergedSources.find((s) => s.id === activeKey) ?? mergedSources[0]
   }, [mergedSources, activeKey])
 
+  // 抽屉内的来源切换
+  const switchSource = useCallback((direction: 'prev' | 'next') => {
+    const currentIndex = mergedSources.findIndex(s => s.id === activeKey)
+    if (currentIndex === -1) return
+    
+    if (direction === 'prev' && currentIndex > 0) {
+      setActive(mergedSources[currentIndex - 1].id)
+    } else if (direction === 'next' && currentIndex < mergedSources.length - 1) {
+      setActive(mergedSources[currentIndex + 1].id)
+    }
+  }, [mergedSources, activeKey])
+
   return (
     <div className="sources-detail mt-2">
       <div className="flex items-center justify-between gap-2">
@@ -362,16 +376,30 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
             // 兼容不同的事件参数格式
             const nextKey = String(item?.key ?? item?.id ?? (typeof item === 'string' ? item : '') ?? '')
             if (nextKey) {
+              // 先更新active状态，再打开抽屉
               setActive(nextKey)
-              setOpen(true)
+              // 使用小延迟确保状态更新后再打开抽屉
+              setTimeout(() => {
+                setOpen(true)
+              }, 50)
             }
           }}
         />
         <Button
           type="link"
           size="small"
-          disabled={!activeSource}
-          onClick={() => setOpen(true)}
+          disabled={!mergedSources.length}
+          onClick={() => {
+            // 确保有选中的来源
+            if (mergedSources.length > 0) {
+              // 如果当前active为空或无效，选择第一个
+              const current = mergedSources.find(s => s.id === active)
+              if (!current && mergedSources[0]) {
+                setActive(mergedSources[0].id)
+              }
+              setOpen(true)
+            }
+          }}
           style={{ paddingInline: 4 }}
         >
           详情
@@ -379,7 +407,42 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
       </div>
 
       <Drawer
-        title={activeSource?.fileName || '引用来源'}
+        title={
+          <div className="flex items-center justify-between gap-2">
+            <span>引用来源详情</span>
+            {mergedSources.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span style={{ color: token.colorTextSecondary, fontSize: 12 }}>
+                  {mergedSources.findIndex(s => s.id === activeKey) + 1}/{mergedSources.length}
+                </span>
+                <Button
+                  size="small"
+                  type="text"
+                  disabled={mergedSources.findIndex(s => s.id === activeKey) === 0}
+                  onClick={() => switchSource('prev')}
+                  icon={<ArrowLeftOutlined />}
+                />
+                <Button
+                  size="small"
+                  type="text"
+                  disabled={mergedSources.findIndex(s => s.id === activeKey) === mergedSources.length - 1}
+                  onClick={() => switchSource('next')}
+                  icon={<ArrowRightOutlined />}
+                />
+                <Select
+                  size="small"
+                  style={{ width: 180 }}
+                  value={activeKey}
+                  onChange={(value) => setActive(value)}
+                  options={mergedSources.map((s, idx) => ({
+                    value: s.id,
+                    label: `${idx + 1}. ${s.fileName}`
+                  }))}
+                />
+              </div>
+            )}
+          </div>
+        }
         placement="bottom"
         open={open}
         onClose={() => setOpen(false)}
@@ -532,7 +595,7 @@ function parseThoughtSteps(thinkContent: string): ThoughtStep[] {
 }
 
 function parseContent(content: string): { think: string | null; realContent: string } {
-  const thinkStart = '<think>'
+  const thinkStart = '</think>'
   const thinkEnd = '</think>'
 
   const startIdx = content.indexOf(thinkStart)
@@ -611,8 +674,6 @@ interface MessageActionsProps {
   feedbackValue: 'like' | 'dislike' | 'default'
   onFeedbackChange: (value: 'like' | 'dislike' | 'default') => void
 }
-
-// ... (existing imports)
 
 const MessageActions = memo(
   ({
@@ -1343,6 +1404,7 @@ export function ChatArea({
       }
     }
   }, [])
+
   const calculateCumulativeHeights = (keys: string[], map: Map<string, number>): number[] => {
     const cum: number[] = new Array(keys.length + 1)
     cum[0] = 0

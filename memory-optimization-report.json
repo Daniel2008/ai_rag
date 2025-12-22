@@ -1,0 +1,106 @@
+{
+  "timestamp": "2025-12-22T04:17:37.251Z",
+  "summary": {
+    "memoryUsage": {
+      "rss": "29.39 MB",
+      "heapTotal": "4.47 MB",
+      "heapUsed": "3.89 MB",
+      "external": "1.50 MB"
+    },
+    "largeDependencies": 8,
+    "memoryRisks": 1,
+    "optimizations": 1
+  },
+  "details": {
+    "memoryMetrics": {
+      "rss": "29.39 MB",
+      "heapTotal": "4.47 MB",
+      "heapUsed": "3.89 MB",
+      "external": "1.50 MB"
+    },
+    "largeDependencies": [
+      {
+        "name": "@huggingface/transformers",
+        "version": "^3.8.1"
+      },
+      {
+        "name": "onnxruntime-node",
+        "version": "^1.23.2"
+      },
+      {
+        "name": "@lancedb/lancedb",
+        "version": "^0.19.1"
+      },
+      {
+        "name": "officeparser",
+        "version": "^5.2.2"
+      },
+      {
+        "name": "tesseract.js",
+        "version": "^6.0.1"
+      },
+      {
+        "name": "apache-arrow",
+        "version": "^18.1.0"
+      },
+      {
+        "name": "better-sqlite3",
+        "version": "11.10.0"
+      },
+      {
+        "name": "canvas",
+        "version": "^3.2.0"
+      }
+    ],
+    "memoryRisks": [
+      {
+        "risk": "定时器未清理",
+        "files": [
+          "src/main/rag/workerManager.ts",
+          "src/main/rag/worker.ts"
+        ]
+      }
+    ],
+    "suggestions": [
+      "📦 依赖优化:",
+      "   • @huggingface/transformers: 考虑使用远程 API 替代本地模型",
+      "     或使用更小的模型 (bge-small-zh-v1.5)",
+      "   • onnxruntime-node: 按需加载，避免预加载所有模型",
+      "   • @lancedb/lancedb: 优化向量索引，减少内存占用",
+      "   • officeparser: 流式解析大文件，避免一次性加载",
+      "   • tesseract.js: 按需初始化 OCR 引擎",
+      "   • canvas: 及时释放 Canvas 上下文",
+      "\n🔧 内存泄漏修复:",
+      "   • 定时器未清理:",
+      "     - 在组件卸载时清除定时器",
+      "     - 使用 useRef 保存定时器 ID",
+      "\n⚡ 通用优化:",
+      "   • 使用 NODE_OPTIONS=\"--max-old-space-size=4096\" 限制内存",
+      "   • 定期运行: node scripts/clean.js 清理缓存",
+      "   • 监控内存使用: node scripts/performance-monitor.js",
+      "   • 优化 Worker 进程管理，及时释放资源"
+    ],
+    "appliedOptimizations": [
+      "   ✓ 创建 .env.memory 配置文件"
+    ]
+  },
+  "recommendations": [
+    "📦 依赖优化:",
+    "   • @huggingface/transformers: 考虑使用远程 API 替代本地模型",
+    "     或使用更小的模型 (bge-small-zh-v1.5)",
+    "   • onnxruntime-node: 按需加载，避免预加载所有模型",
+    "   • @lancedb/lancedb: 优化向量索引，减少内存占用",
+    "   • officeparser: 流式解析大文件，避免一次性加载",
+    "   • tesseract.js: 按需初始化 OCR 引擎",
+    "   • canvas: 及时释放 Canvas 上下文",
+    "\n🔧 内存泄漏修复:",
+    "   • 定时器未清理:",
+    "     - 在组件卸载时清除定时器",
+    "     - 使用 useRef 保存定时器 ID",
+    "\n⚡ 通用优化:",
+    "   • 使用 NODE_OPTIONS=\"--max-old-space-size=4096\" 限制内存",
+    "   • 定期运行: node scripts/clean.js 清理缓存",
+    "   • 监控内存使用: node scripts/performance-monitor.js",
+    "   • 优化 Worker 进程管理，及时释放资源"
+  ]
+}

@@ -249,3 +249,62 @@ export async function removeSourcesFromStore(sources: string[]): Promise<void> {
   invalidateDocCountCache()
   clearBM25Cache()
 }
+
+/**
+ * 根据源获取文档
+ */
+export async function getDocumentsBySource(source: string): Promise<Document[]> {
+  await initVectorStore()
+  if (!db) {
+    logWarn('Database not initialized, cannot get documents', 'VectorStore', { source })
+    return []
+  }
+
+  const conn = db as Connection
+  const names = await conn.tableNames()
+  if (!names.includes(TABLE_NAME)) {
+    return []
+  }
+
+  const currentTable = await conn.openTable(TABLE_NAME)
+  setTable(currentTable)
+
+  const normalizedSource = normalizePath(source)
+  const forwardSlash = source.replace(/\\/g, '/')
+  const backSlash = source.replace(/\//g, '\\')
+  const pathNormalized = path.normalize(source)
+
+  const sourceVariants = [
+    source,
+    normalizedSource,
+    forwardSlash,
+    backSlash,
+    pathNormalized,
+    forwardSlash.toLowerCase(),
+    backSlash.toLowerCase()
+  ]
+
+  const uniqueVariants = [...new Set(sourceVariants)]
+  
+  // 使用 OR 条件查询所有变体
+  const conditions = uniqueVariants.map(v => `source == "${escapePredicateValue(v)}"`)
+  const predicate = conditions.join(' OR ')
+
+  try {
+    const results = await (currentTable as unknown as { search: () => { where: (predicate: string) => { toArray: () => Promise<any[]> } } })
+      .search()
+      .where(predicate)
+      .toArray()
+
+    return results.map((r) => {
+      const doc = new Document({
+        pageContent: r.text || '',
+        metadata: r.metadata || {}
+      })
+      return doc
+    })
+  } catch (e) {
+    logWarn('Failed to get documents by source', 'VectorStore', { source }, e as Error)
+    return []
+  }
+}

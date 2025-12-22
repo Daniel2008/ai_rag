@@ -485,6 +485,7 @@ export class LocalEmbeddings extends Embeddings {
 
   async embedQuery(document: string): Promise<number[]> {
     await this.initialize()
-    return getLocalEmbedding(document, this.modelName)
+    const result = await getLocalEmbedding(document, this.modelName)
+    return result
   }
 }

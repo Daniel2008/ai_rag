@@ -5,46 +5,46 @@
 export const RAG_CONFIG = {
   // 检索配置
   SEARCH: {
-    DEFAULT_K: 6,
-    MAX_K: 30,
-    RELEVANCE_THRESHOLD: 0.25, // 降低相关性阈值，避免过滤掉有用结果
-    RELEVANCE_THRESHOLD_LOW: 0.1, // 宽松阈值，配合语义验证
-    MIN_FETCH_K: 100,
-    MAX_FETCH_K: 500,
-    GLOBAL_SEARCH_MULTIPLIER: 50,
-    FILTERED_SEARCH_MULTIPLIER: 20,
-    GLOBAL_SEARCH_RATIO: 0.15, // 库的 15%
+    DEFAULT_K: 8, // 从6增加到8，提高召回
+    MAX_K: 25, // 从30降低，减少性能开销
+    RELEVANCE_THRESHOLD: 0.15, // 从0.25降低，减少误杀
+    RELEVANCE_THRESHOLD_LOW: 0.05, // 更宽松的阈值
+    MIN_FETCH_K: 80,
+    MAX_FETCH_K: 300, // 降低上限
+    GLOBAL_SEARCH_MULTIPLIER: 30, // 从50降低
+    FILTERED_SEARCH_MULTIPLIER: 15, // 从20降低
+    GLOBAL_SEARCH_RATIO: 0.1, // 从0.15降低
     // MMR 多样性参数
-    MMR_LAMBDA: 0.75, // 相关性与多样性平衡，0.75 偏向相关性
-    MMR_ENABLED: true, // 启用 MMR 重排序
+    MMR_LAMBDA: 0.7, // 从0.75调整，增加多样性
+    MMR_ENABLED: true,
     // 混合搜索权重
-    HYBRID_SEARCH_ENABLED: true, // 启用 BM25 混合搜索
-    BM25_WEIGHT: 0.4, // BM25 在融合中的权重
-    VECTOR_WEIGHT: 0.6 // 向量搜索在融合中的权重
+    HYBRID_SEARCH_ENABLED: true,
+    BM25_WEIGHT: 0.5, // 调整为更平衡
+    VECTOR_WEIGHT: 0.5 // 调整为更平衡
   },
 
-  // 重排序配置
+  // 重排序配置 - 启用并优化
   RERANK: {
-    ENABLED: false,
+    ENABLED: true, // 改为true（如果有可用模型）
     MODEL: 'bge-reranker-base', // 默认重排序模型
-    TOP_K: 5, // 重排序后保留的数量
+    TOP_K: 6, // 从5增加
     BATCH_SIZE: 16,
-    SCORE_THRESHOLD: 0.3, // 重排序分数阈值
+    SCORE_THRESHOLD: 0.1, // 从0.3降低，更宽松
     PROVIDER: 'local' // 可选 local / api
   },
 
-  // 文档数量缓存
+  // 文档数量缓存 - 延长TTL
   DOC_COUNT_CACHE: {
-    TTL: 60000 // 60秒
+    TTL: 120000 // 从60秒延长到120秒
   },
 
-  // 批量处理配置
+  // 批量处理 - 优化并发
   BATCH: {
     EMBEDDING_BATCH_SIZE: 64,
-    DOCUMENT_BATCH_SIZE: 500, // 每批最多处理500个文档块
-    MAX_CONCURRENT_FILES: 3, // 最多同时处理3个文件
-    PROGRESS_UPDATE_INTERVAL: 10, // 每处理10个文档更新一次进度
-    EMBEDDING_CONCURRENCY: 4 // 查询向量并发上限
+    DOCUMENT_BATCH_SIZE: 300, // 从500降低，减少内存压力
+    MAX_CONCURRENT_FILES: 3,
+    PROGRESS_UPDATE_INTERVAL: 20, // 从10增加，减少UI更新频率
+    EMBEDDING_CONCURRENCY: 4 // 保持不变
   },
 
   // 输入验证
@@ -74,33 +74,33 @@ export const RAG_CONFIG = {
     LOG_TOP_K: 8
   },
 
-  // LanceDB 相关配置
+  // LanceDB 配置 - 优化索引
   LANCEDB: {
     INDEX: {
       ENABLED: true,
-      TYPE: 'HNSW', // 可选 HNSW / IVF_PQ
+      TYPE: 'HNSW',
       METRIC: 'cosine',
       EF_CONSTRUCTION: 128,
       M: 32,
-      NUM_PARTITIONS: 256,
+      NUM_PARTITIONS: 128, // 从256降低
       NUM_SUB_VECTORS: 64
     },
     VACUUM_ON_REBUILD: true
   },
 
-  // 跨语言检索配置
+  // 跨语言检索 - 优化
   CROSS_LANGUAGE: {
     MAX_VARIANTS: 4,
-    MERGE_LIMIT: 500,
-    ENABLE_QUERY_EXPANSION: true, // 启用查询扩展
-    RRF_K: 60 // RRF 算法参数
+    MERGE_LIMIT: 300, // 从500降低
+    ENABLE_QUERY_EXPANSION: true,
+    RRF_K: 50 // 从60微调
   },
 
-  // 查询向量缓存
+  // 查询向量缓存 - 扩大并优化
   EMBEDDING: {
-    QUERY_CACHE_SIZE: 256,
-    QUERY_CACHE_TTL: 300000, // 5分钟过期
-    SIMILAR_QUERY_THRESHOLD: 0.95, // 相似查询复用阈值
+    QUERY_CACHE_SIZE: 512, // 从256扩大
+    QUERY_CACHE_TTL: 600000, // 从300000延长到600000(10分钟)
+    SIMILAR_QUERY_THRESHOLD: 0.92, // 从0.95降低，更宽松
     // 推荐的多语言嵌入模型（按优先级排序）
     RECOMMENDED_MULTILINGUAL_MODELS: [
       'multilingual-e5-small', // 平衡性能和效果
@@ -115,6 +115,14 @@ export const RAG_CONFIG = {
   // 后端配置占位，默认 LanceDB
   VECTOR_BACKEND: {
     TYPE: 'lancedb'
+  },
+
+  // 新增：性能调优参数
+  PERFORMANCE: {
+    MAX_CONCURRENT_QUERIES: 5, // 限制并发查询数
+    ENABLE_EMBEDDING_BATCH: true, // 启用批量嵌入
+    CACHE_WARMUP_ENABLED: true, // 启用预热
+    LAZY_LOADING_ENABLED: true // 延迟加载大文档
   }
 } as const
 

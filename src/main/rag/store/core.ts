@@ -136,6 +136,8 @@ function buildDocumentTableSchema(embeddingDimension: number): Schema {
   const tagsType = new List(new Field('item', utf8, true))
   const vectorType = new FixedSizeList(embeddingDimension, new Field('item', float32, false))
 
+  // 扩展元数据结构，支持更多字段包括动态字段
+  // 注意：extra字段使用JSON字符串格式存储复杂对象
   const metadataStruct = new Struct([
     new Field('source', utf8, true),
     new Field('tags', tagsType, true),
@@ -149,7 +151,15 @@ function buildDocumentTableSchema(embeddingDimension: number): Schema {
     new Field('blockTypes', tagsType, true),
     new Field('hasHeading', bool, true),
     new Field('headingText', utf8, true),
-    new Field('chunkingStrategy', utf8, true)
+    new Field('chunkingStrategy', utf8, true),
+    // 新增字段以支持更多元数据
+    new Field('title', utf8, true),
+    new Field('description', utf8, true),
+    new Field('author', utf8, true),
+    new Field('created', utf8, true),
+    new Field('modified', utf8, true),
+    // 为其他动态字段准备一个通用的扩展字段，使用JSON字符串存储
+    new Field('extra', utf8, true)
   ])
 
   return new Schema([
@@ -168,7 +178,11 @@ function buildDocumentTableSchema(embeddingDimension: number): Schema {
     new Field('blockTypes', tagsType, true),
     new Field('hasHeading', bool, true),
     new Field('headingText', utf8, true),
-    new Field('chunkingStrategy', utf8, true)
+    new Field('chunkingStrategy', utf8, true),
+    // 重复字段以确保兼容性
+    new Field('title', utf8, true),
+    new Field('description', utf8, true),
+    new Field('author', utf8, true)
   ])
 }
 
@@ -236,7 +250,12 @@ export async function ensureTableWithDocuments(
           'blockTypes',
           'hasHeading',
           'headingText',
-          'chunkingStrategy'
+          'chunkingStrategy',
+          'title',
+          'description',
+          'author',
+          'created',
+          'modified'
         ]
 
         for (const field of metadataFields) {
@@ -246,8 +265,13 @@ export async function ensureTableWithDocuments(
               record[field] = Array.isArray(value) ? value : []
             } else if (field === 'hasHeading') {
               record[field] = !!value
-            } else if (field === 'headingText') {
-              record[field] = value ?? ''
+            } else if (field === 'headingText' || field === 'title' || field === 'description' || field === 'author' || field === 'created' || field === 'modified') {
+              // 只在值存在时才设置，避免设置空字符串导致架构冲突
+              if (value !== undefined && value !== null) {
+                record[field] = String(value)
+              }
+            } else if (field === 'pageNumber' || field === 'position' || field === 'chunkIndex' || field === 'importedAt') {
+              record[field] = value ?? null
             } else {
               record[field] = value ?? null
             }
@@ -256,14 +280,81 @@ export async function ensureTableWithDocuments(
 
         // 保持对 LangChain metadata 列的兼容（如果存在）
         if (existingColumns.includes('metadata')) {
-          record.metadata = doc.metadata
+          // 过滤掉可能导致问题的动态字段，只保留已知字段
+          const safeMetadata: Record<string, unknown> = {}
+          const knownFields = [
+            'source', 'tags', 'fileName', 'fileType', 'pageNumber', 'position',
+            'sourceType', 'importedAt', 'chunkIndex', 'blockTypes', 'hasHeading',
+            'headingText', 'chunkingStrategy', 'title', 'description', 'author',
+            'created', 'modified'
+          ]
+          
+          knownFields.forEach(field => {
+            if (doc.metadata?.[field] !== undefined) {
+              safeMetadata[field] = doc.metadata[field]
+            }
+          })
+          
+          // 如果还有其他字段，打包到extra中 - 使用JSON字符串
+          const extraFields = Object.keys(doc.metadata || {}).filter(
+            field => !knownFields.includes(field)
+          )
+          if (extraFields.length > 0) {
+            const extraObj: Record<string, unknown> = {}
+            for (const field of extraFields) {
+              extraObj[field] = doc.metadata?.[field]
+            }
+            safeMetadata.extra = JSON.stringify(extraObj)
+          }
+          
+          record.metadata = safeMetadata
         }
 
         return record
       })
 
       // 使用 LanceDB 原生 add 方法追加数据
-      await (table as unknown as { add: (data: unknown[]) => Promise<void> }).add(records)
+      try {
+        await (table as unknown as { add: (data: unknown[]) => Promise<void> }).add(records)
+      } catch (error) {
+        // 如果原生添加失败，可能是架构不匹配
+        logWarn('LanceDB native add failed, checking table schema', 'VectorStore', {
+          error: error instanceof Error ? error.message : String(error)
+        })
+        
+        // 检查表架构，确保包含所有必要字段
+        const currentSchema = await table.schema()
+        const currentFields = currentSchema.fields.map(f => f.name)
+        
+        // 检查缺失的关键字段
+        const requiredFields = ['source', 'tags', 'fileName', 'fileType', 'pageNumber', 'position', 
+                                'sourceType', 'importedAt', 'chunkIndex', 'blockTypes', 'hasHeading',
+                                'headingText', 'chunkingStrategy', 'title', 'description', 'author',
+                                'created', 'modified', 'extra']
+        
+        const missingFields = requiredFields.filter(f => !currentFields.includes(f) && !currentFields.includes('metadata'))
+        
+        if (missingFields.length > 0 || !currentFields.includes('metadata')) {
+          logWarn('Table schema missing fields, attempting to recreate with correct schema', 'VectorStore', {
+            missingFields,
+            hasMetadataColumn: currentFields.includes('metadata')
+          })
+          
+          // 尝试删除并重新创建表
+          try {
+            await (table as unknown as { drop: () => Promise<void> }).drop()
+            table = await conn.createTable(TABLE_NAME, records, { mode: 'overwrite', schema })
+            logInfo('Table recreated with correct schema', 'VectorStore')
+          } catch (recreateError) {
+            logError('Failed to recreate table', 'VectorStore', undefined, recreateError as Error)
+            throw recreateError
+          }
+        } else {
+          // 如果字段都存在，可能是其他问题，尝试 LangChain fallback
+          logWarn('Schema appears correct, trying LangChain fallback', 'VectorStore')
+          throw error
+        }
+      }
 
       // 刷新 table 引用
       table = await conn.openTable(TABLE_NAME)
@@ -346,8 +437,15 @@ export async function ensureTableWithDocuments(
     const hasHeading = normalizeBoolean(doc.metadata?.hasHeading)
     const headingText = normalizeHeadingText(doc.metadata?.headingText)
     const chunkingStrategy = normalizeNullableString(doc.metadata?.chunkingStrategy)
+    
+    // 处理新增字段 - 只处理实际存在的值，避免空字符串
+    const title = doc.metadata?.title ? String(doc.metadata.title) : ''
+    const description = doc.metadata?.description ? String(doc.metadata.description) : ''
+    const author = doc.metadata?.author ? String(doc.metadata.author) : ''
+    const created = doc.metadata?.created ? String(doc.metadata.created) : ''
+    const modified = doc.metadata?.modified ? String(doc.metadata.modified) : ''
 
-    const metadata = {
+    const metadata: Record<string, unknown> = {
       source,
       tags,
       fileName,
@@ -360,15 +458,61 @@ export async function ensureTableWithDocuments(
       blockTypes,
       hasHeading,
       headingText,
-      chunkingStrategy
+      chunkingStrategy,
+      title,
+      description,
+      author,
+      created,
+      modified
     }
 
-    return {
+    // 处理额外字段打包到extra - 序列化为JSON字符串
+    const knownFields = [
+      'source', 'tags', 'fileName', 'fileType', 'pageNumber', 'position',
+      'sourceType', 'importedAt', 'chunkIndex', 'blockTypes', 'hasHeading',
+      'headingText', 'chunkingStrategy', 'title', 'description', 'author',
+      'created', 'modified'
+    ]
+    
+    const extraFields = Object.keys(doc.metadata || {}).filter(
+      field => !knownFields.includes(field)
+    )
+    
+    if (extraFields.length > 0) {
+      const extraObj: Record<string, unknown> = {}
+      for (const field of extraFields) {
+        extraObj[field] = doc.metadata?.[field]
+      }
+      // 序列化为JSON字符串
+      metadata.extra = JSON.stringify(extraObj)
+    }
+
+    // 只返回实际存在的顶层字段，避免添加空值字段
+    const record: Record<string, unknown> = {
       vector: vectors[i],
       text: doc.pageContent,
-      metadata,
-      ...metadata
+      metadata
     }
+
+    // 按需添加非空的顶层字段
+    if (source !== null) record.source = source
+    if (tags.length > 0) record.tags = tags
+    if (fileName !== null) record.fileName = fileName
+    if (fileType !== null) record.fileType = fileType
+    if (pageNumber !== null) record.pageNumber = pageNumber
+    if (position !== null) record.position = position
+    if (sourceType !== null) record.sourceType = sourceType
+    if (importedAt !== null) record.importedAt = importedAt
+    if (chunkIndex !== null) record.chunkIndex = chunkIndex
+    if (blockTypes.length > 0) record.blockTypes = blockTypes
+    if (hasHeading) record.hasHeading = hasHeading
+    if (headingText) record.headingText = headingText
+    if (chunkingStrategy !== null) record.chunkingStrategy = chunkingStrategy
+    if (title) record.title = title
+    if (description) record.description = description
+    if (author) record.author = author
+
+    return record
   })
 
   await loadLanceModules()

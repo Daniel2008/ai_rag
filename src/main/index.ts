@@ -823,21 +823,34 @@ app.whenReady().then(async () => {
     })
 
     // 预处理 sources 和 tags
-    if (normalized.sources && normalized.sources.length > 0) {
+    // 全库检索：sources 应为 undefined 或空数组
+    // 文档集/指定文件：sources 应为非空数组
+    const isGlobalSearch = !normalized.sources || normalized.sources.length === 0
+    
+    logDebug('rag:chat preprocessing sources', 'IPC', {
+      originalSources: normalized.sources,
+      isGlobalSearch,
+      sourcesCount: normalized.sources?.length ?? 0
+    })
+
+    if (!isGlobalSearch && normalized.sources && normalized.sources.length > 0) {
       const snapshot = getKnowledgeBaseSnapshot()
       const readySet = new Set(
         snapshot.files.filter((f) => f.status === 'ready').map((f) => normalizePath(f.path))
       )
 
-      logDebug('rag:chat incoming sources', 'IPC', {
-        sourcesCount: normalized.sources.length,
-        sourcesPreview: normalized.sources.slice(0, 5)
-      })
-
       const filtered = normalized.sources.filter((s) => readySet.has(normalizePath(s)))
 
+      logDebug('rag:chat sources filtering result', 'IPC', {
+        original: normalized.sources.length,
+        filtered: filtered.length,
+        removed: normalized.sources.length - filtered.length
+      })
+
       if (filtered.length === 0) {
-        logDebug('rag:chat sources filtered out, fallback to full-scope', 'IPC')
+        logDebug('所有指定来源都不可用，回退到全库检索', 'IPC', {
+          originalSources: normalized.sources
+        })
         normalized.sources = undefined
       } else {
         normalized.sources = filtered

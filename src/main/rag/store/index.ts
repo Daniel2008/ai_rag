@@ -20,7 +20,8 @@ import {
 import {
   addDocumentsToStore as addDocs,
   removeSourceFromStore as removeSource,
-  removeSourcesFromStore as removeSources
+  removeSourcesFromStore as removeSources,
+  getDocumentsBySource as getDocsBySource
 } from './indexing'
 import { getVectorStoreStats as getStats } from './stats'
 import {
@@ -115,6 +116,13 @@ export async function removeSourceFromStore(source: string): Promise<void> {
  */
 export async function removeSourcesFromStore(sources: string[]): Promise<void> {
   return removeSources(sources)
+}
+
+/**
+ * 根据源获取文档
+ */
+export async function getDocumentsBySource(source: string): Promise<Document[]> {
+  return getDocsBySource(source)
 }
 
 /**

@@ -3,14 +3,17 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
 const IS_ANALYZE = process.env.ANALYZE === 'true'
+const IS_DEV = process.env.NODE_ENV === 'development'
 
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     build: {
-      // 启用详细日志
-      minify: 'esbuild', // 使用 esbuild 更快
-      sourcemap: false, // 生产环境关闭 sourcemap 加速构建
+      // 生产环境优化
+      minify: IS_DEV ? false : 'esbuild',
+      sourcemap: IS_ANALYZE ? true : false,
+      
+      // 内存优化
       rollupOptions: {
         external: ['better-sqlite3'],
         input: {
@@ -18,21 +21,42 @@ export default defineConfig({
           worker: resolve('src/main/rag/worker.ts')
         },
         output: {
-          // 优化输出
           format: 'cjs',
           entryFileNames: '[name].js',
-          chunkFileNames: '[name].js'
+          chunkFileNames: '[name]-[hash].js',
+          // 优化 chunk 策略
+          manualChunks: (id) => {
+            if (id.includes('node_modules')) {
+              // 将大型依赖拆分
+              if (id.includes('@langchain')) return 'langchain-vendor'
+              if (id.includes('@huggingface')) return 'huggingface-vendor'
+              if (id.includes('onnxruntime')) return 'onnx-vendor'
+              if (id.includes('lancedb')) return 'lancedb-vendor'
+              if (id.includes('officeparser')) return 'office-vendor'
+              if (id.includes('tesseract')) return 'tesseract-vendor'
+              return 'vendor'
+            }
+          }
         }
       },
+      // 性能优化选项
+      chunkSizeWarningLimit: 500,
+      reportCompressedSize: false,
       // 并行构建
-      chunkSizeWarningLimit: 1000
+      parallel: true
     }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
-      minify: 'esbuild',
-      sourcemap: false
+      minify: !IS_DEV,
+      sourcemap: IS_ANALYZE,
+      rollupOptions: {
+        output: {
+          entryFileNames: '[name].js',
+          chunkFileNames: '[name]-[hash].js'
+        }
+      }
     }
   },
   renderer: {
@@ -77,24 +101,40 @@ export default defineConfig({
     ].filter(Boolean),
     build: {
       // 优化渲染进程构建
-      minify: 'esbuild',
-      sourcemap: IS_ANALYZE ? true : false,
-      // 启用 CSS 代码分割
+      minify: IS_DEV ? false : 'esbuild',
+      sourcemap: IS_ANALYZE,
       cssCodeSplit: true,
-      // 优化 chunk 大小
-      chunkSizeWarningLimit: 1000,
+      chunkSizeWarningLimit: 500,
+      reportCompressedSize: false,
+      
       rollupOptions: {
         output: {
-          // 手动分割 chunk
-          manualChunks: {
-            'react-vendor': ['react', 'react-dom'],
-            'antd-vendor': ['antd', '@ant-design/icons'],
-            'langchain-vendor': [
-              '@langchain/core',
-              '@langchain/community',
-              '@langchain/openai',
-              '@langchain/ollama'
-            ]
+          // 增强的手动 chunk 策略
+          manualChunks: (id) => {
+            if (id.includes('node_modules')) {
+              // React 相关
+              if (id.includes('react') || id.includes('react-dom')) return 'react-vendor'
+              
+              // Ant Design 相关
+              if (id.includes('antd') || id.includes('@ant-design')) return 'antd-vendor'
+              
+              // LangChain 相关
+              if (id.includes('@langchain')) return 'langchain-vendor'
+              
+              // 大型 AI 依赖
+              if (id.includes('@huggingface')) return 'huggingface-vendor'
+              if (id.includes('onnxruntime')) return 'onnx-vendor'
+              
+              // 其他大型依赖
+              if (id.includes('lancedb')) return 'lancedb-vendor'
+              if (id.includes('officeparser')) return 'office-vendor'
+              if (id.includes('tesseract')) return 'tesseract-vendor'
+              
+              // 通用工具库
+              if (id.includes('lucide-react') || id.includes('clsx')) return 'utils-vendor'
+              
+              return 'vendor'
+            }
           }
         }
       }

@@ -67,17 +67,44 @@ export async function buildRagContext(
       }
     })
 
-    if (useHybrid && isGlobalSearch) {
+    // 判断是否应该使用混合搜索
+    // 混合搜索适用于：全库检索 或 有跨语言需求 或 多查询需求
+    const shouldUseHybrid = useHybrid && isGlobalSearch
+    
+    logDebug('Search strategy decision', 'Chat', {
+      useHybrid,
+      isGlobalSearch,
+      shouldUseHybrid,
+      questionLength: question.length,
+      hasEnglish: /[a-zA-Z0-9]/.test(question)
+    })
+
+    if (shouldUseHybrid) {
       const { HybridSearcher } = await import('../hybridSearch')
       const searcher = new HybridSearcher({ topK: searchLimit })
+      
+      logDebug('Executing hybrid search', 'Chat', {
+        question: question.slice(0, 60),
+        isGlobalSearch,
+        searchLimit,
+        useMultiQuery: settings.rag?.useMultiQuery ?? false
+      })
+      
       const ctx = await searcher.search(question, {
         sources: options.sources,
         tags: options.tags,
         limit: searchLimit,
         useMultiQuery: settings.rag?.useMultiQuery ?? false
       })
+      
       const hybrid = ctx.hybridResults ?? []
       retrievedPairs = hybrid.map((r) => ({ doc: r.doc, score: r.finalScore }))
+      
+      logDebug('Hybrid search results', 'Chat', {
+        retrievedCount: retrievedPairs.length,
+        hasResults: retrievedPairs.length > 0
+      })
+
       if (retrievedPairs.length === 0) {
         logDebug('Hybrid search returned empty, fallback to vector search', 'Chat', {
           searchLimit
@@ -91,6 +118,12 @@ export async function buildRagContext(
         )
       }
     } else {
+      logDebug('Using standard vector search', 'Chat', {
+        isGlobalSearch,
+        searchLimit,
+        useHybrid,
+        reason: !isGlobalSearch ? 'specific sources selected' : 'hybrid search disabled'
+      })
       retrievedPairs = await withEmbeddingProgressSuppressed(() =>
         searchSimilarDocumentsWithScores(question, {
           k: searchLimit,

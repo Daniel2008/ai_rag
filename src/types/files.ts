@@ -53,6 +53,8 @@ export interface IndexedFileRecord {
   summary?: string
   /** 文档要点 */
   keyPoints?: string[]
+  /** 文件内容哈希，用于检测文件是否变化 */
+  fileHash?: string
 }
 
 export interface IndexedFile extends IndexedFileRecord {

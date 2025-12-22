@@ -76,38 +76,53 @@ export async function performCrossLanguageSearch(
   logDebug('Detected Chinese query, attempting cross-language search', 'Search')
 
   try {
-    const { queries } = await generateCrossLanguageQueries(query)
-    const rrfK = RAG_CONFIG.CROSS_LANGUAGE.RRF_K
-
+    // 1. 生成跨语言查询变体
+    const { queries, original, translated } = await generateCrossLanguageQueries(query)
+    
+    // 2. 为每个变体生成向量并搜索
     const searchPromises = queries.map(async (q, index) => {
       const vector = await getQueryVector(q, embeddings)
       const results = await performNativeSearch(tableRef, vector, fetchK, whereClause)
-      logDebug(`Query variant ${index + 1} got ${results.length} results`, 'Search', {
-        queryPreview: q.slice(0, 30)
+      
+      logDebug(`Query variant ${index + 1}`, 'Search', {
+        query: q.slice(0, 30),
+        lang: detectLanguage(q),
+        results: results.length
       })
+      
       return results
     })
 
     const allResultLists = await Promise.all(searchPromises)
 
+    // 3. RRF融合
     const getResultKey = (r: LanceDBSearchResult): string => {
       const content = r.text || r.pageContent || ''
       const source = r.source || r.metadata?.source || ''
       return `${source}::${content}`
     }
 
-    const rrfResults = reciprocalRankFusion(allResultLists, getResultKey, rrfK)
+    const rrfResults = reciprocalRankFusion(allResultLists, getResultKey, RAG_CONFIG.CROSS_LANGUAGE.RRF_K)
 
-    logDebug('RRF fusion completed', 'Search', {
-      inputLists: allResultLists.length,
-      totalBeforeFusion: allResultLists.reduce((sum, list) => sum + list.length, 0),
-      afterFusion: rrfResults.length
+    // 4. 转换为最终格式
+    const finalResults = rrfResults.slice(0, fetchK).map(({ item, score }) => ({
+      ...item,
+      _distance: 1 / (score + 1),
+      _rrfScore: score
+    }))
+
+    logDebug('Cross-language search completed', 'Search', {
+      originalQuery: original,
+      translatedQuery: translated,
+      variantsCount: queries.length,
+      resultCount: finalResults.length,
+      rrfScoreRange: {
+        max: rrfResults[0]?.score ?? 0,
+        min: rrfResults[rrfResults.length - 1]?.score ?? 0
+      }
     })
 
-    return rrfResults.slice(0, fetchK).map(({ item, score }) => ({
-      ...item,
-      _distance: 1 / (score + 1)
-    }))
+    return finalResults
   } catch (error) {
     logWarn(
       'Cross-language search failed, using original query',

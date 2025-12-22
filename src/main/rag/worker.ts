@@ -364,9 +364,94 @@ parentPort.on('message', async (task) => {
     }
 
     if (type === 'embed') {
+      // 确保嵌入管道已初始化，如果没有则尝试初始化
       if (!embeddingPipeline) {
-        throw new Error('Embedding pipeline not initialized')
+        console.warn('[WORKER] Embedding pipeline not found, attempting to initialize...')
+        
+      // 从配置中获取默认模型名称
+      const defaultModel = 'multilingual-e5-small'
+      // 直接映射模型名称（复制mapModelName逻辑，避免循环依赖）
+      const modelMap: Record<string, string> = {
+        'bert-base': 'Xenova/bert-base-uncased',
+        'bert-large': 'Xenova/bert-large-uncased',
+        'sentence-transformers': 'Xenova/all-MiniLM-L6-v2',
+        'nomic-bert': 'nomic-ai/nomic-bert-2048',
+        'bge-reranker-base': 'Xenova/bge-reranker-base',
+        'bge-reranker-v2-m3': 'Xenova/bge-reranker-v2-m3',
+        'intfloat/multilingual-e5-small': 'Xenova/multilingual-e5-small',
+        'intfloat/multilingual-e5-large': 'Xenova/multilingual-e5-large',
+        'intfloat/multilingual-e5-base': 'Xenova/multilingual-e5-base'
       }
+      const fullModelName = modelMap[defaultModel] || defaultModel
+        
+        // 获取缓存目录（从环境变量或默认路径）
+        const userDataPath = process.env.USERDATA_PATH || process.cwd()
+        const cacheDir = path.join(userDataPath, 'models')
+        const targetDir = path.join(cacheDir, fullModelName.replace('/', '_'))
+        
+        console.log(`[WORKER] Attempting to initialize embedding pipeline for ${defaultModel}`)
+        
+        try {
+          await ensureTransformers()
+          if (!env || !pipeline) {
+            throw new Error('Transformers not available')
+          }
+          
+          // 设置环境
+          env.allowLocalModels = true
+          env.allowRemoteModels = false
+          env.cacheDir = cacheDir
+          env.localModelPath = cacheDir
+          
+          // 检测模型文件并初始化
+          const fs = await import('fs')
+          let dtype = 'fp32'
+          
+          const findFile = async (dir: string, pattern: RegExp): Promise<boolean> => {
+            try {
+              const entries = await fs.promises.readdir(dir, { withFileTypes: true })
+              for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name)
+                if (entry.isDirectory()) {
+                  if (await findFile(fullPath, pattern)) return true
+                } else if (pattern.test(entry.name)) {
+                  return true
+                }
+              }
+            } catch (e) {
+              console.warn('[WORKER] Failed to scan model files:', e)
+            }
+            return false
+          }
+          
+          if (await findFile(targetDir, /^model_quantized\.onnx$/)) {
+            dtype = 'q8'
+          } else if (await findFile(targetDir, /^model_int8\.onnx$/)) {
+            dtype = 'int8'
+          } else if (await findFile(targetDir, /^model\.onnx$/)) {
+            dtype = 'fp32'
+          }
+          
+          console.log(`[WORKER] Detected dtype: ${dtype}, loading from ${targetDir}`)
+          
+          const pipelineOptions: any = {
+            local_files_only: true,
+            dtype: dtype as any
+          }
+          
+          embeddingPipeline = (await pipeline(
+            'feature-extraction',
+            targetDir,
+            pipelineOptions
+          )) as unknown as FeatureExtractionPipeline
+          
+          console.log('[WORKER] Embedding pipeline initialized successfully')
+        } catch (initError) {
+          console.error('[WORKER] Failed to initialize embedding pipeline:', initError)
+          throw new Error('Embedding pipeline not initialized and auto-initialization failed')
+        }
+      }
+      
       // Support both 'texts' (from workerManager) and 'chunks' (legacy/internal)
       const chunks = payload.texts || payload.chunks
 

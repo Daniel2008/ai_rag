@@ -84,10 +84,25 @@ export class HybridSearcher {
     const context: SearchContext = { query }
     const limit = options.limit || this.config.topK || 10
 
+    // 判断是否为全库检索
+    const isGlobalSearch = !options.sources || options.sources.length === 0
+    
+    logDebug('HybridSearch starting', 'HybridSearch', {
+      query: query.slice(0, 80),
+      isGlobalSearch,
+      sourcesCount: options.sources?.length ?? 0,
+      tagsCount: options.tags?.length ?? 0,
+      limit
+    })
+
     // 1. 查询扩展 (Multi-Query)
     let queries = [query]
     if (options.useMultiQuery || this.config.multiQuery) {
       queries = await queryExpander.expandQuery(query, 3)
+      logDebug('Query expansion completed', 'HybridSearch', {
+        originalQuery: query,
+        expandedQueries: queries
+      })
     }
 
     try {
@@ -95,23 +110,44 @@ export class HybridSearcher {
       const allResults = await Promise.all(
         queries.map(async (q) => {
           // a. 获取向量搜索结果
+          logDebug('Starting vector search', 'HybridSearch', {
+            query: q.slice(0, 60),
+            isGlobalSearch,
+            searchLimit: limit
+          })
+          
           const vectorResultsRaw = await searchSimilarDocumentsWithScores(q, {
             k: limit,
             sources: options.sources,
             tags: options.tags
           })
+          
+          logDebug('Vector search completed', 'HybridSearch', {
+            query: q.slice(0, 60),
+            resultsCount: vectorResultsRaw.length
+          })
 
-          // b. 关键词搜索 (BM25)
+          // b. 关键词搜索 (BM25) - 只在全库检索或有特定范围时启用
           let keywordDocs: { doc: Document; score: number }[] = []
           const table = await getVectorTable()
-          if (table) {
+          
+          // 只有在有数据且不是过于限制的检索时才进行 BM25
+          if (table && vectorResultsRaw.length > 0) {
             try {
               let lancedbDocs: LanceDBSearchResult[] = []
               const queryBuilder = table.query()
 
-              // 这里的 limit(2000) 只是为了 BM25 构建临时的索引
-              lancedbDocs = (await queryBuilder.limit(2000).toArray()) as LanceDBSearchResult[]
+              // 全库检索时获取更多文档以构建更好的 BM25 索引
+              const bm25FetchLimit = isGlobalSearch ? 2000 : limit * 10
+              lancedbDocs = (await queryBuilder.limit(bm25FetchLimit).toArray()) as LanceDBSearchResult[]
 
+              logDebug('BM25 fetching documents', 'HybridSearch', {
+                fetchedCount: lancedbDocs.length,
+                isGlobalSearch,
+                bm25FetchLimit
+              })
+
+              // 应用来源和标签过滤
               if (
                 (options.sources && options.sources.length > 0) ||
                 (options.tags && options.tags.length > 0)
@@ -128,6 +164,10 @@ export class HybridSearcher {
 
                   return !!(sourceMatch && tagMatch)
                 })
+                
+                logDebug('BM25 filtering applied', 'HybridSearch', {
+                  afterFilterCount: lancedbDocs.length
+                })
               }
 
               if (lancedbDocs.length > 0) {
@@ -140,6 +180,10 @@ export class HybridSearcher {
                   }),
                   score: r.score
                 }))
+                
+                logDebug('BM25 search completed', 'HybridSearch', {
+                  resultsCount: keywordDocs.length
+                })
               }
             } catch (e) {
               logWarn('BM25 搜索失败', 'HybridSearch', { query: q }, e as Error)
@@ -150,11 +194,18 @@ export class HybridSearcher {
         })
       )
 
-      context.vectorResults = allResults[0].vectorResults.map((r) => ({
-        doc: r.doc,
-        score: r.score
-      }))
-      context.keywordResults = allResults[0].keywordResults
+      // 合并所有查询的结果
+      context.vectorResults = allResults.flatMap(r => r.vectorResults.map((vr) => ({
+        doc: vr.doc,
+        score: vr.score
+      })))
+      context.keywordResults = allResults.flatMap(r => r.keywordResults)
+      
+      logDebug('All queries processed', 'HybridSearch', {
+        totalVectorResults: context.vectorResults?.length ?? 0,
+        totalKeywordResults: context.keywordResults?.length ?? 0,
+        queryCount: queries.length
+      })
 
       // 2. 结果融合 (RRF) - 支持多查询结果融合
       const docKeyMap = new Map<string, Document>()

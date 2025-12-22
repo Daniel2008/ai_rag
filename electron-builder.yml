@@ -51,6 +51,54 @@ asarUnpack:
 asar: true
 compression: normal # 普通压缩，显著提升打包速度
 
+# 性能优化配置
+directories:
+  buildResources: build
+  output: dist
+
+# 优化文件打包 - 排除更多不必要的文件
+files:
+  - '!**/.vscode/*'
+  - '!**/.kilocode/*'
+  - '!**/.cursor/*'
+  - '!**/.trae/*'
+  - '!**/.git/*'
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,README,readme}'
+  - '!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}'
+  - '!**/node_modules/*.d.ts'
+  - '!**/node_modules/.bin'
+  - '!**/node_modules/*/{.github,.vscode,.idea}'
+  - '!**/node_modules/*/{docs,documentation,doc}'
+  - '!**/node_modules/*/{*.md,*.txt,*.log}'
+  - '!**/node_modules/*/{LICENSE,LICENSE.*,license,license.*}'
+  - '!**/node_modules/*/{.npmignore,.gitignore,.eslintrc*,tsconfig.json}'
+  - '!**/node_modules/*/{coverage,.nyc_output,.jest}'
+  - '!**/node_modules/*/{*.map,*.min.map}'
+  - '!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}'
+  - '!**/{.DS_Store,.git,.hg,.svn,CVS,SCCS,.gitignore,.gitattributes}'
+  - '!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}'
+  - '!**/{appveyor.yml,.travis.yml,circle.yml}'
+  - '!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!scripts/*.{js,ts}'  # 排除脚本文件
+  - '!wiki/**'  # 排除文档
+  - '!reproduce_issue.ts'  # 排除测试文件
+
+# 原生模块解包优化 - 只解包必要的模块
+asarUnpack:
+  - resources/**
+  - node_modules/@lancedb/**
+  - node_modules/apache-arrow/**
+  - node_modules/@huggingface/**
+  - node_modules/better-sqlite3/**
+  - node_modules/onnxruntime-node/**
+  - node_modules/officeparser/**
+  - node_modules/tesseract.js/**
+
 # Windows 配置
 win:
   executableName: ZhiHui

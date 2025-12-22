@@ -240,35 +240,42 @@ export function isDocumentRelevantToQuery(docContent: string, query: string): Re
  */
 export function filterByRelevanceThreshold<T extends { score: number; doc: Document }>(
   results: T[],
-  _query: string,
+  query: string, // 保留query参数用于日志和调试
   threshold: number = RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
 ): T[] {
   if (results.length === 0) return results
 
-  // 向量搜索已经是语义搜索，只需按分数阈值过滤
-  // 不再进行关键词匹配验证，因为：
-  // 1. 向量搜索本身就是语义匹配
-  // 2. 跨语言查询时关键词可能不匹配（如英文查询匹配中文文档）
-  // 3. 关键词匹配会错误过滤掉语义相关但词汇不同的结果
+  // 向量搜索已经是语义匹配，只需按分数阈值过滤
   const scoreFiltered = results.filter((r) => r.score >= threshold)
 
-  // 如果过滤后结果太少，使用更低的阈值
+  // 如果过滤后结果太少，按以下策略处理：
   if (scoreFiltered.length < 3) {
     const lowThreshold = Math.min(threshold, RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD_LOW)
+    
+    // 策略1: 使用更低阈值
     const relaxedResults = results.filter((r) => r.score >= lowThreshold)
-
-    // 如果放宽后仍然太少，返回原始结果的前部分（按分数排序）
-    if (relaxedResults.length < 2 && results.length > 0) {
-      logDebug('Relaxed filter still too strict, returning top results', 'Search', {
-        originalCount: results.length,
-        relaxedCount: relaxedResults.length,
-        threshold,
-        lowThreshold
+    if (relaxedResults.length >= 2) {
+      logDebug('Using relaxed threshold', 'Search', {
+        originalThreshold: threshold,
+        relaxedThreshold: lowThreshold,
+        results: relaxedResults.length
       })
-      return results.slice(0, Math.max(5, Math.ceil(results.length * 0.3)))
+      return relaxedResults
     }
 
-    return relaxedResults
+    // 策略2: 排序后取前N个（不考虑阈值）
+    if (results.length > 0) {
+      const topResults = results
+        .sort((a, b) => b.score - a.score)
+        .slice(0, Math.max(5, Math.ceil(results.length * 0.3)))
+      
+      logDebug('Using top results without threshold', 'Search', {
+        threshold,
+        resultCount: topResults.length,
+        minScore: topResults[topResults.length - 1].score
+      })
+      return topResults
+    }
   }
 
   logDebug('Relevance threshold filter', 'Search', {

@@ -1,0 +1,82 @@
+{
+  "timestamp": "2025-12-22T04:18:45.969Z",
+  "systemInfo": {
+    "timestamp": "2025-12-22T04:18:22.932Z",
+    "memory": {
+      "total": "39.75 GB",
+      "used": "23.01 GB",
+      "free": "16.74 GB",
+      "usage": "57.89%"
+    },
+    "cpu": {
+      "usage": "0.00%",
+      "cores": 20,
+      "model": "12th Gen Intel(R) Core(TM) i7-12700H"
+    },
+    "load": [
+      0,
+      0,
+      0
+    ]
+  },
+  "processes": [
+    {
+      "name": "node.exe",
+      "pid": "3576",
+      "memory": "296",
+      "cpu": "N/A"
+    },
+    {
+      "name": "node.exe",
+      "pid": "16648",
+      "memory": "149",
+      "cpu": "N/A"
+    },
+    {
+      "name": "node.exe",
+      "pid": "24732",
+      "memory": "78",
+      "cpu": "N/A"
+    },
+    {
+      "name": "node.exe",
+      "pid": "23760",
+      "memory": "144",
+      "cpu": "N/A"
+    },
+    {
+      "name": "node.exe",
+      "pid": "29504",
+      "memory": "112",
+      "cpu": "N/A"
+    },
+    {
+      "name": "node.exe",
+      "pid": "19444",
+      "memory": "884",
+      "cpu": "N/A"
+    },
+    {
+      "name": "node.exe",
+      "pid": "41124",
+      "memory": "64",
+      "cpu": "N/A"
+    },
+    {
+      "name": "node.exe",
+      "pid": "33440",
+      "memory": "31",
+      "cpu": "N/A"
+    }
+  ],
+  "diskInfo": [],
+  "projectMetrics": {
+    "nodeModulesSize": "2074.14 MB",
+    "distSize": "0 MB",
+    "cacheSize": "0.00 MB"
+  },
+  "warnings": [],
+  "suggestions": [
+    "✅ 系统状态良好！"
+  ]
+}
