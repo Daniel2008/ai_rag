@@ -8,6 +8,7 @@
  * 3. 进度量化：尽可能显示具体的数字进度
  */
 
+import type { WebContents } from 'electron'
 import { ProgressMessage, ProgressStatus, TaskType } from '../rag/progressTypes'
 
 /** 任务类型的用户友好名称 */
@@ -281,4 +282,40 @@ export function createBatchProgress(
       totalCount: totalFiles
     }
   )
+}
+
+export type FrontendProcessProgressPayload = {
+  stage: string
+  percent: number
+  taskType?: string
+  error?: string
+}
+
+function normalizeFrontendProcessProgressPayload(
+  payload: FrontendProcessProgressPayload
+): FrontendProcessProgressPayload {
+  const percentRaw =
+    typeof payload.percent === 'number' && Number.isFinite(payload.percent) ? payload.percent : 0
+  const percent = Math.max(0, Math.min(100, percentRaw))
+  return {
+    ...payload,
+    stage: typeof payload.stage === 'string' ? payload.stage : '',
+    percent
+  }
+}
+
+export function sendRagProcessProgress(
+  webContents: WebContents,
+  payload: FrontendProcessProgressPayload
+): void {
+  webContents.send('rag:process-progress', normalizeFrontendProcessProgressPayload(payload))
+}
+
+export function sendRagProcessProgressMessage(
+  webContents: WebContents,
+  progress: ProgressMessage,
+  overrides?: Partial<FrontendProcessProgressPayload>
+): void {
+  const base = toFrontendProgressFormat(progress)
+  sendRagProcessProgress(webContents, { ...base, ...overrides })
 }

@@ -77,12 +77,7 @@ export async function addDocumentsToStore(
   } catch (error) {
     // 如果是追加模式失败，不要自动降级为覆盖，否则会丢失数据
     if (appendMode) {
-      logError(
-        'Failed to append documents to LanceDB',
-        'VectorStore',
-        undefined,
-        error as Error
-      )
+      logError('Failed to append documents to LanceDB', 'VectorStore', undefined, error as Error)
       throw error
     }
 
@@ -285,21 +280,27 @@ export async function getDocumentsBySource(source: string): Promise<Document[]> 
   ]
 
   const uniqueVariants = [...new Set(sourceVariants)]
-  
+
   // 使用 OR 条件查询所有变体
-  const conditions = uniqueVariants.map(v => `source == "${escapePredicateValue(v)}"`)
+  const conditions = uniqueVariants.map((v) => `source == "${escapePredicateValue(v)}"`)
   const predicate = conditions.join(' OR ')
 
   try {
-    const results = await (currentTable as unknown as { search: () => { where: (predicate: string) => { toArray: () => Promise<any[]> } } })
+    type LanceRow = { text?: string; metadata?: Record<string, unknown> }
+    const results = await (
+      currentTable as unknown as {
+        search: () => { where: (predicate: string) => { toArray: () => Promise<unknown[]> } }
+      }
+    )
       .search()
       .where(predicate)
       .toArray()
 
     return results.map((r) => {
+      const row = (r ?? {}) as LanceRow
       const doc = new Document({
-        pageContent: r.text || '',
-        metadata: r.metadata || {}
+        pageContent: row.text || '',
+        metadata: row.metadata || {}
       })
       return doc
     })

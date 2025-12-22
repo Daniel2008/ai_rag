@@ -18,15 +18,15 @@
 
 #### 支持的文件格式
 
-| 格式 | 扩展名 | 解析器 |
-|------|--------|--------|
-| PDF | .pdf | pdf-parse |
-| Word | .docx | officeparser |
-| PowerPoint | .pptx | officeparser |
-| Excel | .xlsx | officeparser |
+| 格式         | 扩展名           | 解析器       |
+| ------------ | ---------------- | ------------ |
+| PDF          | .pdf             | pdf-parse    |
+| Word         | .docx            | officeparser |
+| PowerPoint   | .pptx            | officeparser |
+| Excel        | .xlsx            | officeparser |
 | OpenDocument | .odt, .odp, .ods | officeparser |
-| 纯文本 | .txt | 直接读取 |
-| Markdown | .md | 直接读取 |
+| 纯文本       | .txt             | 直接读取     |
+| Markdown     | .md              | 直接读取     |
 
 #### 导入方式
 
@@ -139,7 +139,7 @@ RRF_score(d) = Σ 1 / (k + rank(d))
 Maximal Marginal Relevance 提高结果多样性：
 
 ```typescript
-MMR = λ * similarity(q, d) - (1-λ) * max(similarity(d, d_i))
+MMR = λ * similarity(q, d) - (1 - λ) * max(similarity(d, d_i))
 
 // λ = 0.75 (偏向相关性)
 ```
@@ -156,14 +156,14 @@ MMR = λ * similarity(q, d) - (1-λ) * max(similarity(d, d_i))
 
 ### 检索配置
 
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| 检索数量 (k) | 6 | 返回的文档数量 |
-| 相关性阈值 | 0.25 | 过滤低相关性结果 |
-| 向量权重 | 0.6 | 向量搜索在融合中的权重 |
-| BM25 权重 | 0.4 | 关键词搜索在融合中的权重 |
-| RRF K | 60 | RRF 算法参数 |
-| MMR Lambda | 0.75 | MMR 多样性参数 |
+| 配置项       | 默认值 | 说明                     |
+| ------------ | ------ | ------------------------ |
+| 检索数量 (k) | 6      | 返回的文档数量           |
+| 相关性阈值   | 0.25   | 过滤低相关性结果         |
+| 向量权重     | 0.6    | 向量搜索在融合中的权重   |
+| BM25 权重    | 0.4    | 关键词搜索在融合中的权重 |
+| RRF K        | 60     | RRF 算法参数             |
+| MMR Lambda   | 0.75   | MMR 多样性参数           |
 
 ### 检索范围
 
@@ -209,8 +209,8 @@ MMR = λ * similarity(q, d) - (1-λ) * max(similarity(d, d_i))
 interface Message {
   role: 'user' | 'ai' | 'system'
   content: string
-  sources?: Source[]        // 引用来源
-  suggestions?: string[]    // 推荐问题
+  sources?: Source[] // 引用来源
+  suggestions?: string[] // 推荐问题
 }
 ```
 
@@ -233,11 +233,7 @@ AI 回答实时流式输出：
 
 ```json
 {
-  "suggestions": [
-    "这个功能是如何实现的？",
-    "还有哪些相关的配置选项？",
-    "能举一个具体的例子吗？"
-  ]
+  "suggestions": ["这个功能是如何实现的？", "还有哪些相关的配置选项？", "能举一个具体的例子吗？"]
 }
 ```
 
@@ -357,13 +353,13 @@ API 地址: http://localhost:11434
 
 ### RAG 配置
 
-| 配置项 | 说明 | 默认值 |
-|--------|------|--------|
-| 检索数量 | 每次检索返回的文档数 | 6 |
-| 相关性阈值 | 过滤低分结果 | 0.25 |
-| 混合检索 | 启用 BM25 + 向量 | 开启 |
-| 多查询扩展 | 扩展查询变体 | 关闭 |
-| 重排序 | 使用 Rerank 模型 | 关闭 |
+| 配置项     | 说明                 | 默认值 |
+| ---------- | -------------------- | ------ |
+| 检索数量   | 每次检索返回的文档数 | 6      |
+| 相关性阈值 | 过滤低分结果         | 0.25   |
+| 混合检索   | 启用 BM25 + 向量     | 开启   |
+| 多查询扩展 | 扩展查询变体         | 关闭   |
+| 重排序     | 使用 Rerank 模型     | 关闭   |
 
 ### 界面配置
 
@@ -375,12 +371,12 @@ API 地址: http://localhost:11434
 
 ## 快捷键
 
-| 快捷键 | 功能 |
-|--------|------|
-| `Enter` | 发送消息 |
-| `Shift + Enter` | 换行 |
-| `Ctrl + N` | 新建对话 |
-| `F12` | 开发者工具（开发模式） |
+| 快捷键          | 功能                   |
+| --------------- | ---------------------- |
+| `Enter`         | 发送消息               |
+| `Shift + Enter` | 换行                   |
+| `Ctrl + N`      | 新建对话               |
+| `F12`           | 开发者工具（开发模式） |
 
 ---
 

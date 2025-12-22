@@ -260,12 +260,12 @@ export async function embedInWorker(texts: string[]): Promise<number[][]> {
     // 如果是嵌入管道未初始化错误，先初始化再重试
     if (error instanceof Error && error.message.includes('Embedding pipeline not initialized')) {
       console.warn('Embedding pipeline not initialized, attempting to reinitialize...')
-      
+
       // 强制重新初始化嵌入模型
       const { initLocalEmbeddings } = await import('./localEmbeddings')
       // 直接使用默认模型名称，避免循环依赖
       const modelName = 'multilingual-e5-small'
-      
+
       try {
         await initLocalEmbeddings(modelName, (progress) => {
           console.log('Reinitializing embedding model:', progress.message)
@@ -274,7 +274,7 @@ export async function embedInWorker(texts: string[]): Promise<number[][]> {
         console.error('Failed to reinitialize embedding model:', initError)
         throw initError
       }
-      
+
       // 重试嵌入
       const result = await runTask<{ embeddings: number[][] }>('embed', { texts })
       return result.embeddings

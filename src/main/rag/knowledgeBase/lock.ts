@@ -9,9 +9,11 @@ export interface LockOptions {
   maxWaitTime?: number
 }
 
+type LockHandle = { release: () => void; lockId: string }
+
 interface PendingOperation {
-  resolve: (value: any) => void
-  reject: (error: any) => void
+  resolve: (value: LockHandle) => void
+  reject: (error: Error) => void
   timestamp: number
   cleanup?: () => void
   timeoutId?: NodeJS.Timeout
@@ -41,7 +43,7 @@ export class KnowledgeBaseLock extends EventEmitter {
     operation: string,
     lockId: string = 'global',
     options: LockOptions = {}
-  ): Promise<{ release: () => void; lockId: string }> {
+  ): Promise<LockHandle> {
     const { maxWaitTime = 60000 } = options
     const startTime = Date.now()
 
@@ -52,7 +54,7 @@ export class KnowledgeBaseLock extends EventEmitter {
       const newLock = { lockId, timestamp: Date.now(), operation }
       this.locks.set(lockId, newLock)
       this.emit('lock-acquired', { lockId, operation })
-      
+
       return {
         release: () => this.releaseLock(lockId),
         lockId
@@ -60,9 +62,9 @@ export class KnowledgeBaseLock extends EventEmitter {
     }
 
     // 等待锁释放
-    return new Promise((resolve, reject) => {
+    return new Promise<LockHandle>((resolve, reject) => {
       const waitInfo: PendingOperation = { resolve, reject, timestamp: Date.now() }
-      
+
       if (!this.pendingOperations.has(lockId)) {
         this.pendingOperations.set(lockId, [])
       }
@@ -92,12 +94,12 @@ export class KnowledgeBaseLock extends EventEmitter {
         if (!this.locks.has(lockId)) {
           clearInterval(checkInterval)
           clearTimeout(timeoutId)
-          
+
           // 获取锁
           const newLock = { lockId, timestamp: Date.now(), operation }
           this.locks.set(lockId, newLock)
           this.emit('lock-acquired', { lockId, operation, waitTime: Date.now() - startTime })
-          
+
           resolve({
             release: () => this.releaseLock(lockId),
             lockId
@@ -139,9 +141,9 @@ export class KnowledgeBaseLock extends EventEmitter {
       // 立即获取锁
       const newLock = { lockId, timestamp: Date.now(), operation: 'pending' }
       this.locks.set(lockId, newLock)
-      
+
       this.emit('lock-acquired', { lockId, operation: 'pending', fromWaitQueue: true })
-      
+
       nextOperation.resolve({
         release: () => this.releaseLock(lockId),
         lockId
@@ -168,11 +170,11 @@ export class KnowledgeBaseLock extends EventEmitter {
     if (this.locks.has(lockId)) {
       this.locks.delete(lockId)
       this.emit('lock-force-released', { lockId })
-      
+
       // 清理等待队列
       const pending = this.pendingOperations.get(lockId)
       if (pending) {
-        pending.forEach(op => {
+        pending.forEach((op) => {
           if (op.cleanup) op.cleanup()
           if (op.timeoutId) clearTimeout(op.timeoutId)
           if (op.checkInterval) clearInterval(op.checkInterval)
@@ -186,9 +188,19 @@ export class KnowledgeBaseLock extends EventEmitter {
   /**
    * 获取所有锁状态
    */
-  getLockStatus(): Array<{ lockId: string; operation: string; timestamp: number; waitQueue: number }> {
-    const status: Array<{ lockId: string; operation: string; timestamp: number; waitQueue: number }> = []
-    
+  getLockStatus(): Array<{
+    lockId: string
+    operation: string
+    timestamp: number
+    waitQueue: number
+  }> {
+    const status: Array<{
+      lockId: string
+      operation: string
+      timestamp: number
+      waitQueue: number
+    }> = []
+
     this.locks.forEach((lock, lockId) => {
       const pending = this.pendingOperations.get(lockId)
       status.push({
@@ -198,7 +210,7 @@ export class KnowledgeBaseLock extends EventEmitter {
         waitQueue: pending ? pending.length : 0
       })
     })
-    
+
     return status
   }
 
@@ -208,14 +220,14 @@ export class KnowledgeBaseLock extends EventEmitter {
   cleanupExpiredLocks(maxAge: number = 300000): number {
     const now = Date.now()
     let cleaned = 0
-    
+
     this.locks.forEach((lock, lockId) => {
       if (now - lock.timestamp > maxAge) {
         this.forceRelease(lockId)
         cleaned++
       }
     })
-    
+
     return cleaned
   }
 
@@ -254,7 +266,7 @@ export async function withLock<T>(
 ): Promise<T> {
   const lock = KnowledgeBaseLock.getInstance()
   const lockHandle = await lock.acquireLock(operation, lockId, options)
-  
+
   try {
     return await fn()
   } finally {
@@ -265,7 +277,7 @@ export async function withLock<T>(
 /**
  * 检查操作是否可以执行
  */
-export function canPerformOperation(operation: string, lockId: string = 'global'): boolean {
+export function canPerformOperation(_operation: string, lockId: string = 'global'): boolean {
   const lock = KnowledgeBaseLock.getInstance()
   return !lock.isLocked(lockId)
 }
@@ -276,6 +288,6 @@ export function canPerformOperation(operation: string, lockId: string = 'global'
 export function getOperationQueueLength(lockId: string = 'global'): number {
   const lock = KnowledgeBaseLock.getInstance()
   const status = lock.getLockStatus()
-  const lockInfo = status.find(s => s.lockId === lockId)
+  const lockInfo = status.find((s) => s.lockId === lockId)
   return lockInfo ? lockInfo.waitQueue : 0
 }

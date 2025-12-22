@@ -78,18 +78,18 @@ export async function performCrossLanguageSearch(
   try {
     // 1. 生成跨语言查询变体
     const { queries, original, translated } = await generateCrossLanguageQueries(query)
-    
+
     // 2. 为每个变体生成向量并搜索
     const searchPromises = queries.map(async (q, index) => {
       const vector = await getQueryVector(q, embeddings)
       const results = await performNativeSearch(tableRef, vector, fetchK, whereClause)
-      
+
       logDebug(`Query variant ${index + 1}`, 'Search', {
         query: q.slice(0, 30),
         lang: detectLanguage(q),
         results: results.length
       })
-      
+
       return results
     })
 
@@ -102,7 +102,11 @@ export async function performCrossLanguageSearch(
       return `${source}::${content}`
     }
 
-    const rrfResults = reciprocalRankFusion(allResultLists, getResultKey, RAG_CONFIG.CROSS_LANGUAGE.RRF_K)
+    const rrfResults = reciprocalRankFusion(
+      allResultLists,
+      getResultKey,
+      RAG_CONFIG.CROSS_LANGUAGE.RRF_K
+    )
 
     // 4. 转换为最终格式
     const finalResults = rrfResults.slice(0, fetchK).map(({ item, score }) => ({

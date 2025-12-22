@@ -5,18 +5,15 @@ import {
   resetVectorStore,
   ensureEmbeddingsInitialized,
   removeSourceFromStore,
-  getDocumentsBySource
+  getDocumentsBySource,
+  getDocCount
 } from '../store/index'
 import { normalizePath } from '../pathUtils'
 import { Document } from '@langchain/core/documents'
 import { IndexedFileRecord, KnowledgeBaseSnapshot } from '../../../types/files'
 import { ProgressMessage, ProgressStatus, TaskType } from '../progressTypes'
 import { getIndexedFileRecords, saveIndexedFileRecords } from './store'
-import {
-  upsertIndexedFileRecord,
-  getSnapshot,
-  pruneCollectionsForMissingFiles
-} from './core'
+import { upsertIndexedFileRecord, getSnapshot, pruneCollectionsForMissingFiles } from './core'
 import { SmartPromptGenerator } from '../smartFeatures'
 import { createHash } from 'crypto'
 
@@ -45,7 +42,9 @@ export function clearFileHashCache(): void {
 /**
  * 判断文件是否需要更新
  */
-async function needsFileUpdate(record: IndexedFileRecord): Promise<{ needsUpdate: boolean; reason: string }> {
+async function needsFileUpdate(
+  record: IndexedFileRecord
+): Promise<{ needsUpdate: boolean; reason: string }> {
   // URL总是需要更新（可以优化为缓存机制）
   if (
     record.sourceType === 'url' ||
@@ -65,10 +64,7 @@ async function needsFileUpdate(record: IndexedFileRecord): Promise<{ needsUpdate
     }
 
     // 如果大小或修改时间变化，需要更新
-    if (
-      record.size !== stats.size ||
-      (record.updatedAt && record.updatedAt < stats.mtimeMs)
-    ) {
+    if (record.size !== stats.size || (record.updatedAt && record.updatedAt < stats.mtimeMs)) {
       fileHashCache.set(record.path, currentHash)
       return {
         needsUpdate: true,
@@ -101,7 +97,7 @@ async function needsFileUpdate(record: IndexedFileRecord): Promise<{ needsUpdate
  * 为文件记录增加智能特性（摘要、要点） - 优化性能
  */
 async function enrichFileRecordWithSmartFeatures(
-  record: IndexedFileRecord,
+  _record: IndexedFileRecord,
   docs: Document[]
 ): Promise<Partial<IndexedFileRecord>> {
   try {
@@ -355,17 +351,17 @@ async function optimizedRebuildVectorStore(
 
             const stats = await fs.stat(record.path)
             const docs = await loadAndSplitFileInWorker(record.path)
-            
+
             // 确保文档有正确的source和tags
             const enrichedDocs = docs.map((d) => {
-              d.metadata = { 
-                ...d.metadata, 
+              d.metadata = {
+                ...d.metadata,
                 tags: record.tags || [],
                 source: record.path
               }
               return d
             })
-            
+
             const fileHash = await calculateFileHash(record.path)
 
             return {
@@ -392,7 +388,7 @@ async function optimizedRebuildVectorStore(
     for (let j = 0; j < batchResults.length; j++) {
       const result = batchResults[j]
       const originalRecord = batch[j]
-      
+
       if (result.status === 'fulfilled' && result.value) {
         results.push(result.value.record)
         allDocs.push(...result.value.docs)
@@ -409,7 +405,9 @@ async function optimizedRebuildVectorStore(
   }
 
   // 记录重建统计
-  console.log(`[重建] 完成统计: 总文件${total}, 成功${successfulFiles}, 失败${failedFiles}, 文档总数${allDocs.length}`)
+  console.log(
+    `[重建] 完成统计: 总文件${total}, 成功${successfulFiles}, 失败${failedFiles}, 文档总数${allDocs.length}`
+  )
 
   // 高性能批量索引
   if (allDocs.length > 0) {
@@ -418,6 +416,7 @@ async function optimizedRebuildVectorStore(
     for (let i = 0; i < allDocs.length; i += DOC_BATCH_SIZE) {
       const docBatch = allDocs.slice(i, i + DOC_BATCH_SIZE)
       const progressStart = 30 + (i / allDocs.length) * 70
+      const appendMode = i !== 0
 
       await addDocumentsToStore(
         docBatch,
@@ -435,7 +434,7 @@ async function optimizedRebuildVectorStore(
           }
         },
         progressStart,
-        false
+        appendMode
       )
     }
   } else if (onProgress) {
@@ -448,6 +447,15 @@ async function optimizedRebuildVectorStore(
   }
 
   // 清理缓存
+  try {
+    const docCount = await getDocCount()
+    if (docCount === 0 && allDocs.length > 0) {
+      console.warn(`[重建] 向量库文档数为 0，但解析得到文档数为 ${allDocs.length}`)
+    }
+  } catch (e) {
+    console.warn('[重建] 获取向量库文档数失败', e)
+  }
+
   clearFileHashCache()
 
   return results
@@ -657,7 +665,9 @@ export async function reindexSingleFile(path: string): Promise<KnowledgeBaseSnap
         updatedAt: Date.now(),
         sourceType: 'url',
         siteName: result.meta?.siteName || target.siteName,
-        fileHash: result.content ? createHash('md5').update(result.content).digest('hex') : undefined
+        fileHash: result.content
+          ? createHash('md5').update(result.content).digest('hex')
+          : undefined
       }
     } else {
       await fs.access(path)

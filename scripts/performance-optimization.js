@@ -21,7 +21,7 @@ const cacheDirs = [
   '.vite-cache'
 ]
 
-cacheDirs.forEach(dir => {
+cacheDirs.forEach((dir) => {
   const fullPath = path.resolve(dir)
   if (fs.existsSync(fullPath)) {
     fs.rmSync(fullPath, { recursive: true, force: true })
@@ -60,10 +60,10 @@ const report = {
 try {
   const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
   const deps = Object.keys(packageJson.dependencies || {})
-  
+
   report.dependencies.count = deps.length
   report.dependencies.list = deps.slice(0, 10) // 只显示前10个
-  
+
   console.log(`   ✓ 依赖数量: ${deps.length}`)
 } catch (e) {
   console.log('   ⚠️  无法分析依赖:', e.message)
@@ -73,7 +73,7 @@ try {
 try {
   const viteConfig = fs.readFileSync('electron.vite.config.ts', 'utf8')
   const hasOptimization = viteConfig.includes('minify') || viteConfig.includes('manualChunks')
-  
+
   report.buildConfig.optimized = hasOptimization
   console.log(`   ✓ 构建优化: ${hasOptimization ? '已配置' : '未配置'}`)
 } catch (e) {
@@ -96,4 +96,3 @@ console.log('\n下一步建议:')
 console.log('   1. 运行: pnpm run build:fast 测试构建速度')
 console.log('   2. 查看: performance-report.json 了解项目状态')
 console.log('   3. 监控: 运行时内存使用情况')
-

@@ -14,21 +14,21 @@ const cleanTargets = [
   // 构建产物
   'dist',
   'out',
-  
+
   // 缓存目录
   'node_modules/.vite',
   'node_modules/.cache',
   '.electron-builder-cache',
   '.vite-cache',
-  
+
   // 临时文件
   'coverage',
   '.nyc_output',
-  
+
   // 分析报告
   'performance-report.json',
   'bundle-analysis.json',
-  
+
   // TypeScript 构建缓存
   'tsconfig.web.tsbuildinfo',
   'tsconfig.node.tsbuildinfo'
@@ -36,15 +36,15 @@ const cleanTargets = [
 
 // 需要保留的文件模式
 const keepPatterns = [
-  'node_modules',  // 保留依赖
-  '.git',          // 保留 Git
-  'src',           // 保留源码
-  'resources',     // 保留资源
-  'build',         // 保留构建资源
-  'scripts',       // 保留脚本
-  'wiki',          // 保留文档
-  'README.md',     // 保留文档
-  'package.json',  // 保留配置
+  'node_modules', // 保留依赖
+  '.git', // 保留 Git
+  'src', // 保留源码
+  'resources', // 保留资源
+  'build', // 保留构建资源
+  'scripts', // 保留脚本
+  'wiki', // 保留文档
+  'README.md', // 保留文档
+  'package.json', // 保留配置
   'pnpm-lock.yaml',
   'tsconfig.json',
   'electron-builder.yml',
@@ -54,9 +54,9 @@ const keepPatterns = [
 let cleanedCount = 0
 let skippedCount = 0
 
-cleanTargets.forEach(target => {
+cleanTargets.forEach((target) => {
   const fullPath = path.resolve(target)
-  
+
   if (fs.existsSync(fullPath)) {
     try {
       if (fs.statSync(fullPath).isDirectory()) {
@@ -84,7 +84,7 @@ const walkDir = (dir) => {
     const items = fs.readdirSync(dir, { withFileTypes: true })
     for (const item of items) {
       const fullPath = path.join(dir, item.name)
-      
+
       if (item.isDirectory()) {
         if (!keepPatterns.includes(item.name) && !item.name.startsWith('.')) {
           walkDir(fullPath)
@@ -103,7 +103,7 @@ const walkDir = (dir) => {
 
 walkDir(__dirname)
 
-tempFiles.forEach(file => {
+tempFiles.forEach((file) => {
   try {
     fs.unlinkSync(file)
     console.log(`✅ 已删除系统文件: ${path.relative(__dirname, file)}`)
@@ -132,4 +132,3 @@ console.log('   2. 运行: pnpm run build:fast (重新构建)')
 console.log('   3. 检查: dist/ 目录大小')
 
 console.log('\n✅ 清理完成！')
-

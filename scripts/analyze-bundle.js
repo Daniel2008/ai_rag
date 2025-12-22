@@ -18,7 +18,7 @@ const ANALYSIS_CONFIG = {
     total: 50 * 1024 // 50MB
   },
   // 需要特别关注的包
- 重点关注: [
+  重点关注: [
     '@lancedb/lancedb',
     '@huggingface/transformers',
     'onnxruntime-node',
@@ -39,26 +39,26 @@ if (!fs.existsSync(distPath)) {
 // 分析函数
 function analyzeDirectory(dir, results = { files: [], totalSize: 0 }) {
   const items = fs.readdirSync(dir, { withFileTypes: true })
-  
+
   for (const item of items) {
     const fullPath = path.join(dir, item.name)
-    
+
     if (item.isDirectory()) {
       analyzeDirectory(fullPath, results)
     } else {
       const stats = fs.statSync(fullPath)
       const sizeKB = Math.round(stats.size / 1024)
-      
+
       results.files.push({
         path: path.relative(distPath, fullPath),
         sizeKB,
         sizeMB: (sizeKB / 1024).toFixed(2)
       })
-      
+
       results.totalSize += stats.size
     }
   }
-  
+
   return results
 }
 
@@ -96,18 +96,19 @@ try {
     ...packageJson.dependencies,
     ...packageJson.devDependencies
   }
-  
+
   // 找出大型依赖
-  const largeDeps = Object.entries(allDeps)
-    .filter(([name]) => ANALYSIS_CONFIG.重点关注.includes(name))
-  
+  const largeDeps = Object.entries(allDeps).filter(([name]) =>
+    ANALYSIS_CONFIG.重点关注.includes(name)
+  )
+
   if (largeDeps.length > 0) {
     console.log('   关键依赖:')
     largeDeps.forEach(([name, version]) => {
       console.log(`   • ${name}: ${version}`)
     })
   }
-  
+
   // 检查是否有优化空间
   const totalDeps = Object.keys(allDeps).length
   console.log(`\n   总依赖数: ${totalDeps}`)
@@ -131,7 +132,7 @@ if (analysis.totalSize > ANALYSIS_CONFIG.warnings.total) {
 }
 
 // 检查是否有超大 chunk
-const largeChunks = analysis.files.filter(f => f.sizeKB > ANALYSIS_CONFIG.warnings.chunk)
+const largeChunks = analysis.files.filter((f) => f.sizeKB > ANALYSIS_CONFIG.warnings.chunk)
 if (largeChunks.length > 0) {
   suggestions.push(
     `发现 ${largeChunks.length} 个超大 chunk (>200KB):`,
@@ -141,8 +142,8 @@ if (largeChunks.length > 0) {
 }
 
 // 检查是否有未优化的文件
-const unoptimizedFiles = analysis.files.filter(f => 
-  f.path.endsWith('.js') && !f.path.includes('.min.')
+const unoptimizedFiles = analysis.files.filter(
+  (f) => f.path.endsWith('.js') && !f.path.includes('.min.')
 )
 if (unoptimizedFiles.length > 0) {
   suggestions.push(
@@ -155,7 +156,7 @@ if (unoptimizedFiles.length > 0) {
 if (suggestions.length === 0) {
   console.log('   ✅ 构建产物状态良好！')
 } else {
-  suggestions.forEach(s => console.log(`   ${s}`))
+  suggestions.forEach((s) => console.log(`   ${s}`))
 }
 
 // 保存详细报告
@@ -164,7 +165,7 @@ const report = {
   summary: {
     totalFiles: analysis.files.length,
     totalSizeMB: totalMB,
-    largeFilesCount: analysis.files.filter(f => f.sizeKB > 500).length
+    largeFilesCount: analysis.files.filter((f) => f.sizeKB > 500).length
   },
   files: analysis.files,
   suggestions
@@ -182,4 +183,3 @@ console.log('   • 监控启动时间和内存使用')
 console.log('   • 定期清理构建缓存: pnpm run clean (如果添加了此命令)')
 
 console.log('\n✅ 分析完成！')
-

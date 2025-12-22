@@ -2,27 +2,13 @@
  * 文档生成相关类型定义
  */
 
-/** 文档类型 */
-export type DocumentType = 'word' | 'ppt'
-
-/** 文档主题风格 */
-export type DocumentTheme = 'professional' | 'modern' | 'simple' | 'creative'
-
-/** 文档生成请求 */
-export interface DocumentGenerateRequest {
-  /** 文档类型 */
-  type: DocumentType
-  /** 主题/标题 */
-  title: string
-  /** 详细描述/要求 */
-  description?: string
-  /** 使用的知识库文档路径 */
-  sources?: string[]
-  /** 主题风格 */
-  theme?: DocumentTheme
-  /** 目标章节/页数（可选） */
-  targetSections?: number
-}
+export type {
+  DocumentType,
+  DocumentTheme,
+  DocumentGenerateRequest,
+  DocumentProgress,
+  DocumentGenerateResult
+} from '../../types/chat'
 
 /** 文档大纲章节 */
 export interface OutlineSection {
@@ -63,28 +49,6 @@ export interface SectionContent {
     headers: string[]
     rows: string[][]
   }[]
-}
-
-/** 文档生成进度 */
-export interface DocumentProgress {
-  /** 当前阶段 */
-  stage: 'outline' | 'content' | 'generating' | 'complete' | 'error'
-  /** 进度百分比 (0-100) */
-  percent: number
-  /** 进度消息 */
-  message: string
-  /** 错误信息 */
-  error?: string
-}
-
-/** 文档生成结果 */
-export interface DocumentGenerateResult {
-  /** 是否成功 */
-  success: boolean
-  /** 生成的文件路径 */
-  filePath?: string
-  /** 错误信息 */
-  error?: string
 }
 
 /** Word 段落样式 */

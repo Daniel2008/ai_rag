@@ -17,11 +17,11 @@
 
 ### 系统要求
 
-| 要求 | 版本 |
-|------|------|
-| Node.js | >= 18.0.0 |
-| pnpm | >= 8.0.0 |
-| Git | 最新版 |
+| 要求     | 版本                               |
+| -------- | ---------------------------------- |
+| Node.js  | >= 18.0.0                          |
+| pnpm     | >= 8.0.0                           |
+| Git      | 最新版                             |
 | 操作系统 | Windows 10+ / macOS 10.15+ / Linux |
 
 ### 安装步骤
@@ -82,9 +82,7 @@ pnpm run dev
     "source.fixAll.eslint": "explicit"
   },
   "typescript.preferences.importModuleSpecifier": "relative",
-  "tailwindCSS.experimental.classRegex": [
-    ["clsx\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"]
-  ]
+  "tailwindCSS.experimental.classRegex": [["clsx\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"]]
 }
 ```
 
@@ -189,18 +187,18 @@ renderer/src/
 
 ### 常用命令
 
-| 命令 | 说明 |
-|------|------|
-| `pnpm run dev` | 启动开发模式 |
-| `pnpm run build` | 生产构建（含类型检查） |
-| `pnpm run build:fast` | 快速构建（跳过类型检查） |
-| `pnpm run build:win` | 构建 Windows 安装包 |
-| `pnpm run build:mac` | 构建 macOS 安装包 |
-| `pnpm run build:linux` | 构建 Linux 安装包 |
-| `pnpm run typecheck` | 类型检查 |
-| `pnpm run lint` | ESLint 检查 |
-| `pnpm run format` | Prettier 格式化 |
-| `pnpm run test` | 运行测试 |
+| 命令                   | 说明                     |
+| ---------------------- | ------------------------ |
+| `pnpm run dev`         | 启动开发模式             |
+| `pnpm run build`       | 生产构建（含类型检查）   |
+| `pnpm run build:fast`  | 快速构建（跳过类型检查） |
+| `pnpm run build:win`   | 构建 Windows 安装包      |
+| `pnpm run build:mac`   | 构建 macOS 安装包        |
+| `pnpm run build:linux` | 构建 Linux 安装包        |
+| `pnpm run typecheck`   | 类型检查                 |
+| `pnpm run lint`        | ESLint 检查              |
+| `pnpm run format`      | Prettier 格式化          |
+| `pnpm run test`        | 运行测试                 |
 
 ### 开发模式
 
@@ -209,6 +207,7 @@ pnpm run dev
 ```
 
 开发模式特性：
+
 - 热重载：前端代码修改自动刷新
 - DevTools：F12 打开开发者工具
 - 源码映射：方便调试
@@ -295,11 +294,7 @@ interface NewFeatureProps {
 }
 
 export const NewFeature: FC<NewFeatureProps> = (props) => {
-  return (
-    <div>
-      {/* 组件内容 */}
-    </div>
-  )
+  return <div>{/* 组件内容 */}</div>
 }
 ```
 
@@ -353,6 +348,7 @@ trailingComma: none
 项目使用 `@electron-toolkit/eslint-config-ts` 和 `@electron-toolkit/eslint-config-prettier`。
 
 主要规则：
+
 - 单引号
 - 无分号
 - 2空格缩进
@@ -371,6 +367,7 @@ trailingComma: none
 ```
 
 类型：
+
 - `feat`: 新功能
 - `fix`: 修复 Bug
 - `docs`: 文档更新
@@ -381,6 +378,7 @@ trailingComma: none
 - `chore`: 构建/工具
 
 示例：
+
 ```
 feat(rag): 添加多查询扩展支持
 
@@ -456,6 +454,7 @@ console.log('数据库路径:', dbPath)
 使用 DevTools Network 面板查看 API 请求。
 
 对于 Ollama 本地模型：
+
 ```bash
 # 检查 Ollama 服务状态
 curl http://localhost:11434/api/version
@@ -470,6 +469,7 @@ curl http://localhost:11434/api/version
 **原因**: 原生模块编译需要构建工具
 
 **解决**:
+
 ```bash
 # Windows
 npm install -g windows-build-tools
@@ -486,6 +486,7 @@ sudo apt install build-essential
 **原因**: 可能是数据库文件损坏
 
 **解决**:
+
 ```bash
 # 删除数据库目录（会丢失所有向量数据）
 # Windows: %APPDATA%/zhihui-rag/lancedb
@@ -497,6 +498,7 @@ sudo apt install build-essential
 **原因**: 网络问题
 
 **解决**:
+
 1. 检查网络连接
 2. 使用代理
 3. 手动下载模型到缓存目录
@@ -520,6 +522,7 @@ asarUnpack:
 **原因**: 可能是向量模型或大文件未释放
 
 **解决**:
+
 1. 减少同时打开的文件数
 2. 重启应用释放内存
 3. 检查是否有内存泄漏

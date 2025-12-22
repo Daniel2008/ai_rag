@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { KnowledgeBaseSnapshot } from '../types/files'
-import type { ChatSource, AppSettings, ProcessFileResult, ChatMessage } from '../types/chat'
+import type {
+  AppSettings,
+  ChatMessage,
+  ChatSource,
+  DocumentGenerateRequest,
+  DocumentGenerateResult,
+  DocumentProgress,
+  EmbeddingProgress,
+  ProcessFileResult
+} from '../types/chat'
 
 // 重新导出共享类型，保持向后兼容
 export type {
@@ -141,18 +150,7 @@ const api = {
     ipcRenderer.removeAllListeners('rag:process-progress')
   },
   // 嵌入模型进度监听
-  onEmbeddingProgress: (
-    callback: (progress: {
-      status: 'downloading' | 'loading' | 'ready' | 'completed' | 'processing' | 'error'
-      progress?: number
-      percent?: number
-      file?: string
-      fileName?: string
-      message?: string
-      stage?: string
-      taskType?: string
-    }) => void
-  ): void => {
+  onEmbeddingProgress: (callback: (progress: EmbeddingProgress) => void): void => {
     ipcRenderer.removeAllListeners('embedding:progress')
     ipcRenderer.on('embedding:progress', (_, progress) => callback(progress))
   },
@@ -161,26 +159,15 @@ const api = {
   },
   // Settings API
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
-  saveSettings: (settings: Partial<AppSettings>): Promise<{ success: boolean }> =>
+  saveSettings: (
+    settings: Partial<AppSettings>
+  ): Promise<{ success: boolean; embeddingChanged?: boolean; reindexingStarted?: boolean }> =>
     ipcRenderer.invoke('settings:save', settings),
 
   // Document Generation API
-  generateDocument: (request: {
-    type: 'word' | 'ppt'
-    title: string
-    description?: string
-    sources?: string[]
-    theme?: 'professional' | 'modern' | 'simple' | 'creative'
-  }): Promise<{ success: boolean; filePath?: string; error?: string }> =>
+  generateDocument: (request: DocumentGenerateRequest): Promise<DocumentGenerateResult> =>
     ipcRenderer.invoke('document:generate', request),
-  onDocumentProgress: (
-    callback: (progress: {
-      stage: 'outline' | 'content' | 'generating' | 'complete' | 'error'
-      percent: number
-      message: string
-      error?: string
-    }) => void
-  ): void => {
+  onDocumentProgress: (callback: (progress: DocumentProgress) => void): void => {
     ipcRenderer.removeAllListeners('document:progress')
     ipcRenderer.on('document:progress', (_, progress) => callback(progress))
   },
@@ -203,8 +190,8 @@ const api = {
     ipcRenderer.invoke('db:saveMessage', conversationKey, message),
   updateMessage: (messageKey: string, updates: Partial<ChatMessage>): Promise<void> =>
     ipcRenderer.invoke('db:updateMessage', messageKey, updates),
-  generateTitle: (conversationKey: string, question: string, answer: string): Promise<string> =>
-    ipcRenderer.invoke('rag:generateTitle', conversationKey, question, answer),
+  generateTitle: (conversationKey: string, question: string): Promise<string> =>
+    ipcRenderer.invoke('rag:generateTitle', conversationKey, question),
   getMetricsRecent: (
     count?: number
   ): Promise<

@@ -70,7 +70,7 @@ export async function buildRagContext(
     // 判断是否应该使用混合搜索
     // 混合搜索适用于：全库检索 或 有跨语言需求 或 多查询需求
     const shouldUseHybrid = useHybrid && isGlobalSearch
-    
+
     logDebug('Search strategy decision', 'Chat', {
       useHybrid,
       isGlobalSearch,
@@ -82,24 +82,24 @@ export async function buildRagContext(
     if (shouldUseHybrid) {
       const { HybridSearcher } = await import('../hybridSearch')
       const searcher = new HybridSearcher({ topK: searchLimit })
-      
+
       logDebug('Executing hybrid search', 'Chat', {
         question: question.slice(0, 60),
         isGlobalSearch,
         searchLimit,
         useMultiQuery: settings.rag?.useMultiQuery ?? false
       })
-      
+
       const ctx = await searcher.search(question, {
         sources: options.sources,
         tags: options.tags,
         limit: searchLimit,
         useMultiQuery: settings.rag?.useMultiQuery ?? false
       })
-      
+
       const hybrid = ctx.hybridResults ?? []
       retrievedPairs = hybrid.map((r) => ({ doc: r.doc, score: r.finalScore }))
-      
+
       logDebug('Hybrid search results', 'Chat', {
         retrievedCount: retrievedPairs.length,
         hasResults: retrievedPairs.length > 0

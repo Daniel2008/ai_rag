@@ -348,16 +348,19 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
   }, [mergedSources, activeKey])
 
   // 抽屉内的来源切换
-  const switchSource = useCallback((direction: 'prev' | 'next') => {
-    const currentIndex = mergedSources.findIndex(s => s.id === activeKey)
-    if (currentIndex === -1) return
-    
-    if (direction === 'prev' && currentIndex > 0) {
-      setActive(mergedSources[currentIndex - 1].id)
-    } else if (direction === 'next' && currentIndex < mergedSources.length - 1) {
-      setActive(mergedSources[currentIndex + 1].id)
-    }
-  }, [mergedSources, activeKey])
+  const switchSource = useCallback(
+    (direction: 'prev' | 'next') => {
+      const currentIndex = mergedSources.findIndex((s) => s.id === activeKey)
+      if (currentIndex === -1) return
+
+      if (direction === 'prev' && currentIndex > 0) {
+        setActive(mergedSources[currentIndex - 1].id)
+      } else if (direction === 'next' && currentIndex < mergedSources.length - 1) {
+        setActive(mergedSources[currentIndex + 1].id)
+      }
+    },
+    [mergedSources, activeKey]
+  )
 
   return (
     <div className="sources-detail mt-2">
@@ -372,9 +375,11 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
           items={items}
           activeKey={activeKey}
           popoverOverlayWidth={popoverOverlayWidth}
-          onClick={(item: any) => {
-            // 兼容不同的事件参数格式
-            const nextKey = String(item?.key ?? item?.id ?? (typeof item === 'string' ? item : '') ?? '')
+          onClick={(item: unknown) => {
+            const itemObj =
+              item && typeof item === 'object' ? (item as Record<string, unknown>) : undefined
+            const nextKey =
+              typeof item === 'string' ? item : String(itemObj?.key ?? itemObj?.id ?? '')
             if (nextKey) {
               // 先更新active状态，再打开抽屉
               setActive(nextKey)
@@ -393,7 +398,7 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
             // 确保有选中的来源
             if (mergedSources.length > 0) {
               // 如果当前active为空或无效，选择第一个
-              const current = mergedSources.find(s => s.id === active)
+              const current = mergedSources.find((s) => s.id === active)
               if (!current && mergedSources[0]) {
                 setActive(mergedSources[0].id)
               }
@@ -413,19 +418,21 @@ const SourcesDisplay = memo(({ sources }: { sources: ChatSource[] }): ReactEleme
             {mergedSources.length > 1 && (
               <div className="flex items-center gap-2">
                 <span style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-                  {mergedSources.findIndex(s => s.id === activeKey) + 1}/{mergedSources.length}
+                  {mergedSources.findIndex((s) => s.id === activeKey) + 1}/{mergedSources.length}
                 </span>
                 <Button
                   size="small"
                   type="text"
-                  disabled={mergedSources.findIndex(s => s.id === activeKey) === 0}
+                  disabled={mergedSources.findIndex((s) => s.id === activeKey) === 0}
                   onClick={() => switchSource('prev')}
                   icon={<ArrowLeftOutlined />}
                 />
                 <Button
                   size="small"
                   type="text"
-                  disabled={mergedSources.findIndex(s => s.id === activeKey) === mergedSources.length - 1}
+                  disabled={
+                    mergedSources.findIndex((s) => s.id === activeKey) === mergedSources.length - 1
+                  }
                   onClick={() => switchSource('next')}
                   icon={<ArrowRightOutlined />}
                 />

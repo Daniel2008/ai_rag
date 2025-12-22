@@ -42,6 +42,7 @@ if (app.isPackaged) {
 }
 import icon from '../../resources/icon.png?asset'
 import type { ChatMessage } from '../types/chat'
+import { TaskType } from './rag/progressTypes'
 import {
   getAllConversations,
   createConversation,
@@ -61,6 +62,14 @@ import {
 } from './rag/store/index'
 import { chatWithRag } from './rag/chat'
 import { logger, logDebug } from './utils/logger'
+import {
+  createBatchProgress,
+  createDocumentParseComplete,
+  createDocumentParseProgress,
+  sendRagProcessProgress,
+  sendRagProcessProgressMessage,
+  toFrontendProgressFormat
+} from './utils/progressHelper'
 import { runLangGraphChat } from './rag/langgraphChat'
 import { getSettings, saveSettings, AppSettings } from './settings'
 import {
@@ -171,506 +180,557 @@ app.whenReady().then(async () => {
     }
   })
 
-  // Window Control IPC
-  ipcMain.on('window:minimize', () => {
-    mainWindow?.minimize()
-  })
-
-  ipcMain.on('window:maximize', () => {
-    if (mainWindow?.isMaximized()) {
-      mainWindow.unmaximize()
-    } else {
-      mainWindow?.maximize()
-    }
-  })
-
-  ipcMain.on('window:close', () => {
-    mainWindow?.close()
-  })
-
-  ipcMain.handle('window:isMaximized', () => {
-    return mainWindow?.isMaximized() ?? false
-  })
-
-  // Database IPC
-  ipcMain.handle('db:getConversations', () => getAllConversations())
-
-  ipcMain.handle('db:createConversation', (_, key: string, label: string) =>
-    createConversation(key, label)
-  )
-
-  ipcMain.handle('db:updateConversation', (_, key: string, label: string) => {
-    updateConversationTimestamp(key, label)
-  })
-
-  ipcMain.handle('db:deleteConversation', (_, key: string) => deleteConversation(key))
-
-  ipcMain.handle('db:getMessages', (_, key: string, limit?: number, offset?: number) =>
-    getMessages(key, limit, offset)
-  )
-
-  ipcMain.handle('db:saveMessage', (_, conversationKey: string, message: ChatMessage) =>
-    saveMessage(conversationKey, message)
-  )
-
-  ipcMain.handle('db:updateMessage', (_, messageKey: string, updates: Partial<ChatMessage>) =>
-    updateMessage(messageKey, updates)
-  )
-
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
-
-  ipcMain.handle('dialog:openFile', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      properties: ['openFile', 'multiSelections'],
-      filters: [
-        {
-          name: 'Documents',
-          extensions: ['pdf', 'docx', 'pptx', 'xlsx', 'odt', 'odp', 'ods', 'txt', 'md']
-        }
-      ]
+  const registerWindowControlIpc = (): void => {
+    // Window Control IPC
+    ipcMain.on('window:minimize', () => {
+      mainWindow?.minimize()
     })
-    if (canceled) return []
-    return filePaths
-  })
 
-  ipcMain.handle('rag:processFile', async (event, filePaths: string | string[]) => {
-    const paths = Array.isArray(filePaths) ? filePaths : [filePaths]
-    const results: { success: boolean; count?: number; preview?: string; error?: string }[] = []
-    const {
-      toFrontendProgressFormat,
-      createBatchProgress,
-      createDocumentParseProgress,
-      createDocumentParseComplete
-    } = await import('./utils/progressHelper')
+    ipcMain.on('window:maximize', () => {
+      if (mainWindow?.isMaximized()) {
+        mainWindow.unmaximize()
+      } else {
+        mainWindow?.maximize()
+      }
+    })
 
-    // 总进度计算
-    let processedCount = 0
-    const totalFiles = paths.length
-    const isBatch = totalFiles > 1
+    ipcMain.on('window:close', () => {
+      mainWindow?.close()
+    })
 
-    for (const filePath of paths) {
-      console.log('Processing file:', filePath)
-      const fileName = basename(filePath)
+    ipcMain.handle('window:isMaximized', () => {
+      return mainWindow?.isMaximized() ?? false
+    })
+  }
 
-      // 计算基础进度（每个文件占据 100/totalFiles 的进度空间）
-      const fileProgressRange = 100 / totalFiles
-      const basePercent = Math.round(processedCount * fileProgressRange)
+  const registerDatabaseIpc = (): void => {
+    // Database IPC
+    ipcMain.handle('db:getConversations', () => getAllConversations())
 
-      try {
-        // 发送进度：开始解析文档
-        if (isBatch) {
-          const batchProgress = createBatchProgress(
-            (await import('./rag/progressTypes')).TaskType.DOCUMENT_PARSE,
-            processedCount + 1,
-            totalFiles,
-            fileName,
-            5
-          )
-          event.sender.send('rag:process-progress', toFrontendProgressFormat(batchProgress))
-        } else {
-          const parseProgress = createDocumentParseProgress(5, fileName)
-          event.sender.send('rag:process-progress', toFrontendProgressFormat(parseProgress))
-        }
+    ipcMain.handle('db:createConversation', (_, key: string, label: string) =>
+      createConversation(key, label)
+    )
 
-        // 1. 先清理旧索引（如果存在），避免重复
-        try {
-          await removeSourceFromStore(filePath)
-        } catch (e) {
-          console.warn('Failed to clean up old index for', filePath, e)
-        }
+    ipcMain.handle('db:updateConversation', (_, key: string, label: string) => {
+      updateConversationTimestamp(key, label)
+    })
 
-        const docs = await loadAndSplitFileInWorker(filePath)
-        console.log(`Processed ${docs.length} chunks`)
+    ipcMain.handle('db:deleteConversation', (_, key: string) => deleteConversation(key))
 
-        // 发送进度：文档解析完成
-        const parseCompleteProgress = createDocumentParseComplete(docs.length, fileName)
-        if (isBatch) {
-          event.sender.send('rag:process-progress', {
-            ...toFrontendProgressFormat(parseCompleteProgress),
-            stage: `${fileName} 解析完成 (${processedCount + 1}/${totalFiles})`,
-            percent: basePercent + Math.round(fileProgressRange * 0.15) // 15% 用于解析
-          })
-        } else {
-          event.sender.send('rag:process-progress', toFrontendProgressFormat(parseCompleteProgress))
-        }
+    ipcMain.handle('db:getMessages', (_, key: string, limit?: number, offset?: number) =>
+      getMessages(key, limit, offset)
+    )
 
-        const preview = docs[0]?.pageContent.slice(0, 160)
+    ipcMain.handle('db:saveMessage', (_, conversationKey: string, message: ChatMessage) =>
+      saveMessage(conversationKey, message)
+    )
 
-        // 生成摘要和要点
-        let summary: string | undefined
-        let keyPoints: string[] | undefined
-        try {
-          const generator = new SmartPromptGenerator()
-          const content = docs
-            .slice(0, 10)
-            .map((d) => d.pageContent)
-            .join('\n\n')
-          if (content.length > 100) {
-            const result = await generator.generateSummary(content, { length: 'short' })
-            summary = result.summary
-            keyPoints = result.keyPoints
+    ipcMain.handle('db:updateMessage', (_, messageKey: string, updates: Partial<ChatMessage>) =>
+      updateMessage(messageKey, updates)
+    )
+  }
+
+  const registerDialogIpc = (): void => {
+    ipcMain.handle('dialog:openFile', async () => {
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        properties: ['openFile', 'multiSelections'],
+        filters: [
+          {
+            name: 'Documents',
+            extensions: ['pdf', 'docx', 'pptx', 'xlsx', 'odt', 'odp', 'ods', 'txt', 'md']
           }
-        } catch (e) {
-          console.warn('Failed to generate smart features for', fileName, e)
-        }
+        ]
+      })
+      if (canceled) return []
+      return filePaths
+    })
+  }
 
-        const record = {
-          path: filePath,
-          name: fileName,
-          chunkCount: docs.length,
-          preview,
-          summary,
-          keyPoints,
-          updatedAt: Date.now()
-        }
+  const registerMiscIpc = (): void => {
+    ipcMain.on('ping', () => console.log('pong'))
+  }
+
+  registerWindowControlIpc()
+  registerDatabaseIpc()
+  registerMiscIpc()
+  registerDialogIpc()
+
+  const registerRagIngestionIpc = (): void => {
+    ipcMain.handle('rag:processFile', async (event, filePaths: string | string[]) => {
+      const paths = Array.isArray(filePaths) ? filePaths : [filePaths]
+      const results: { success: boolean; count?: number; preview?: string; error?: string }[] = []
+
+      // 总进度计算
+      let processedCount = 0
+      const totalFiles = paths.length
+      const isBatch = totalFiles > 1
+
+      for (const filePath of paths) {
+        console.log('Processing file:', filePath)
+        const fileName = basename(filePath)
+
+        // 计算基础进度（每个文件占据 100/totalFiles 的进度空间）
+        const fileProgressRange = 100 / totalFiles
+        const basePercent = Math.round(processedCount * fileProgressRange)
 
         try {
-          // 添加进度回调，传递向量化进度
-          await addDocumentsToStore(docs, (progress) => {
-            // 计算当前文件内的进度（向量化占据剩余 80% 的进度）
-            const vectorProgress = (progress.progress || 0) / 100
-            const currentPercent =
-              basePercent + Math.round(fileProgressRange * (0.15 + vectorProgress * 0.8))
+          // 发送进度：开始解析文档
+          if (isBatch) {
+            const batchProgress = createBatchProgress(
+              TaskType.DOCUMENT_PARSE,
+              processedCount + 1,
+              totalFiles,
+              fileName,
+              5
+            )
+            sendRagProcessProgress(event.sender, toFrontendProgressFormat(batchProgress))
+          } else {
+            const parseProgress = createDocumentParseProgress(5, fileName)
+            sendRagProcessProgress(event.sender, toFrontendProgressFormat(parseProgress))
+          }
 
-            let stageMessage = progress.message
-            if (isBatch) {
-              stageMessage = `(${processedCount + 1}/${totalFiles}) ${progress.message}`
+          // 1. 先清理旧索引（如果存在），避免重复
+          try {
+            await removeSourceFromStore(filePath)
+          } catch (e) {
+            console.warn('Failed to clean up old index for', filePath, e)
+          }
+
+          const docs = await loadAndSplitFileInWorker(filePath)
+          console.log(`Processed ${docs.length} chunks`)
+
+          // 发送进度：文档解析完成
+          const parseCompleteProgress = createDocumentParseComplete(docs.length, fileName)
+          if (isBatch) {
+            sendRagProcessProgress(event.sender, {
+              ...toFrontendProgressFormat(parseCompleteProgress),
+              stage: `${fileName} 解析完成 (${processedCount + 1}/${totalFiles})`,
+              percent: basePercent + Math.round(fileProgressRange * 0.15) // 15% 用于解析
+            })
+          } else {
+            sendRagProcessProgress(event.sender, toFrontendProgressFormat(parseCompleteProgress))
+          }
+
+          const preview = docs[0]?.pageContent.slice(0, 160)
+
+          // 生成摘要和要点
+          let summary: string | undefined
+          let keyPoints: string[] | undefined
+          try {
+            const generator = new SmartPromptGenerator()
+            const content = docs
+              .slice(0, 10)
+              .map((d) => d.pageContent)
+              .join('\n\n')
+            if (content.length > 100) {
+              const result = await generator.generateSummary(content, { length: 'short' })
+              summary = result.summary
+              keyPoints = result.keyPoints
             }
+          } catch (e) {
+            console.warn('Failed to generate smart features for', fileName, e)
+          }
 
-            event.sender.send('rag:process-progress', {
-              stage: stageMessage,
-              percent: Math.min(currentPercent, 99),
-              taskType: progress.taskType
-            })
-          })
-          upsertIndexedFileRecord(record)
-          results.push({ success: true, count: docs.length, preview })
-        } catch (error) {
-          if (isSchemaMismatchError(error)) {
-            console.warn('Detected LanceDB schema mismatch, rebuilding knowledge base...')
-            event.sender.send('rag:process-progress', {
-              stage: '检测到索引变更，正在重建...',
-              percent: 80,
-              taskType: 'index_rebuild'
-            })
-            upsertIndexedFileRecord(record)
-            await refreshKnowledgeBase((progress) => {
-              event.sender.send('rag:process-progress', {
-                stage: progress.message,
-                percent: progress.progress || 0,
+          const record = {
+            path: filePath,
+            name: fileName,
+            chunkCount: docs.length,
+            preview,
+            summary,
+            keyPoints,
+            updatedAt: Date.now()
+          }
+
+          try {
+            // 添加进度回调，传递向量化进度
+            await addDocumentsToStore(docs, (progress) => {
+              // 计算当前文件内的进度（向量化占据剩余 80% 的进度）
+              const vectorProgress = (progress.progress || 0) / 100
+              const currentPercent =
+                basePercent + Math.round(fileProgressRange * (0.15 + vectorProgress * 0.8))
+
+              let stageMessage = progress.message
+              if (isBatch) {
+                stageMessage = `(${processedCount + 1}/${totalFiles}) ${progress.message}`
+              }
+
+              sendRagProcessProgress(event.sender, {
+                stage: stageMessage,
+                percent: Math.min(currentPercent, 99),
                 taskType: progress.taskType
               })
             })
+            upsertIndexedFileRecord(record)
             results.push({ success: true, count: docs.length, preview })
-          } else {
-            throw error
+          } catch (error) {
+            if (isSchemaMismatchError(error)) {
+              console.warn('Detected LanceDB schema mismatch, rebuilding knowledge base...')
+              sendRagProcessProgress(event.sender, {
+                stage: '检测到索引变更，正在重建...',
+                percent: 80,
+                taskType: 'index_rebuild'
+              })
+              upsertIndexedFileRecord(record)
+              await refreshKnowledgeBase((progress) => {
+                sendRagProcessProgressMessage(event.sender, progress)
+              })
+              results.push({ success: true, count: docs.length, preview })
+            } else {
+              throw error
+            }
           }
+        } catch (error) {
+          console.error('Error processing file:', filePath, error)
+          // 发送错误进度，包含文件名
+          sendRagProcessProgress(event.sender, {
+            stage: `处理失败: ${fileName}`,
+            percent: basePercent,
+            error: String(error),
+            taskType: 'error'
+          })
+          results.push({ success: false, error: String(error) })
         }
-      } catch (error) {
-        console.error('Error processing file:', filePath, error)
-        // 发送错误进度，包含文件名
-        event.sender.send('rag:process-progress', {
-          stage: `处理失败: ${fileName}`,
-          percent: basePercent,
-          error: String(error),
-          taskType: 'error'
-        })
-        results.push({ success: false, error: String(error) })
-      }
 
-      processedCount++
-    }
-
-    // 发送进度：完成
-    const completeMessage =
-      totalFiles === 1 ? '文档已添加到知识库' : `${totalFiles} 个文档已添加到知识库`
-    event.sender.send('rag:process-progress', {
-      stage: completeMessage,
-      percent: 100,
-      taskType: 'completed'
-    })
-
-    // 如果只有一个文件，返回单个结果（保持兼容），否则返回最后一个成功的结果或合并结果？
-    // 前端目前只消费单个结果。为了兼容，我们返回最后一个结果，或者修改前端。
-    // 鉴于前端改动较大，我们这里返回最后一个结果，但其实前端主要看 processProgress。
-    // 更好的方式是返回汇总结果。
-    const successCount = results.filter((r) => r.success).length
-    return {
-      success: successCount > 0,
-      count: results.reduce((acc, r) => acc + (r.count || 0), 0),
-      preview: results.find((r) => r.preview)?.preview,
-      error: successCount === 0 ? results[0]?.error : undefined
-    }
-  })
-
-  // 从 URL 加载内容到知识库
-  ipcMain.handle('rag:processUrl', async (event, url: string) => {
-    try {
-      console.log('Processing URL:', url)
-
-      // 提取域名作为简短标识
-      let urlLabel = url
-      try {
-        const urlObj = new URL(url)
-        urlLabel = urlObj.hostname.replace('www.', '')
-      } catch {
-        // 保持原 URL
-      }
-
-      // 发送进度：开始抓取
-      event.sender.send('rag:process-progress', {
-        stage: `正在抓取: ${urlLabel}`,
-        percent: 5,
-        taskType: 'document_parse'
-      })
-
-      const result = await loadFromUrl(url, {
-        onProgress: (stage, percent) => {
-          event.sender.send('rag:process-progress', {
-            stage,
-            percent,
-            taskType: 'document_parse'
-          })
-        }
-      })
-
-      if (!result.success || !result.documents) {
-        throw new Error(result.error || '无法获取网页内容')
-      }
-
-      console.log(`Fetched ${result.documents.length} chunks from URL`)
-
-      // 发送进度：内容获取完成
-      const title = result.title || urlLabel
-      event.sender.send('rag:process-progress', {
-        stage: `"${title}" 抓取完成`,
-        percent: 25,
-        taskType: 'document_parse'
-      })
-
-      const preview = result.content?.slice(0, 160) || ''
-      const record = {
-        path: url,
-        name: result.title || url,
-        chunkCount: result.documents.length,
-        preview,
-        updatedAt: Date.now(),
-        sourceType: 'url' as const,
-        url: url,
-        siteName: result.meta?.siteName
-      }
-
-      try {
-        // 添加进度回调，优化进度显示
-        await addDocumentsToStore(result.documents, (progress) => {
-          // 向量化进度从 25% 到 95%
-          const vectorPercent = 25 + Math.round((progress.progress || 0) * 0.7)
-          event.sender.send('rag:process-progress', {
-            stage: progress.message,
-            percent: vectorPercent,
-            taskType: progress.taskType
-          })
-        })
-        upsertIndexedFileRecord(record)
-      } catch (error) {
-        if (isSchemaMismatchError(error)) {
-          console.warn('Detected LanceDB schema mismatch, rebuilding knowledge base...')
-          event.sender.send('rag:process-progress', {
-            stage: '检测到索引变更，正在重建...',
-            percent: 80,
-            taskType: 'index_rebuild'
-          })
-          upsertIndexedFileRecord(record)
-          await refreshKnowledgeBase((progress) => {
-            event.sender.send('rag:process-progress', {
-              stage: progress.message,
-              percent: progress.progress || 0,
-              taskType: progress.taskType
-            })
-          })
-        } else {
-          throw error
-        }
+        processedCount++
       }
 
       // 发送进度：完成
-      event.sender.send('rag:process-progress', {
-        stage: `"${title}" 已添加到知识库`,
+      const completeMessage =
+        totalFiles === 1 ? '文档已添加到知识库' : `${totalFiles} 个文档已添加到知识库`
+      sendRagProcessProgress(event.sender, {
+        stage: completeMessage,
         percent: 100,
         taskType: 'completed'
       })
 
+      // 如果只有一个文件，返回单个结果（保持兼容），否则返回最后一个成功的结果或合并结果？
+      // 前端目前只消费单个结果。为了兼容，我们返回最后一个结果，或者修改前端。
+      // 鉴于前端改动较大，我们这里返回最后一个结果，但其实前端主要看 processProgress。
+      // 更好的方式是返回汇总结果。
+      const successCount = results.filter((r) => r.success).length
       return {
-        success: true,
-        count: result.documents.length,
-        title: result.title,
-        preview
+        success: successCount > 0,
+        count: results.reduce((acc, r) => acc + (r.count || 0), 0),
+        preview: results.find((r) => r.preview)?.preview,
+        error: successCount === 0 ? results[0]?.error : undefined
       }
-    } catch (error) {
-      console.error('Error processing URL:', error)
-      // 优化错误消息
-      let errorMessage = String(error)
-      if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('getaddrinfo')) {
-        errorMessage = '无法访问该网址，请检查网络连接'
-      } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
-        errorMessage = '网站拒绝访问'
-      } else if (errorMessage.includes('404')) {
-        errorMessage = '页面不存在'
-      }
+    })
 
-      event.sender.send('rag:process-progress', {
-        stage: errorMessage,
-        percent: 0,
-        error: errorMessage,
-        taskType: 'error'
-      })
-      return { success: false, error: errorMessage }
-    }
-  })
+    // 从 URL 加载内容到知识库
+    ipcMain.handle('rag:processUrl', async (event, url: string) => {
+      try {
+        console.log('Processing URL:', url)
 
-  ipcMain.handle('kb:list', () => {
-    return getKnowledgeBaseSnapshot()
-  })
+        // 提取域名作为简短标识
+        let urlLabel = url
+        try {
+          const urlObj = new URL(url)
+          urlLabel = urlObj.hostname.replace('www.', '')
+        } catch {
+          // 保持原 URL
+        }
 
-  // 重建全部索引（全量）
-  ipcMain.handle('kb:rebuild', async (event) => {
-    try {
-      event.sender.send('rag:process-progress', {
-        stage: '准备重建知识库索引...',
-        percent: 2,
-        taskType: 'index_rebuild'
-      })
-
-      const snapshot = await refreshKnowledgeBase((progress) => {
-        // 转换 ProgressMessage 到前端期望的格式
-        event.sender.send('rag:process-progress', {
-          stage: progress.message,
-          percent: progress.progress || 0,
-          error: progress.status === 'error' ? progress.message : undefined,
-          taskType: progress.taskType
-        })
-      }, false) // 显式传 false 表示全量重建
-
-      event.sender.send('rag:process-progress', {
-        stage: '知识库索引重建完成',
-        percent: 100,
-        taskType: 'completed'
-      })
-
-      return snapshot
-    } catch (error) {
-      console.error('Failed to rebuild knowledge base:', error)
-      event.sender.send('rag:process-progress', {
-        stage: '知识库重建失败',
-        percent: 0,
-        error: getErrorMessage(error),
-        taskType: 'error'
-      })
-      throw error
-    }
-  })
-
-  // 增量更新知识库
-  ipcMain.handle('kb:refresh', async (event) => {
-    try {
-      event.sender.send('rag:process-progress', {
-        stage: '正在扫描文件变更...',
-        percent: 2,
-        taskType: 'index_rebuild'
-      })
-
-      const snapshot = await refreshKnowledgeBase((progress) => {
-        event.sender.send('rag:process-progress', {
-          stage: progress.message,
-          percent: progress.progress || 0,
-          error: progress.status === 'error' ? progress.message : undefined,
-          taskType: progress.taskType
-        })
-      }, true) // 显式传 true 表示增量更新
-
-      event.sender.send('rag:process-progress', {
-        stage: '知识库更新完成',
-        percent: 100,
-        taskType: 'completed'
-      })
-
-      return snapshot
-    } catch (error) {
-      console.error('Failed to refresh knowledge base:', error)
-      event.sender.send('rag:process-progress', {
-        stage: '知识库更新失败',
-        percent: 0,
-        error: getErrorMessage(error),
-        taskType: 'error'
-      })
-      throw error
-    }
-  })
-
-  ipcMain.handle('files:list', () => {
-    return getKnowledgeBaseSnapshot()
-  })
-
-  ipcMain.handle('files:remove', async (_, filePath: string) => {
-    return removeIndexedFileRecord(filePath)
-  })
-
-  ipcMain.handle('files:reindex', async (event, filePath: string) => {
-    const isUrl = filePath.startsWith('http://') || filePath.startsWith('https://')
-    const displayName = isUrl
-      ? (() => {
-          try {
-            return new URL(filePath).hostname
-          } catch {
-            return filePath
-          }
-        })()
-      : basename(filePath)
-
-    try {
-      event.sender.send('rag:process-progress', {
-        stage: `准备重新索引: ${displayName}`,
-        percent: 5,
-        taskType: 'index_rebuild'
-      })
-
-      await removeSourceFromStore(filePath)
-
-      if (isUrl) {
-        event.sender.send('rag:process-progress', {
-          stage: `正在重新抓取: ${displayName}`,
-          percent: 15,
+        // 发送进度：开始抓取
+        sendRagProcessProgress(event.sender, {
+          stage: `正在抓取: ${urlLabel}`,
+          percent: 5,
           taskType: 'document_parse'
         })
 
-        const result = await loadFromUrl(filePath)
-        if (!(result.success && result.documents)) {
-          throw new Error(result.error || '内容获取失败')
+        const result = await loadFromUrl(url, {
+          onProgress: (stage, percent) => {
+            sendRagProcessProgress(event.sender, {
+              stage,
+              percent,
+              taskType: 'document_parse'
+            })
+          }
+        })
+
+        if (!result.success || !result.documents) {
+          throw new Error(result.error || '无法获取网页内容')
         }
 
-        event.sender.send('rag:process-progress', {
-          stage: `抓取完成，共 ${result.documents.length} 个片段`,
+        console.log(`Fetched ${result.documents.length} chunks from URL`)
+
+        // 发送进度：内容获取完成
+        const title = result.title || urlLabel
+        sendRagProcessProgress(event.sender, {
+          stage: `"${title}" 抓取完成`,
           percent: 25,
           taskType: 'document_parse'
         })
 
         const preview = result.content?.slice(0, 160) || ''
         const record = {
-          path: filePath,
-          name: result.title || filePath,
+          path: url,
+          name: result.title || url,
           chunkCount: result.documents.length,
           preview,
           updatedAt: Date.now(),
           sourceType: 'url' as const,
-          url: filePath,
+          url: url,
           siteName: result.meta?.siteName
         }
 
         try {
+          // 添加进度回调，优化进度显示
           await addDocumentsToStore(result.documents, (progress) => {
+            // 向量化进度从 25% 到 95%
+            const vectorPercent = 25 + Math.round((progress.progress || 0) * 0.7)
+            sendRagProcessProgress(event.sender, {
+              stage: progress.message,
+              percent: vectorPercent,
+              taskType: progress.taskType
+            })
+          })
+          upsertIndexedFileRecord(record)
+        } catch (error) {
+          if (isSchemaMismatchError(error)) {
+            console.warn('Detected LanceDB schema mismatch, rebuilding knowledge base...')
+            sendRagProcessProgress(event.sender, {
+              stage: '检测到索引变更，正在重建...',
+              percent: 80,
+              taskType: 'index_rebuild'
+            })
+            upsertIndexedFileRecord(record)
+            await refreshKnowledgeBase((progress) => {
+              sendRagProcessProgressMessage(event.sender, progress)
+            })
+          } else {
+            throw error
+          }
+        }
+
+        // 发送进度：完成
+        sendRagProcessProgress(event.sender, {
+          stage: `"${title}" 已添加到知识库`,
+          percent: 100,
+          taskType: 'completed'
+        })
+
+        return {
+          success: true,
+          count: result.documents.length,
+          title: result.title,
+          preview
+        }
+      } catch (error) {
+        console.error('Error processing URL:', error)
+        // 优化错误消息
+        let errorMessage = String(error)
+        if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('getaddrinfo')) {
+          errorMessage = '无法访问该网址，请检查网络连接'
+        } else if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+          errorMessage = '网站拒绝访问'
+        } else if (errorMessage.includes('404')) {
+          errorMessage = '页面不存在'
+        }
+
+        sendRagProcessProgress(event.sender, {
+          stage: errorMessage,
+          percent: 0,
+          error: errorMessage,
+          taskType: 'error'
+        })
+        return { success: false, error: errorMessage }
+      }
+    })
+  }
+
+  registerRagIngestionIpc()
+
+  const registerKnowledgeBaseIpc = (): void => {
+    ipcMain.handle('kb:list', () => {
+      return getKnowledgeBaseSnapshot()
+    })
+
+    // 重建全部索引（全量）
+    ipcMain.handle('kb:rebuild', async (event) => {
+      try {
+        sendRagProcessProgress(event.sender, {
+          stage: '准备重建知识库索引...',
+          percent: 2,
+          taskType: 'index_rebuild'
+        })
+
+        const snapshot = await refreshKnowledgeBase((progress) => {
+          sendRagProcessProgressMessage(event.sender, progress)
+        }, false) // 显式传 false 表示全量重建
+
+        sendRagProcessProgress(event.sender, {
+          stage: '知识库索引重建完成',
+          percent: 100,
+          taskType: 'completed'
+        })
+
+        return snapshot
+      } catch (error) {
+        console.error('Failed to rebuild knowledge base:', error)
+        sendRagProcessProgress(event.sender, {
+          stage: '知识库重建失败',
+          percent: 0,
+          error: getErrorMessage(error),
+          taskType: 'error'
+        })
+        throw error
+      }
+    })
+
+    // 增量更新知识库
+    ipcMain.handle('kb:refresh', async (event) => {
+      try {
+        sendRagProcessProgress(event.sender, {
+          stage: '正在扫描文件变更...',
+          percent: 2,
+          taskType: 'index_rebuild'
+        })
+
+        const snapshot = await refreshKnowledgeBase((progress) => {
+          sendRagProcessProgressMessage(event.sender, progress)
+        }, true) // 显式传 true 表示增量更新
+
+        sendRagProcessProgress(event.sender, {
+          stage: '知识库更新完成',
+          percent: 100,
+          taskType: 'completed'
+        })
+
+        return snapshot
+      } catch (error) {
+        console.error('Failed to refresh knowledge base:', error)
+        sendRagProcessProgress(event.sender, {
+          stage: '知识库更新失败',
+          percent: 0,
+          error: getErrorMessage(error),
+          taskType: 'error'
+        })
+        throw error
+      }
+    })
+
+    ipcMain.handle('files:list', () => {
+      return getKnowledgeBaseSnapshot()
+    })
+
+    ipcMain.handle('files:remove', async (_, filePath: string) => {
+      return removeIndexedFileRecord(filePath)
+    })
+
+    ipcMain.handle('files:reindex', async (event, filePath: string) => {
+      const isUrl = filePath.startsWith('http://') || filePath.startsWith('https://')
+      const displayName = isUrl
+        ? (() => {
+            try {
+              return new URL(filePath).hostname
+            } catch {
+              return filePath
+            }
+          })()
+        : basename(filePath)
+
+      try {
+        sendRagProcessProgress(event.sender, {
+          stage: `准备重新索引: ${displayName}`,
+          percent: 5,
+          taskType: 'index_rebuild'
+        })
+
+        await removeSourceFromStore(filePath)
+
+        if (isUrl) {
+          sendRagProcessProgress(event.sender, {
+            stage: `正在重新抓取: ${displayName}`,
+            percent: 15,
+            taskType: 'document_parse'
+          })
+
+          const result = await loadFromUrl(filePath)
+          if (!(result.success && result.documents)) {
+            throw new Error(result.error || '内容获取失败')
+          }
+
+          sendRagProcessProgress(event.sender, {
+            stage: `抓取完成，共 ${result.documents.length} 个片段`,
+            percent: 25,
+            taskType: 'document_parse'
+          })
+
+          const preview = result.content?.slice(0, 160) || ''
+          const record = {
+            path: filePath,
+            name: result.title || filePath,
+            chunkCount: result.documents.length,
+            preview,
+            updatedAt: Date.now(),
+            sourceType: 'url' as const,
+            url: filePath,
+            siteName: result.meta?.siteName
+          }
+
+          try {
+            await addDocumentsToStore(result.documents, (progress) => {
+              const percent = 25 + Math.round((progress.progress || 0) * 0.7)
+              sendRagProcessProgress(event.sender, {
+                stage: progress.message,
+                percent,
+                taskType: progress.taskType
+              })
+            })
+            upsertIndexedFileRecord(record)
+          } catch (error) {
+            if (isSchemaMismatchError(error)) {
+              sendRagProcessProgress(event.sender, {
+                stage: '检测到索引变更，正在重建...',
+                percent: 80,
+                taskType: 'index_rebuild'
+              })
+              upsertIndexedFileRecord(record)
+              await refreshKnowledgeBase((progress) => {
+                sendRagProcessProgressMessage(event.sender, progress)
+              })
+            } else {
+              throw error
+            }
+          }
+
+          sendRagProcessProgress(event.sender, {
+            stage: `${displayName} 重新索引完成`,
+            percent: 100,
+            taskType: 'completed'
+          })
+
+          return getKnowledgeBaseSnapshot()
+        }
+
+        // 文件处理
+        sendRagProcessProgress(event.sender, {
+          stage: `正在重新解析: ${displayName}`,
+          percent: 15,
+          taskType: 'document_parse'
+        })
+
+        const docs = await loadAndSplitFileInWorker(filePath)
+
+        sendRagProcessProgress(event.sender, {
+          stage: `解析完成，共 ${docs.length} 个片段`,
+          percent: 25,
+          taskType: 'document_parse'
+        })
+
+        const preview = docs[0]?.pageContent.slice(0, 160)
+        const record = {
+          path: filePath,
+          name: basename(filePath),
+          chunkCount: docs.length,
+          preview,
+          updatedAt: Date.now()
+        }
+
+        try {
+          await addDocumentsToStore(docs, (progress) => {
             const percent = 25 + Math.round((progress.progress || 0) * 0.7)
-            event.sender.send('rag:process-progress', {
+            sendRagProcessProgress(event.sender, {
               stage: progress.message,
               percent,
               taskType: progress.taskType
@@ -679,389 +739,334 @@ app.whenReady().then(async () => {
           upsertIndexedFileRecord(record)
         } catch (error) {
           if (isSchemaMismatchError(error)) {
-            event.sender.send('rag:process-progress', {
+            sendRagProcessProgress(event.sender, {
               stage: '检测到索引变更，正在重建...',
               percent: 80,
               taskType: 'index_rebuild'
             })
             upsertIndexedFileRecord(record)
             await refreshKnowledgeBase((progress) => {
-              event.sender.send('rag:process-progress', {
-                stage: progress.message,
-                percent: progress.progress || 0,
-                taskType: progress.taskType
-              })
+              sendRagProcessProgressMessage(event.sender, progress)
             })
           } else {
             throw error
           }
         }
 
-        event.sender.send('rag:process-progress', {
+        sendRagProcessProgress(event.sender, {
           stage: `${displayName} 重新索引完成`,
           percent: 100,
           taskType: 'completed'
         })
 
         return getKnowledgeBaseSnapshot()
-      }
-
-      // 文件处理
-      event.sender.send('rag:process-progress', {
-        stage: `正在重新解析: ${displayName}`,
-        percent: 15,
-        taskType: 'document_parse'
-      })
-
-      const docs = await loadAndSplitFileInWorker(filePath)
-
-      event.sender.send('rag:process-progress', {
-        stage: `解析完成，共 ${docs.length} 个片段`,
-        percent: 25,
-        taskType: 'document_parse'
-      })
-
-      const preview = docs[0]?.pageContent.slice(0, 160)
-      const record = {
-        path: filePath,
-        name: basename(filePath),
-        chunkCount: docs.length,
-        preview,
-        updatedAt: Date.now()
-      }
-
-      try {
-        await addDocumentsToStore(docs, (progress) => {
-          const percent = 25 + Math.round((progress.progress || 0) * 0.7)
-          event.sender.send('rag:process-progress', {
-            stage: progress.message,
-            percent,
-            taskType: progress.taskType
-          })
-        })
-        upsertIndexedFileRecord(record)
       } catch (error) {
-        if (isSchemaMismatchError(error)) {
-          event.sender.send('rag:process-progress', {
-            stage: '检测到索引变更，正在重建...',
-            percent: 80,
-            taskType: 'index_rebuild'
+        console.error('Error reindexing:', error)
+        sendRagProcessProgress(event.sender, {
+          stage: `重新索引失败: ${displayName}`,
+          percent: 0,
+          error: String(error),
+          taskType: 'error'
+        })
+        throw error
+      }
+    })
+  }
+
+  registerKnowledgeBaseIpc()
+
+  const registerCollectionsIpc = (): void => {
+    ipcMain.handle(
+      'collections:create',
+      (_, payload: { name: string; description?: string; files?: string[] }) => {
+        return createDocumentCollection(payload)
+      }
+    )
+
+    ipcMain.handle(
+      'collections:update',
+      (_, payload: { id: string; name?: string; description?: string; files?: string[] }) => {
+        const { id, ...updates } = payload
+        return updateDocumentCollection(id, updates)
+      }
+    )
+
+    ipcMain.handle('collections:delete', async (_, collectionId: string) => {
+      return await deleteDocumentCollection(collectionId)
+    })
+  }
+
+  registerCollectionsIpc()
+
+  const registerRagChatIpc = (): void => {
+    ipcMain.on('rag:chat', async (event, payload) => {
+      const normalized =
+        typeof payload === 'string'
+          ? { question: payload, sources: undefined, conversationKey: undefined, tags: undefined }
+          : {
+              question: payload?.question,
+              sources: payload?.sources,
+              conversationKey: payload?.conversationKey,
+              tags: payload?.tags
+            }
+
+      if (!normalized.question) {
+        event.reply('rag:chat-error', '问题内容不能为空')
+        return
+      }
+
+      const normalizePath = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
+
+      logDebug('rag:chat request received', 'IPC', {
+        questionPreview: normalized.question.slice(0, 80),
+        sourcesCount: normalized.sources?.length ?? 0,
+        tagsCount: normalized.tags?.length ?? 0
+      })
+
+      // 预处理 sources 和 tags
+      // 全库检索：sources 应为 undefined 或空数组
+      // 文档集/指定文件：sources 应为非空数组
+      const isGlobalSearch = !normalized.sources || normalized.sources.length === 0
+
+      logDebug('rag:chat preprocessing sources', 'IPC', {
+        originalSources: normalized.sources,
+        isGlobalSearch,
+        sourcesCount: normalized.sources?.length ?? 0
+      })
+
+      if (!isGlobalSearch && normalized.sources && normalized.sources.length > 0) {
+        const snapshot = getKnowledgeBaseSnapshot()
+        const readySet = new Set(
+          snapshot.files.filter((f) => f.status === 'ready').map((f) => normalizePath(f.path))
+        )
+
+        const filtered = normalized.sources.filter((s) => readySet.has(normalizePath(s)))
+
+        logDebug('rag:chat sources filtering result', 'IPC', {
+          original: normalized.sources.length,
+          filtered: filtered.length,
+          removed: normalized.sources.length - filtered.length
+        })
+
+        if (filtered.length === 0) {
+          logDebug('所有指定来源都不可用，回退到全库检索', 'IPC', {
+            originalSources: normalized.sources
           })
-          upsertIndexedFileRecord(record)
-          await refreshKnowledgeBase((progress) => {
-            event.sender.send('rag:process-progress', {
-              stage: progress.message,
-              percent: progress.progress || 0,
-              taskType: progress.taskType
-            })
-          })
+          normalized.sources = undefined
         } else {
-          throw error
+          normalized.sources = filtered
         }
       }
 
-      event.sender.send('rag:process-progress', {
-        stage: `${displayName} 重新索引完成`,
-        percent: 100,
-        taskType: 'completed'
+      logDebug('rag:chat normalized params', 'IPC', {
+        isGlobalSearch: !normalized.sources || normalized.sources.length === 0,
+        sourcesCount: normalized.sources?.length ?? 0,
+        tagsCount: normalized.tags?.length ?? 0
       })
 
-      return getKnowledgeBaseSnapshot()
-    } catch (error) {
-      console.error('Error reindexing:', error)
-      event.sender.send('rag:process-progress', {
-        stage: `重新索引失败: ${displayName}`,
-        percent: 0,
-        error: String(error),
-        taskType: 'error'
-      })
-      throw error
-    }
-  })
+      try {
+        console.log('Chat question:', normalized.question)
 
-  ipcMain.handle(
-    'collections:create',
-    (_, payload: { name: string; description?: string; files?: string[] }) => {
-      return createDocumentCollection(payload)
-    }
-  )
+        const result = await runLangGraphChat(
+          normalized.question,
+          normalized.sources,
+          normalized.conversationKey,
+          (chunk) => event.reply('rag:chat-token', chunk),
+          normalized.tags,
+          (sources) => event.reply('rag:chat-sources', sources),
+          (suggestions) => event.reply('rag:chat-suggestions', suggestions)
+        )
 
-  ipcMain.handle(
-    'collections:update',
-    (_, payload: { id: string; name?: string; description?: string; files?: string[] }) => {
-      const { id, ...updates } = payload
-      return updateDocumentCollection(id, updates)
-    }
-  )
+        if (result.error) {
+          event.reply('rag:chat-error', result.error)
+          return
+        }
 
-  ipcMain.handle('collections:delete', async (_, collectionId: string) => {
-    return await deleteDocumentCollection(collectionId)
-  })
+        // 注意：result.sources 已经在 retrieve 阶段通过 onSources 回调发送过了，这里不再重复发送
+        // event.reply('rag:chat-sources', result.sources || [])
 
-  ipcMain.on('rag:chat', async (event, payload) => {
-    const normalized =
-      typeof payload === 'string'
-        ? { question: payload, sources: undefined, conversationKey: undefined, tags: undefined }
-        : {
-            question: payload?.question,
-            sources: payload?.sources,
-            conversationKey: payload?.conversationKey,
-            tags: payload?.tags
-          }
-
-    if (!normalized.question) {
-      event.reply('rag:chat-error', '问题内容不能为空')
-      return
-    }
-
-    const normalizePath = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
-
-    logDebug('rag:chat request received', 'IPC', {
-      questionPreview: normalized.question.slice(0, 80),
-      sourcesCount: normalized.sources?.length ?? 0,
-      tagsCount: normalized.tags?.length ?? 0
-    })
-
-    // 预处理 sources 和 tags
-    // 全库检索：sources 应为 undefined 或空数组
-    // 文档集/指定文件：sources 应为非空数组
-    const isGlobalSearch = !normalized.sources || normalized.sources.length === 0
-    
-    logDebug('rag:chat preprocessing sources', 'IPC', {
-      originalSources: normalized.sources,
-      isGlobalSearch,
-      sourcesCount: normalized.sources?.length ?? 0
-    })
-
-    if (!isGlobalSearch && normalized.sources && normalized.sources.length > 0) {
-      const snapshot = getKnowledgeBaseSnapshot()
-      const readySet = new Set(
-        snapshot.files.filter((f) => f.status === 'ready').map((f) => normalizePath(f.path))
-      )
-
-      const filtered = normalized.sources.filter((s) => readySet.has(normalizePath(s)))
-
-      logDebug('rag:chat sources filtering result', 'IPC', {
-        original: normalized.sources.length,
-        filtered: filtered.length,
-        removed: normalized.sources.length - filtered.length
-      })
-
-      if (filtered.length === 0) {
-        logDebug('所有指定来源都不可用，回退到全库检索', 'IPC', {
-          originalSources: normalized.sources
-        })
-        normalized.sources = undefined
-      } else {
-        normalized.sources = filtered
+        // 注意：不要再次发送 result.answer，因为已经通过 onToken 回调流式发送过了
+        // 重复发送会导致前端重复渲染
+        event.reply('rag:chat-done')
+      } catch (error) {
+        const errorInfo = normalizeError(error)
+        console.error('Chat error:', errorInfo.message, errorInfo.details)
+        event.reply('rag:chat-error', errorInfo.userFriendly || errorInfo.message)
       }
-    }
-
-    logDebug('rag:chat normalized params', 'IPC', {
-      isGlobalSearch: !normalized.sources || normalized.sources.length === 0,
-      sourcesCount: normalized.sources?.length ?? 0,
-      tagsCount: normalized.tags?.length ?? 0
     })
 
-    try {
-      console.log('Chat question:', normalized.question)
+    ipcMain.handle('rag:generateTitle', async (_, conversationKey: string, question: string) => {
+      // 直接使用用户第一个问题作为会话标题（截取前20个字符）
+      const title = question.trim().slice(0, 20) + (question.length > 20 ? '...' : '')
+      updateConversationTimestamp(conversationKey, title)
+      return title
+    })
+
+    // LangGraph 版 RAG（一次性响应，不流式）
+    ipcMain.handle('rag:chat-graph', async (_, payload) => {
+      const normalized =
+        typeof payload === 'string'
+          ? { question: payload, sources: undefined, conversationKey: undefined, tags: undefined }
+          : {
+              question: payload?.question,
+              sources: payload?.sources,
+              conversationKey: payload?.conversationKey,
+              tags: payload?.tags
+            }
+
+      if (!normalized.question) {
+        return { success: false, error: '问题内容不能为空' }
+      }
 
       const result = await runLangGraphChat(
         normalized.question,
         normalized.sources,
         normalized.conversationKey,
-        (chunk) => event.reply('rag:chat-token', chunk),
-        normalized.tags,
-        (sources) => event.reply('rag:chat-sources', sources),
-        (suggestions) => event.reply('rag:chat-suggestions', suggestions)
+        undefined,
+        normalized.tags
       )
-
       if (result.error) {
-        event.reply('rag:chat-error', result.error)
-        return
+        return { success: false, error: result.error }
       }
 
-      // 注意：result.sources 已经在 retrieve 阶段通过 onSources 回调发送过了，这里不再重复发送
-      // event.reply('rag:chat-sources', result.sources || [])
+      return {
+        success: true,
+        answer: result.answer,
+        sources: result.sources,
+        suggestedQuestions: result.suggestedQuestions
+      }
+    })
+  }
 
-      // 注意：不要再次发送 result.answer，因为已经通过 onToken 回调流式发送过了
-      // 重复发送会导致前端重复渲染
-      event.reply('rag:chat-done')
-    } catch (error) {
-      const errorInfo = normalizeError(error)
-      console.error('Chat error:', errorInfo.message, errorInfo.details)
-      event.reply('rag:chat-error', errorInfo.userFriendly || errorInfo.message)
-    }
-  })
+  const registerDocumentIpc = (): void => {
+    ipcMain.handle('document:generate', async (_, request: DocumentGenerateRequest) => {
+      return generateDocument(request)
+    })
 
-  ipcMain.handle('rag:generateTitle', async (_, conversationKey: string, question: string) => {
-    // 直接使用用户第一个问题作为会话标题（截取前20个字符）
-    const title = question.trim().slice(0, 20) + (question.length > 20 ? '...' : '')
-    updateConversationTimestamp(conversationKey, title)
-    return title
-  })
+    setLLMChatFunction(async (question: string, sources?: string[]) => {
+      const result = await chatWithRag(question, { sources })
+      let content = ''
+      for await (const chunk of result.stream) {
+        content += chunk
+      }
+      return { content, sources: result.sources }
+    })
+  }
 
-  // LangGraph 版 RAG（一次性响应，不流式）
-  ipcMain.handle('rag:chat-graph', async (_, payload) => {
-    const normalized =
-      typeof payload === 'string'
-        ? { question: payload, sources: undefined, conversationKey: undefined, tags: undefined }
-        : {
-            question: payload?.question,
-            sources: payload?.sources,
-            conversationKey: payload?.conversationKey,
-            tags: payload?.tags
-          }
-
-    if (!normalized.question) {
-      return { success: false, error: '问题内容不能为空' }
-    }
-
-    const result = await runLangGraphChat(
-      normalized.question,
-      normalized.sources,
-      normalized.conversationKey,
-      undefined,
-      normalized.tags
-    )
-    if (result.error) {
-      return { success: false, error: result.error }
-    }
-
-    return {
-      success: true,
-      answer: result.answer,
-      sources: result.sources,
-      suggestedQuestions: result.suggestedQuestions
-    }
-  })
-
-  // Document Generation IPC
-  ipcMain.handle('document:generate', async (_, request: DocumentGenerateRequest) => {
-    return generateDocument(request)
-  })
-
-  // 设置 LLM 聊天函数供文档生成使用
-  setLLMChatFunction(async (question: string, sources?: string[]) => {
-    const result = await chatWithRag(question, { sources })
-    let content = ''
-    for await (const chunk of result.stream) {
-      content += chunk
-    }
-    return { content, sources: result.sources }
-  })
-
-  // Update Service IPC
-  ipcMain.handle('update:check', async () => {
-    setUpdateWindow(mainWindow)
-    await checkForUpdates(true)
-    return { success: true }
-  })
-
-  ipcMain.handle('update:download', async () => {
-    try {
-      await downloadUpdate()
+  const registerUpdateServiceIpc = (): void => {
+    ipcMain.handle('update:check', async () => {
+      setUpdateWindow(mainWindow)
+      await checkForUpdates(true)
       return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  })
+    })
 
-  ipcMain.handle('update:install', () => {
-    installUpdateAndQuit()
-    return { success: true }
-  })
+    ipcMain.handle('update:download', async () => {
+      try {
+        await downloadUpdate()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    })
 
-  ipcMain.handle('update:getStatus', () => {
-    return getUpdateStatus()
-  })
-
-  // 开发环境下的强制更新检查（调试用）
-  ipcMain.handle('update:forceCheckDev', async () => {
-    if (process.env.NODE_ENV === 'development') {
-      await forceCheckUpdate()
+    ipcMain.handle('update:install', () => {
+      installUpdateAndQuit()
       return { success: true }
-    }
-    return { success: false, message: '仅在开发环境可用' }
-  })
+    })
 
-  // Settings IPC
-  ipcMain.handle('settings:get', () => {
-    return getSettings()
-  })
+    ipcMain.handle('update:getStatus', () => {
+      return getUpdateStatus()
+    })
 
-  ipcMain.handle('settings:save', async (event, settings: Partial<AppSettings>) => {
-    const oldSettings = getSettings()
-    saveSettings(settings)
-    const newSettings = getSettings()
+    ipcMain.handle('update:forceCheckDev', async () => {
+      if (process.env.NODE_ENV === 'development') {
+        await forceCheckUpdate()
+        return { success: true }
+      }
+      return { success: false, message: '仅在开发环境可用' }
+    })
+  }
 
-    const rerankEnabledBefore = oldSettings.rag?.useRerank ?? false
-    const rerankEnabledAfter = newSettings.rag?.useRerank ?? false
-    if (!rerankEnabledBefore && rerankEnabledAfter) {
-      import('./rag/localReranker')
-        .then(({ initLocalReranker }) => initLocalReranker())
-        .catch((error) => {
-          console.error('Failed to init local reranker after enabling setting:', error)
-        })
-    }
+  const registerSettingsIpc = (): void => {
+    ipcMain.handle('settings:get', () => {
+      return getSettings()
+    })
 
-    // 如果嵌入模型设置变化，清除缓存并通知用户
-    if (settings.embeddingProvider !== undefined || settings.embeddingModel !== undefined) {
-      const embeddingChanged =
-        oldSettings.embeddingProvider !== newSettings.embeddingProvider ||
-        oldSettings.embeddingModel !== newSettings.embeddingModel
+    ipcMain.handle('settings:save', async (event, settings: Partial<AppSettings>) => {
+      const oldSettings = getSettings()
+      saveSettings(settings)
+      const newSettings = getSettings()
 
-      if (embeddingChanged) {
-        await clearEmbeddingsCache()
-        console.log('Embedding settings changed, cache cleared')
-
-        // 自动触发重建索引
-        event.sender.send('rag:process-progress', {
-          stage: '嵌入模型已更改，正在重建索引...',
-          percent: 2,
-          taskType: 'index_rebuild'
-        })
-
-        refreshKnowledgeBase((progress) => {
-          event.sender.send('rag:process-progress', {
-            stage: progress.message,
-            percent: progress.progress || 0,
-            taskType: progress.taskType
-          })
-        })
-          .then(() => {
-            event.sender.send('rag:process-progress', {
-              stage: '索引重建完成',
-              percent: 100,
-              taskType: 'completed'
-            })
-          })
+      const rerankEnabledBefore = oldSettings.rag?.useRerank ?? false
+      const rerankEnabledAfter = newSettings.rag?.useRerank ?? false
+      if (!rerankEnabledBefore && rerankEnabledAfter) {
+        import('./rag/localReranker')
+          .then(({ initLocalReranker }) => initLocalReranker())
           .catch((error) => {
-            console.error('Auto reindex failed:', error)
-            event.sender.send('rag:process-progress', {
-              stage: '索引重建失败',
-              percent: 0,
-              error: error instanceof Error ? error.message : String(error),
-              taskType: 'error'
-            })
+            console.error('Failed to init local reranker after enabling setting:', error)
+          })
+      }
+
+      if (settings.embeddingProvider !== undefined || settings.embeddingModel !== undefined) {
+        const embeddingChanged =
+          oldSettings.embeddingProvider !== newSettings.embeddingProvider ||
+          oldSettings.embeddingModel !== newSettings.embeddingModel
+
+        if (embeddingChanged) {
+          await clearEmbeddingsCache()
+          console.log('Embedding settings changed, cache cleared')
+
+          sendRagProcessProgress(event.sender, {
+            stage: '嵌入模型已更改，正在重建索引...',
+            percent: 2,
+            taskType: 'index_rebuild'
           })
 
-        return { success: true, embeddingChanged: true, reindexingStarted: true }
+          refreshKnowledgeBase((progress) => {
+            sendRagProcessProgressMessage(event.sender, progress)
+          })
+            .then(() => {
+              sendRagProcessProgress(event.sender, {
+                stage: '索引重建完成',
+                percent: 100,
+                taskType: 'completed'
+              })
+            })
+            .catch((error) => {
+              console.error('Auto reindex failed:', error)
+              sendRagProcessProgress(event.sender, {
+                stage: '索引重建失败',
+                percent: 0,
+                error: error instanceof Error ? error.message : String(error),
+                taskType: 'error'
+              })
+            })
+
+          return { success: true, embeddingChanged: true, reindexingStarted: true }
+        }
       }
-    }
 
-    return { success: true }
-  })
+      return { success: true }
+    })
+  }
 
-  ipcMain.handle('metrics:getRecent', (_, count?: number) => {
-    const entries = logger.getRecentEntries(typeof count === 'number' ? count : 100)
-    return entries.map((e) => ({
-      message: e.message,
-      timestamp: e.timestamp,
-      context: e.context,
-      metadata: e.metadata
-    }))
-  })
+  const registerMetricsIpc = (): void => {
+    ipcMain.handle('metrics:getRecent', (_, count?: number) => {
+      const entries = logger.getRecentEntries(typeof count === 'number' ? count : 100)
+      return entries.map((e) => ({
+        message: e.message,
+        timestamp: e.timestamp,
+        context: e.context,
+        metadata: e.metadata
+      }))
+    })
+  }
+
+  registerRagChatIpc()
+  registerDocumentIpc()
+  registerUpdateServiceIpc()
+  registerSettingsIpc()
+  registerMetricsIpc()
 
   mainWindow = createWindow()
 

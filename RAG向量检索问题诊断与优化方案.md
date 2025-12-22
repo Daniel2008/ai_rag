@@ -5,11 +5,13 @@
 ### 1. 性能瓶颈问题
 
 #### 问题点：
+
 - **全量数据加载**：`searchByFileName` 函数加载2000条记录，`BM25搜索`加载5000条记录
 - **重复转换**：多次在 `searchSimilarDocumentsWithScores` 和 `hybridSearch` 之间转换数据格式
 - **嵌入查询未优化**：每次查询都重新计算向量，未充分利用缓存
 
 #### 影响：
+
 - 内存占用高，响应延迟
 - 并发查询时性能下降
 - 大文档集合检索缓慢
@@ -17,11 +19,13 @@
 ### 2. 检索质量问题
 
 #### 问题点：
+
 - **相关性过滤过严**：`filterByRelevanceThreshold` 会过滤掉语义相关但词汇不同的结果
 - **跨语言匹配缺陷**：关键词匹配在跨语言查询时失效
 - **融合算法权重**：RRF参数可能需要调整
 
 #### 影响：
+
 - 漏检有用文档
 - 英文查询中文文档时召回率低
 - 多源检索结果融合不理想
@@ -29,6 +33,7 @@
 ### 3. 配置问题
 
 #### 问题点：
+
 - `RERANK.ENABLED: false` 默认关闭重排序
 - `MMR_ENABLED: true` 但可能计算成本高
 - `SEARCH.MAX_K: 30` 限制可能过大
@@ -36,6 +41,7 @@
 ### 4. 缓存策略问题
 
 #### 问题点：
+
 - 查询向量缓存大小256可能不足
 - 文档计数缓存60秒可能太短
 - 混合搜索时缓存未有效利用
@@ -45,6 +51,7 @@
 ### 1. 性能优化
 
 #### 1.1 限制全量扫描范围
+
 ```typescript
 // 优化 searchByFileName
 export async function searchByFileName(
@@ -58,7 +65,7 @@ export async function searchByFileName(
   // 限制初始扫描数量，改为流式处理
   const scanLimit = Math.min(500, limit * 50) // 限制扫描范围
   const allRows = (await tableRef.query().limit(scanLimit).toArray()) as LanceDBSearchResult[]
-  
+
   // ... 其余逻辑不变
 }
 
@@ -72,6 +79,7 @@ if (allDocsForBM25.length > maxBM25Rows) {
 ```
 
 #### 1.2 减少数据转换
+
 ```typescript
 // 优化搜索流程，减少中间转换
 export async function searchSimilarDocumentsWithScores(
@@ -81,22 +89,27 @@ export async function searchSimilarDocumentsWithScores(
   getQueryVector: (query: string, embeddings: Embeddings) => Promise<number[]>
 ): Promise<ScoredDocument[]> {
   // ... 前面的逻辑保持不变
-  
+
   // 合并阶段直接返回，避免多次转换
   if (resultLists.length > 1) {
-    const rrfResults = reciprocalRankFusion(resultLists, getResultKey, RAG_CONFIG.CROSS_LANGUAGE.RRF_K)
+    const rrfResults = reciprocalRankFusion(
+      resultLists,
+      getResultKey,
+      RAG_CONFIG.CROSS_LANGUAGE.RRF_K
+    )
     // 直接转换为最终格式
     return rrfResults.slice(0, k).map(({ item, score }) => ({
       doc: convertToScoredDocuments([item])[0].doc,
       score: distanceToScore(item._distance ?? 1 / (score + 1))
     }))
   }
-  
+
   // ... 其余逻辑
 }
 ```
 
 #### 1.3 优化向量缓存
+
 ```typescript
 // 扩大缓存大小
 export const queryEmbeddingCache = new LRUCache<string, number[]>(
@@ -106,14 +119,14 @@ export const queryEmbeddingCache = new LRUCache<string, number[]>(
 
 // 添加相似查询缓存
 export async function getCachedOrComputeVector(
-  query: string, 
+  query: string,
   embeddings: Embeddings,
   similarityThreshold: number = 0.95
 ): Promise<number[]> {
   // 先查精确匹配
   const cached = queryEmbeddingCache.get(query)
   if (cached) return cached
-  
+
   // 查相似查询
   const allKeys = queryEmbeddingCache.keys()
   for (const key of allKeys) {
@@ -122,7 +135,7 @@ export async function getCachedOrComputeVector(
       return queryEmbeddingCache.get(key)!
     }
   }
-  
+
   // 计算新的向量
   const vec = await embeddings.embedQuery(query)
   queryEmbeddingCache.set(query, vec)
@@ -133,6 +146,7 @@ export async function getCachedOrComputeVector(
 ### 2. 检索质量优化
 
 #### 2.1 修正相关性过滤
+
 ```typescript
 export function filterByRelevanceThreshold<T extends { score: number; doc: Document }>(
   results: T[],
@@ -147,7 +161,7 @@ export function filterByRelevanceThreshold<T extends { score: number; doc: Docum
   // 如果过滤后结果太少，按以下策略处理：
   if (scoreFiltered.length < 3) {
     const lowThreshold = Math.min(threshold, RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD_LOW)
-    
+
     // 策略1: 使用更低阈值
     const relaxedResults = results.filter((r) => r.score >= lowThreshold)
     if (relaxedResults.length >= 2) {
@@ -164,7 +178,7 @@ export function filterByRelevanceThreshold<T extends { score: number; doc: Docum
       const topResults = results
         .sort((a, b) => b.score - a.score)
         .slice(0, Math.max(5, Math.ceil(results.length * 0.3)))
-      
+
       logDebug('Using top results without threshold', 'Search', {
         threshold,
         resultCount: topResults.length,
@@ -179,6 +193,7 @@ export function filterByRelevanceThreshold<T extends { score: number; doc: Docum
 ```
 
 #### 2.2 改进跨语言检索
+
 ```typescript
 // 在 performCrossLanguageSearch 中添加查询变体生成
 export async function performCrossLanguageSearch(
@@ -202,18 +217,18 @@ export async function performCrossLanguageSearch(
   try {
     // 1. 生成跨语言查询变体
     const { queries, original, translated } = await generateCrossLanguageQueries(query)
-    
+
     // 2. 为每个变体生成向量
     const searchPromises = queries.map(async (q, index) => {
       const vector = await getQueryVector(q, embeddings)
       const results = await performNativeSearch(tableRef, vector, fetchK, whereClause)
-      
+
       logDebug(`Query variant ${index + 1}`, 'Search', {
         query: q.slice(0, 30),
         lang: detectLanguage(q),
         results: results.length
       })
-      
+
       return results
     })
 
@@ -226,7 +241,11 @@ export async function performCrossLanguageSearch(
       return `${source}::${content}`
     }
 
-    const rrfResults = reciprocalRankFusion(allResultLists, getResultKey, RAG_CONFIG.CROSS_LANGUAGE.RRF_K)
+    const rrfResults = reciprocalRankFusion(
+      allResultLists,
+      getResultKey,
+      RAG_CONFIG.CROSS_LANGUAGE.RRF_K
+    )
 
     // 4. 转换为最终格式
     const finalResults = rrfResults.slice(0, fetchK).map(({ item, score }) => ({
@@ -249,7 +268,12 @@ export async function performCrossLanguageSearch(
 
     return finalResults
   } catch (error) {
-    logWarn('Cross-language search failed, using original query', 'Search', undefined, error as Error)
+    logWarn(
+      'Cross-language search failed, using original query',
+      'Search',
+      undefined,
+      error as Error
+    )
     const queryVector = await getQueryVector(query, embeddings)
     return await performNativeSearch(tableRef, queryVector, fetchK, whereClause)
   }
@@ -257,34 +281,35 @@ export async function performCrossLanguageSearch(
 ```
 
 #### 2.3 调整融合参数
+
 ```typescript
 // 配置优化
 export const RAG_CONFIG = {
   // ... 其他配置
-  
+
   SEARCH: {
     // ... 其他搜索配置
     RELEVANCE_THRESHOLD: 0.15, // 从0.25降低，减少误过滤
     RELEVANCE_THRESHOLD_LOW: 0.05, // 更宽松的阈值
-    
+
     // RRF参数调整
     RRF_K: 60, // 标准值，可根据需要调整为40-80
-    
+
     // MMR参数
     MMR_LAMBDA: 0.7, // 从0.75调整，增加多样性
     MMR_ENABLED: true,
-    
+
     // 混合搜索权重
     HYBRID_SEARCH_ENABLED: true,
     BM25_WEIGHT: 0.5, // 调整为更平衡
     VECTOR_WEIGHT: 0.5
   },
-  
+
   RERANK: {
     ...RAG_CONFIG.RERANK,
     ENABLED: true // 默认启用重排序（如果有本地模型）
   },
-  
+
   EMBEDDING: {
     ...RAG_CONFIG.EMBEDDING,
     QUERY_CACHE_SIZE: 512, // 从256扩大
@@ -297,6 +322,7 @@ export const RAG_CONFIG = {
 ### 3. 混合搜索优化
 
 #### 3.1 优化混合搜索流程
+
 ```typescript
 export class HybridSearcher {
   async search(query: string, options: HybridSearchOptions = {}): Promise<SearchContext> {
@@ -365,7 +391,7 @@ export class HybridSearcher {
       let finalResults = fused.slice(0, limit * 2).map((f) => {
         const sources: string[] = []
         const currentKey = getDocKey(f.item)
-        
+
         // 标记来源
         if (vectorLists.some((list) => list.some((d) => getDocKey(d) === currentKey))) {
           sources.push('vector')
@@ -430,7 +456,7 @@ export class HybridSearcher {
       // 限制扫描范围
       const scanLimit = Math.min(2000, limit * 200)
       const queryBuilder = table.query().limit(scanLimit)
-      
+
       let lancedbDocs = (await queryBuilder.toArray()) as LanceDBSearchResult[]
 
       // 应用过滤
@@ -471,7 +497,7 @@ export class HybridSearcher {
     options: HybridSearchOptions
   ): Promise<SearchContext> {
     logWarn('Using vector search fallback', 'HybridSearch', { query })
-    
+
     const vectorResults = await searchSimilarDocumentsWithScores(query, {
       k: options.limit || this.config.topK || 10,
       sources: options.sources,
@@ -494,6 +520,7 @@ export class HybridSearcher {
 ### 4. 配置优化
 
 #### 4.1 优化RAG配置
+
 ```typescript
 // src/main/utils/config.ts - 优化版本
 export const RAG_CONFIG = {
@@ -623,21 +650,25 @@ export const RAG_CONFIG = {
 ## 三、实施建议
 
 ### 1. 立即实施
+
 - [x] 修复相关性过滤 - 已完成
 - [ ] 扩大向量缓存 - 需要配置
 - [ ] 调整阈值参数 - 需要配置
 
 ### 2. 短期优化 (1-2天)
+
 - [ ] 限制全量扫描范围
 - [ ] 优化混合搜索流程
 - [ ] 启用重排序
 
 ### 3. 中期改进 (1周)
+
 - [ ] 实现查询预热
 - [ ] 添加缓存统计监控
 - [ ] 优化LanceDB索引参数
 
 ### 4. 期期优化 (2-4周)
+
 - [ ] 实现分布式检索
 - [ ] 添加语义缓存层
 - [ ] 实现智能查询路由
@@ -645,18 +676,21 @@ export const RAG_CONFIG = {
 ## 四、验证指标
 
 ### 性能指标
+
 - 平均查询时间 < 500ms
 - P99查询时间 < 2000ms
 - 内存占用减少30%
 - 并发支持 > 10 QPS
 
 ### 质量指标
+
 - 召回率 > 85%
 - 精确率 > 60%
 - 跨语言召回率 > 70%
 - 用户满意度 > 4.0/5.0
 
 ### 稳定性指标
+
 - 错误率 < 1%
 - 无内存泄漏
 - 无重复请求
@@ -665,6 +699,7 @@ export const RAG_CONFIG = {
 ## 五、监控与调优
 
 ### 关键监控点
+
 1. 执行时间分布
 2. 缓存命中率
 3. 结果数量分布
@@ -672,6 +707,7 @@ export const RAG_CONFIG = {
 5. 降级触发频率
 
 ### 调优策略
+
 1. 根据监控数据动态调整阈值
 2. 基于用户反馈优化权重
 3. 根据文档量调整扫描范围

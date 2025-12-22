@@ -118,6 +118,7 @@ src/main/
 ```
 
 **关键组件**:
+
 - `core.ts`: LanceDB 连接和表管理
 - `embeddings.ts`: 多种嵌入模型支持（本地/API）
 - `vectorSearch.ts`: 向量搜索实现
@@ -129,12 +130,12 @@ src/main/
 
 ```typescript
 interface HybridSearchConfig {
-  vectorWeight: 0.7      // 向量搜索权重
-  keywordWeight: 0.3     // 关键词搜索权重
-  topK: 10               // 返回数量
-  rrfK: 60               // RRF 参数
-  rerank: boolean        // 是否重排序
-  multiQuery: boolean    // 是否多查询扩展
+  vectorWeight: 0.7 // 向量搜索权重
+  keywordWeight: 0.3 // 关键词搜索权重
+  topK: 10 // 返回数量
+  rrfK: 60 // RRF 参数
+  rerank: boolean // 是否重排序
+  multiQuery: boolean // 是否多查询扩展
 }
 ```
 
@@ -159,12 +160,14 @@ interface HybridSearchConfig {
 ### 4. 文档处理模块
 
 **解析支持**:
+
 - PDF: `pdf-parse`
 - Office: `officeparser` (docx/pptx/xlsx)
 - 纯文本: 直接读取
 - OCR: `tesseract.js`（图片中的文字）
 
 **分块策略**:
+
 - 语义分块：基于段落和句子边界
 - 固定大小分块：可配置 chunk size
 - 重叠分块：保证上下文连贯
@@ -301,10 +304,10 @@ CREATE TABLE collections (
 
 ```typescript
 interface VectorRecord {
-  id: string           // 唯一 ID
-  text: string         // 文本内容
+  id: string // 唯一 ID
+  text: string // 文本内容
   vector: Float32Array // 向量 (维度取决于模型)
-  source: string       // 来源文件路径
+  source: string // 来源文件路径
   metadata: {
     title?: string
     pageNumber?: number

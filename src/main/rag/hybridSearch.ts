@@ -86,7 +86,7 @@ export class HybridSearcher {
 
     // 判断是否为全库检索
     const isGlobalSearch = !options.sources || options.sources.length === 0
-    
+
     logDebug('HybridSearch starting', 'HybridSearch', {
       query: query.slice(0, 80),
       isGlobalSearch,
@@ -115,13 +115,13 @@ export class HybridSearcher {
             isGlobalSearch,
             searchLimit: limit
           })
-          
+
           const vectorResultsRaw = await searchSimilarDocumentsWithScores(q, {
             k: limit,
             sources: options.sources,
             tags: options.tags
           })
-          
+
           logDebug('Vector search completed', 'HybridSearch', {
             query: q.slice(0, 60),
             resultsCount: vectorResultsRaw.length
@@ -130,7 +130,7 @@ export class HybridSearcher {
           // b. 关键词搜索 (BM25) - 只在全库检索或有特定范围时启用
           let keywordDocs: { doc: Document; score: number }[] = []
           const table = await getVectorTable()
-          
+
           // 只有在有数据且不是过于限制的检索时才进行 BM25
           if (table && vectorResultsRaw.length > 0) {
             try {
@@ -139,7 +139,9 @@ export class HybridSearcher {
 
               // 全库检索时获取更多文档以构建更好的 BM25 索引
               const bm25FetchLimit = isGlobalSearch ? 2000 : limit * 10
-              lancedbDocs = (await queryBuilder.limit(bm25FetchLimit).toArray()) as LanceDBSearchResult[]
+              lancedbDocs = (await queryBuilder
+                .limit(bm25FetchLimit)
+                .toArray()) as LanceDBSearchResult[]
 
               logDebug('BM25 fetching documents', 'HybridSearch', {
                 fetchedCount: lancedbDocs.length,
@@ -164,7 +166,7 @@ export class HybridSearcher {
 
                   return !!(sourceMatch && tagMatch)
                 })
-                
+
                 logDebug('BM25 filtering applied', 'HybridSearch', {
                   afterFilterCount: lancedbDocs.length
                 })
@@ -180,7 +182,7 @@ export class HybridSearcher {
                   }),
                   score: r.score
                 }))
-                
+
                 logDebug('BM25 search completed', 'HybridSearch', {
                   resultsCount: keywordDocs.length
                 })
@@ -195,12 +197,14 @@ export class HybridSearcher {
       )
 
       // 合并所有查询的结果
-      context.vectorResults = allResults.flatMap(r => r.vectorResults.map((vr) => ({
-        doc: vr.doc,
-        score: vr.score
-      })))
-      context.keywordResults = allResults.flatMap(r => r.keywordResults)
-      
+      context.vectorResults = allResults.flatMap((r) =>
+        r.vectorResults.map((vr) => ({
+          doc: vr.doc,
+          score: vr.score
+        }))
+      )
+      context.keywordResults = allResults.flatMap((r) => r.keywordResults)
+
       logDebug('All queries processed', 'HybridSearch', {
         totalVectorResults: context.vectorResults?.length ?? 0,
         totalKeywordResults: context.keywordResults?.length ?? 0,

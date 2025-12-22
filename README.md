@@ -72,6 +72,7 @@ pnpm run build:linux
 ## 技术栈
 
 ### 前端
+
 - **React 19** - UI 框架
 - **TypeScript** - 类型安全
 - **Ant Design X** - 企业级 UI 组件库
@@ -79,6 +80,7 @@ pnpm run build:linux
 - **Vite 7** - 构建工具
 
 ### 后端（主进程）
+
 - **Electron** - 跨平台桌面框架
 - **LangChain** - LLM 应用框架
 - **LangGraph** - 对话流程编排
@@ -86,6 +88,7 @@ pnpm run build:linux
 - **better-sqlite3** - SQLite 数据存储
 
 ### AI 能力
+
 - **@langchain/openai** - OpenAI 模型集成
 - **@langchain/anthropic** - Claude 模型集成
 - **@langchain/ollama** - 本地 Ollama 模型
@@ -93,6 +96,7 @@ pnpm run build:linux
 - **onnxruntime-node** - 本地推理运行时
 
 ### 文档处理
+
 - **pdf-parse** - PDF 解析
 - **officeparser** - Office 文档解析
 - **docx** - Word 文档生成
@@ -129,12 +133,14 @@ src/
 ## 核心功能
 
 ### 文档导入与索引
+
 - 支持拖拽上传或点击选择文件
 - 自动解析文档内容并分块
 - 语义向量化存储
 - 增量索引更新
 
 ### 智能检索
+
 - **向量语义搜索**: 基于内容含义进行检索
 - **BM25 关键词搜索**: 精准匹配关键词
 - **RRF 融合排序**: 结合多路召回结果
@@ -142,12 +148,14 @@ src/
 - **Rerank 重排序**: 可选的精排模型
 
 ### 对话问答
+
 - 流式回答输出
 - 引用来源标注
 - 会话历史管理
 - 多轮对话记忆
 
 ### 文档生成
+
 - 基于知识库内容生成 Word 文档
 - 基于知识库内容生成 PPT 演示文稿
 
@@ -156,15 +164,18 @@ src/
 应用启动后，点击设置图标进行配置：
 
 ### 模型配置
+
 - **AI 服务商**: OpenAI / Anthropic / Ollama
 - **API Key**: 对应服务商的密钥
 - **模型选择**: 可选择具体模型
 
 ### 嵌入模型
+
 - **本地模型**: 使用 HuggingFace 模型（推荐 bge-small-zh-v1.5）
 - **API 模型**: 使用 OpenAI Embeddings
 
 ### RAG 配置
+
 - **检索数量**: 每次检索返回的文档数量
 - **相关性阈值**: 过滤低相关性结果
 - **混合检索**: 启用/禁用 BM25 混合搜索
@@ -207,6 +218,7 @@ pnpm run test
 ## 更多文档
 
 详细文档请查看 [Wiki](wiki/HOME.md)：
+
 - [架构设计](wiki/Architecture.md)
 - [功能详解](wiki/Features.md)
 - [开发指南](wiki/Development.md)

@@ -55,10 +55,7 @@
     "memoryRisks": [
       {
         "risk": "定时器未清理",
-        "files": [
-          "src/main/rag/workerManager.ts",
-          "src/main/rag/worker.ts"
-        ]
+        "files": ["src/main/rag/workerManager.ts", "src/main/rag/worker.ts"]
       }
     ],
     "suggestions": [
@@ -80,9 +77,7 @@
       "   • 监控内存使用: node scripts/performance-monitor.js",
       "   • 优化 Worker 进程管理，及时释放资源"
     ],
-    "appliedOptimizations": [
-      "   ✓ 创建 .env.memory 配置文件"
-    ]
+    "appliedOptimizations": ["   ✓ 创建 .env.memory 配置文件"]
   },
   "recommendations": [
     "📦 依赖优化:",

@@ -223,6 +223,17 @@ export async function ensureTableWithDocuments(
       const schema = await table.schema()
       const existingColumns = schema.fields.map((f) => f.name)
       logDebug('Existing table columns', 'VectorStore', { existingColumns })
+      const metadataStructFieldNames = (() => {
+        const metadataField = schema.fields.find((f) => f.name === 'metadata') as unknown as {
+          type?: unknown
+        }
+        const type = metadataField?.type as { children?: unknown[]; fields?: unknown[] } | undefined
+        const children = (type?.children ?? type?.fields) as unknown[] | undefined
+        if (!Array.isArray(children)) return []
+        return children
+          .map((c) => (c as { name?: unknown }).name)
+          .filter((n): n is string => typeof n === 'string' && n.length > 0)
+      })()
 
       // 生成向量嵌入
       const texts = docs.map((d) => d.pageContent)
@@ -265,12 +276,24 @@ export async function ensureTableWithDocuments(
               record[field] = Array.isArray(value) ? value : []
             } else if (field === 'hasHeading') {
               record[field] = !!value
-            } else if (field === 'headingText' || field === 'title' || field === 'description' || field === 'author' || field === 'created' || field === 'modified') {
+            } else if (
+              field === 'headingText' ||
+              field === 'title' ||
+              field === 'description' ||
+              field === 'author' ||
+              field === 'created' ||
+              field === 'modified'
+            ) {
               // 只在值存在时才设置，避免设置空字符串导致架构冲突
               if (value !== undefined && value !== null) {
                 record[field] = String(value)
               }
-            } else if (field === 'pageNumber' || field === 'position' || field === 'chunkIndex' || field === 'importedAt') {
+            } else if (
+              field === 'pageNumber' ||
+              field === 'position' ||
+              field === 'chunkIndex' ||
+              field === 'importedAt'
+            ) {
               record[field] = value ?? null
             } else {
               record[field] = value ?? null
@@ -283,30 +306,47 @@ export async function ensureTableWithDocuments(
           // 过滤掉可能导致问题的动态字段，只保留已知字段
           const safeMetadata: Record<string, unknown> = {}
           const knownFields = [
-            'source', 'tags', 'fileName', 'fileType', 'pageNumber', 'position',
-            'sourceType', 'importedAt', 'chunkIndex', 'blockTypes', 'hasHeading',
-            'headingText', 'chunkingStrategy', 'title', 'description', 'author',
-            'created', 'modified'
+            'source',
+            'tags',
+            'fileName',
+            'fileType',
+            'pageNumber',
+            'position',
+            'sourceType',
+            'importedAt',
+            'chunkIndex',
+            'blockTypes',
+            'hasHeading',
+            'headingText',
+            'chunkingStrategy',
+            'title',
+            'description',
+            'author',
+            'created',
+            'modified'
           ]
-          
-          knownFields.forEach(field => {
-            if (doc.metadata?.[field] !== undefined) {
+
+          knownFields.forEach((field) => {
+            if (
+              doc.metadata?.[field] !== undefined &&
+              (metadataStructFieldNames.length === 0 || metadataStructFieldNames.includes(field))
+            ) {
               safeMetadata[field] = doc.metadata[field]
             }
           })
-          
+
           // 如果还有其他字段，打包到extra中 - 使用JSON字符串
           const extraFields = Object.keys(doc.metadata || {}).filter(
-            field => !knownFields.includes(field)
+            (field) => !knownFields.includes(field)
           )
-          if (extraFields.length > 0) {
+          if (extraFields.length > 0 && metadataStructFieldNames.includes('extra')) {
             const extraObj: Record<string, unknown> = {}
             for (const field of extraFields) {
               extraObj[field] = doc.metadata?.[field]
             }
             safeMetadata.extra = JSON.stringify(extraObj)
           }
-          
+
           record.metadata = safeMetadata
         }
 
@@ -321,38 +361,76 @@ export async function ensureTableWithDocuments(
         logWarn('LanceDB native add failed, checking table schema', 'VectorStore', {
           error: error instanceof Error ? error.message : String(error)
         })
-        
-        // 检查表架构，确保包含所有必要字段
+
+        // 检查表架构，确保插入数据符合现有 schema
         const currentSchema = await table.schema()
-        const currentFields = currentSchema.fields.map(f => f.name)
-        
-        // 检查缺失的关键字段
-        const requiredFields = ['source', 'tags', 'fileName', 'fileType', 'pageNumber', 'position', 
-                                'sourceType', 'importedAt', 'chunkIndex', 'blockTypes', 'hasHeading',
-                                'headingText', 'chunkingStrategy', 'title', 'description', 'author',
-                                'created', 'modified', 'extra']
-        
-        const missingFields = requiredFields.filter(f => !currentFields.includes(f) && !currentFields.includes('metadata'))
-        
-        if (missingFields.length > 0 || !currentFields.includes('metadata')) {
-          logWarn('Table schema missing fields, attempting to recreate with correct schema', 'VectorStore', {
-            missingFields,
-            hasMetadataColumn: currentFields.includes('metadata')
-          })
-          
-          // 尝试删除并重新创建表
-          try {
-            await (table as unknown as { drop: () => Promise<void> }).drop()
-            table = await conn.createTable(TABLE_NAME, records, { mode: 'overwrite', schema })
-            logInfo('Table recreated with correct schema', 'VectorStore')
-          } catch (recreateError) {
-            logError('Failed to recreate table', 'VectorStore', undefined, recreateError as Error)
-            throw recreateError
+        const currentFields = currentSchema.fields.map((f) => f.name)
+        const currentMetadataStructFieldNames = (() => {
+          const metadataField = currentSchema.fields.find(
+            (f) => f.name === 'metadata'
+          ) as unknown as {
+            type?: unknown
           }
-        } else {
-          // 如果字段都存在，可能是其他问题，尝试 LangChain fallback
-          logWarn('Schema appears correct, trying LangChain fallback', 'VectorStore')
-          throw error
+          const type = metadataField?.type as
+            | { children?: unknown[]; fields?: unknown[] }
+            | undefined
+          const children = (type?.children ?? type?.fields) as unknown[] | undefined
+          if (!Array.isArray(children)) return []
+          return children
+            .map((c) => (c as { name?: unknown }).name)
+            .filter((n): n is string => typeof n === 'string' && n.length > 0)
+        })()
+
+        const sanitizedRecords = records.map((r) => {
+          const sanitized: Record<string, unknown> = {}
+          for (const [key, value] of Object.entries(r)) {
+            if (currentFields.includes(key)) sanitized[key] = value
+          }
+
+          if (
+            sanitized.metadata &&
+            typeof sanitized.metadata === 'object' &&
+            sanitized.metadata !== null &&
+            currentMetadataStructFieldNames.length > 0
+          ) {
+            const meta = sanitized.metadata as Record<string, unknown>
+            const filteredMeta: Record<string, unknown> = {}
+            for (const k of currentMetadataStructFieldNames) {
+              if (meta[k] !== undefined) filteredMeta[k] = meta[k]
+            }
+            sanitized.metadata = filteredMeta
+          }
+
+          return sanitized
+        })
+
+        try {
+          await (table as unknown as { add: (data: unknown[]) => Promise<void> }).add(
+            sanitizedRecords
+          )
+        } catch (sanitizedError) {
+          let rowCount = 0
+          try {
+            rowCount = await table.countRows()
+          } catch {
+            rowCount = 0
+          }
+
+          if (rowCount === 0) {
+            try {
+              await (table as unknown as { drop: () => Promise<void> }).drop()
+              table = await conn.createTable(TABLE_NAME, sanitizedRecords, {
+                mode: 'overwrite',
+                schema
+              })
+              logInfo('Table recreated with sanitized records', 'VectorStore')
+            } catch (recreateError) {
+              logError('Failed to recreate table', 'VectorStore', undefined, recreateError as Error)
+              throw recreateError
+            }
+          } else {
+            throw sanitizedError
+          }
         }
       }
 
@@ -382,18 +460,43 @@ export async function ensureTableWithDocuments(
           if (!table) table = await conn.openTable(TABLE_NAME)
           vectorStore = new LanceDBCtor!(embeddings, { table })
         }
-        await vectorStore.addDocuments(docs)
+        const schemaForLc = table ? await table.schema() : undefined
+        const allowedMetaKeys = (() => {
+          const metadataField = schemaForLc?.fields?.find(
+            (f) => f.name === 'metadata'
+          ) as unknown as {
+            type?: unknown
+          }
+          const type = metadataField?.type as
+            | { children?: unknown[]; fields?: unknown[] }
+            | undefined
+          const children = (type?.children ?? type?.fields) as unknown[] | undefined
+          if (!Array.isArray(children)) return []
+          return children
+            .map((c) => (c as { name?: unknown }).name)
+            .filter((n): n is string => typeof n === 'string' && n.length > 0)
+        })()
+        const filteredDocs =
+          allowedMetaKeys.length === 0
+            ? docs
+            : docs.map((d) => {
+                const metadata = (d.metadata || {}) as Record<string, unknown>
+                const filtered: Record<string, unknown> = {}
+                for (const k of allowedMetaKeys) {
+                  if (metadata[k] !== undefined) filtered[k] = metadata[k]
+                }
+                return new Document({ pageContent: d.pageContent, metadata: filtered })
+              })
+
+        await vectorStore.addDocuments(filteredDocs)
         logInfo(`Appended ${docs.length} documents via LangChain addDocuments`, 'VectorStore')
         return vectorStore
       } catch (lcError) {
-        logError(
-          'LangChain addDocuments also failed',
-          'VectorStore',
-          undefined,
-          lcError as Error
-        )
+        logError('LangChain addDocuments also failed', 'VectorStore', undefined, lcError as Error)
         // 追加失败时抛出错误，而不是回退到覆盖模式
-        throw new Error(`Failed to append documents: ${lcError instanceof Error ? lcError.message : String(lcError)}`)
+        throw new Error(
+          `Failed to append documents: ${lcError instanceof Error ? lcError.message : String(lcError)}`
+        )
       }
     }
   }
@@ -402,7 +505,9 @@ export async function ensureTableWithDocuments(
   // 创建新表或重建表
   if (appendMode && tableExists) {
     // 理论上不应该走到这里，除非上面的逻辑有漏洞
-    throw new Error('Unexpected state: table exists and append mode enabled but append logic skipped')
+    throw new Error(
+      'Unexpected state: table exists and append mode enabled but append logic skipped'
+    )
   }
   logInfo('Creating/updating LanceDB table with documents', 'VectorStore', {
     docCount: docs.length,
@@ -437,7 +542,7 @@ export async function ensureTableWithDocuments(
     const hasHeading = normalizeBoolean(doc.metadata?.hasHeading)
     const headingText = normalizeHeadingText(doc.metadata?.headingText)
     const chunkingStrategy = normalizeNullableString(doc.metadata?.chunkingStrategy)
-    
+
     // 处理新增字段 - 只处理实际存在的值，避免空字符串
     const title = doc.metadata?.title ? String(doc.metadata.title) : ''
     const description = doc.metadata?.description ? String(doc.metadata.description) : ''
@@ -468,16 +573,30 @@ export async function ensureTableWithDocuments(
 
     // 处理额外字段打包到extra - 序列化为JSON字符串
     const knownFields = [
-      'source', 'tags', 'fileName', 'fileType', 'pageNumber', 'position',
-      'sourceType', 'importedAt', 'chunkIndex', 'blockTypes', 'hasHeading',
-      'headingText', 'chunkingStrategy', 'title', 'description', 'author',
-      'created', 'modified'
+      'source',
+      'tags',
+      'fileName',
+      'fileType',
+      'pageNumber',
+      'position',
+      'sourceType',
+      'importedAt',
+      'chunkIndex',
+      'blockTypes',
+      'hasHeading',
+      'headingText',
+      'chunkingStrategy',
+      'title',
+      'description',
+      'author',
+      'created',
+      'modified'
     ]
-    
+
     const extraFields = Object.keys(doc.metadata || {}).filter(
-      field => !knownFields.includes(field)
+      (field) => !knownFields.includes(field)
     )
-    
+
     if (extraFields.length > 0) {
       const extraObj: Record<string, unknown> = {}
       for (const field of extraFields) {

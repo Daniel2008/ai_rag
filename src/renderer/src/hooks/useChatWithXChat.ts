@@ -376,7 +376,6 @@ export function useChatWithXChat({
         // 检查是否需要生成标题 (如果消息数量 <= 2，可能是新对话)
         const isNewConversation = xMessages.length <= 2
         let userQuestion = ''
-        let aiAnswer = ''
 
         for (const xMsg of xMessages) {
           const originalId = String(xMsg.id)
@@ -404,13 +403,12 @@ export function useChatWithXChat({
             onSaveMessageRef.current(chatMessage)
 
             if (role === 'user') userQuestion = chatMessage.content
-            if (role === 'ai') aiAnswer = chatMessage.content
           }
         }
 
         // 如果是新对话且有问答，生成标题
-        if (isNewConversation && userQuestion && aiAnswer) {
-          window.api.generateTitle(conversationKey, userQuestion, aiAnswer).catch(console.error)
+        if (isNewConversation && userQuestion) {
+          window.api.generateTitle(conversationKey, userQuestion).catch(console.error)
         }
       }
     }

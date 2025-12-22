@@ -240,7 +240,7 @@ export function isDocumentRelevantToQuery(docContent: string, query: string): Re
  */
 export function filterByRelevanceThreshold<T extends { score: number; doc: Document }>(
   results: T[],
-  query: string, // 保留query参数用于日志和调试
+  _query: string, // 保留query参数用于日志和调试
   threshold: number = RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD
 ): T[] {
   if (results.length === 0) return results
@@ -251,7 +251,7 @@ export function filterByRelevanceThreshold<T extends { score: number; doc: Docum
   // 如果过滤后结果太少，按以下策略处理：
   if (scoreFiltered.length < 3) {
     const lowThreshold = Math.min(threshold, RAG_CONFIG.SEARCH.RELEVANCE_THRESHOLD_LOW)
-    
+
     // 策略1: 使用更低阈值
     const relaxedResults = results.filter((r) => r.score >= lowThreshold)
     if (relaxedResults.length >= 2) {
@@ -268,7 +268,7 @@ export function filterByRelevanceThreshold<T extends { score: number; doc: Docum
       const topResults = results
         .sort((a, b) => b.score - a.score)
         .slice(0, Math.max(5, Math.ceil(results.length * 0.3)))
-      
+
       logDebug('Using top results without threshold', 'Search', {
         threshold,
         resultCount: topResults.length,

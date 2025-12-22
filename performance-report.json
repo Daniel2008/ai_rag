@@ -13,11 +13,7 @@
       "cores": 20,
       "model": "12th Gen Intel(R) Core(TM) i7-12700H"
     },
-    "load": [
-      0,
-      0,
-      0
-    ]
+    "load": [0, 0, 0]
   },
   "processes": [
     {
@@ -76,7 +72,5 @@
     "cacheSize": "0.00 MB"
   },
   "warnings": [],
-  "suggestions": [
-    "✅ 系统状态良好！"
-  ]
+  "suggestions": ["✅ 系统状态良好！"]
 }

@@ -4,44 +4,17 @@ import type {
   AppSettings,
   EmbeddingProgress,
   ProcessFileResult,
+  DocumentGenerateRequest,
   DocumentGenerateResult,
+  DocumentProgress,
   ChatMessage
 } from '../types/chat'
 /** 处理URL结果 */
 export interface ProcessUrlResult {
   success: boolean
   count?: number
+  title?: string
   preview?: string
-  error?: string
-}
-
-/** 文档类型 */
-export type DocumentType = 'word' | 'ppt'
-
-/** 文档主题风格 */
-export type DocumentTheme = 'professional' | 'modern' | 'simple' | 'creative'
-
-/** 文档生成请求 */
-export interface DocumentGenerateRequest {
-  type: DocumentType
-  title: string
-  description?: string
-  sources?: string[]
-  theme?: DocumentTheme
-}
-
-/** 文档生成进度 */
-export interface DocumentProgress {
-  stage: 'outline' | 'content' | 'generating' | 'complete' | 'error'
-  percent: number
-  message: string
-  error?: string
-}
-
-/** 文档生成结果 */
-export interface DocumentGenerateResult {
-  success: boolean
-  filePath?: string
   error?: string
 }
 
@@ -131,7 +104,7 @@ declare global {
       ) => Promise<ChatMessage[]>
       saveMessage: (conversationKey: string, message: ChatMessage) => Promise<void>
       updateMessage: (messageKey: string, updates: Partial<ChatMessage>) => Promise<void>
-      generateTitle: (conversationKey: string, question: string, answer: string) => Promise<string>
+      generateTitle: (conversationKey: string, question: string) => Promise<string>
 
       // Document Generation APIs
       generateDocument: (request: DocumentGenerateRequest) => Promise<DocumentGenerateResult>
