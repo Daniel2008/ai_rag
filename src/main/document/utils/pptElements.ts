@@ -66,7 +66,7 @@ export function createTitleSlide(
   title: string,
   subtitle?: string,
   theme: DocumentTheme = 'professional'
-): void {
+): PptxGenJS.Slide {
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
@@ -162,6 +162,8 @@ export function createTitleSlide(
       align: 'center'
     }
   )
+  
+  return slide
 }
 
 /**
@@ -171,7 +173,7 @@ export function createTOCSlide(
   pptx: PptxGenJS,
   sections: { title: string }[],
   theme: DocumentTheme = 'professional'
-): void {
+): PptxGenJS.Slide {
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
@@ -284,6 +286,8 @@ export function createTOCSlide(
     h: 0.04,
     fill: { color: colors.accent, transparency: 60 }
   })
+  
+  return slide
 }
 
 /**
@@ -295,7 +299,7 @@ export function createSectionTitleSlide(
   sectionNumber: number,
   totalSections: number,
   theme: DocumentTheme = 'professional'
-): void {
+): PptxGenJS.Slide {
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
@@ -368,6 +372,8 @@ export function createSectionTitleSlide(
     color: 'FFFFFF',
     transparency: 30
   })
+  
+  return slide
 }
 
 /**
@@ -380,7 +386,7 @@ export function createContentSlide(
   bullets?: string[],
   theme: DocumentTheme = 'professional',
   layout: 'default' | 'twoColumn' | 'bulletFocus' = 'default'
-): void {
+): PptxGenJS.Slide {
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
@@ -559,6 +565,8 @@ export function createContentSlide(
     h: 0.03,
     fill: { color: colors.accent, transparency: 70 }
   })
+  
+  return slide
 }
 
 /**
@@ -569,7 +577,7 @@ export function createQuoteSlide(
   quote: string,
   source?: string,
   theme: DocumentTheme = 'professional'
-): void {
+): PptxGenJS.Slide {
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
@@ -622,6 +630,8 @@ export function createQuoteSlide(
       align: 'right'
     })
   }
+  
+  return slide
 }
 
 /**
@@ -632,7 +642,7 @@ export function createSummarySlide(
   title: string,
   keyPoints: string[],
   theme: DocumentTheme = 'professional'
-): void {
+): PptxGenJS.Slide {
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
@@ -695,6 +705,8 @@ export function createSummarySlide(
     h: 0.04,
     fill: { color: colors.accent, transparency: 50 }
   })
+  
+  return slide
 }
 
 /**
@@ -704,7 +716,7 @@ export function createReferencesSlide(
   pptx: PptxGenJS,
   sources: string[],
   theme: DocumentTheme = 'professional'
-): void {
+): PptxGenJS.Slide {
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
@@ -779,12 +791,14 @@ export function createReferencesSlide(
     w: '90%',
     h: 4
   })
+  
+  return slide
 }
 
 /**
  * 创建结尾幻灯片（增强版：更有冲击力的设计）
  */
-export function createEndSlide(pptx: PptxGenJS, theme: DocumentTheme = 'professional'): void {
+export function createEndSlide(pptx: PptxGenJS, theme: DocumentTheme = 'professional'): PptxGenJS.Slide {
   const colors = THEME_COLORS[theme]
   const slide = pptx.addSlide()
 
@@ -877,6 +891,8 @@ export function createEndSlide(pptx: PptxGenJS, theme: DocumentTheme = 'professi
       align: 'center'
     }
   )
+  
+  return slide
 }
 
 /**
@@ -1010,4 +1026,132 @@ export function splitContentIntoSlides(
   }
 
   return slides
+}
+
+/**
+ * 创建图片幻灯片（新增功能）
+ */
+export function createImageSlide(
+  pptx: PptxGenJS,
+  imageData: { path: string; caption?: string; position?: 'left' | 'center' | 'right' },
+  theme: DocumentTheme = 'professional'
+): PptxGenJS.Slide {
+  const colors = THEME_COLORS[theme]
+  const slide = pptx.addSlide()
+
+  // 左侧装饰条
+  slide.addShape('rect', {
+    x: 0,
+    y: 0,
+    w: 0.12,
+    h: '100%',
+    fill: { color: colors.primary }
+  })
+
+  // 图片标题
+  if (imageData.caption) {
+    slide.addText(imageData.caption, {
+      x: 0.4,
+      y: 0.3,
+      w: '90%',
+      h: 0.7,
+      fontSize: 24,
+      fontFace: FONTS.title,
+      color: colors.primary,
+      bold: true
+    })
+  }
+
+  // 根据位置计算图片区域
+  const imageX = imageData.position === 'center' ? 2.5 : imageData.position === 'right' ? 5 : 0.4
+  const imageY = imageData.caption ? 1.2 : 0.3
+  const imageWidth = imageData.position === 'center' ? 5 : 4.2
+
+  // 添加图片占位框（实际使用时需要图片buffer）
+  slide.addShape('rect', {
+    x: imageX,
+    y: imageY,
+    w: imageWidth,
+    h: 3.5,
+    fill: { color: 'F5F5F5' },
+    line: { color: colors.accent, width: 2 }
+  })
+
+  // 添加占位文字
+  slide.addText(`[图片: ${imageData.path}]`, {
+    x: imageX,
+    y: imageY + 1.5,
+    w: imageWidth,
+    h: 0.5,
+    fontSize: 14,
+    fontFace: FONTS.body,
+    color: colors.secondary,
+    align: 'center',
+    valign: 'middle'
+  })
+
+  return slide
+}
+
+/**
+ * 创建图表幻灯片（新增功能）
+ */
+export function createChartSlide(
+  pptx: PptxGenJS,
+  chartData: {
+    type: 'bar' | 'pie' | 'line' | 'area'
+    title: string
+    labels: string[]
+    data: number[]
+  },
+  theme: DocumentTheme = 'professional'
+): PptxGenJS.Slide {
+  const colors = THEME_COLORS[theme]
+  const slide = pptx.addSlide()
+
+  // 标题
+  slide.addText(chartData.title, {
+    x: 0.4,
+    y: 0.3,
+    w: '90%',
+    h: 0.7,
+    fontSize: 28,
+    fontFace: FONTS.title,
+    color: colors.primary,
+    bold: true
+  })
+
+  // 图表颜色配置
+  const chartColors = [
+    '2B579A',
+    '4472C4',
+    '5B9BD5',
+    'ED7D31',
+    'A5A5A5',
+    'FFC000',
+    '5B9BD5',
+    '70AD47'
+  ]
+
+  // 根据图表类型创建图表
+  const chartType = chartData.type === 'bar' ? pptx.ChartType.bar
+    : chartData.type === 'pie' ? pptx.ChartType.pie
+      : chartData.type === 'line' ? pptx.ChartType.line
+        : pptx.ChartType.area
+
+  // 添加图表
+  slide.addChart(chartType, chartData.data, {
+    x: 0.8,
+    y: 1.3,
+    w: 8.4,
+    h: 3.5,
+    chartColors,
+    showLegend: true,
+    legendPos: 'b',
+    showValue: true,
+    showTitle: false,
+    lineDataSymbolSize: 8
+  })
+
+  return slide
 }

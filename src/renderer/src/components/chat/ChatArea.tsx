@@ -602,24 +602,36 @@ function parseThoughtSteps(thinkContent: string): ThoughtStep[] {
 }
 
 function parseContent(content: string): { think: string | null; realContent: string } {
-  const thinkStart = '</think>'
+  const thinkStart = '<think>'
   const thinkEnd = '</think>'
 
-  const startIdx = content.indexOf(thinkStart)
-  if (startIdx === -1) {
-    return { think: null, realContent: content }
+  const thinkParts: string[] = []
+  const realParts: string[] = []
+  let cursor = 0
+
+  while (cursor < content.length) {
+    const startIdx = content.indexOf(thinkStart, cursor)
+    if (startIdx === -1) {
+      realParts.push(content.slice(cursor))
+      break
+    }
+
+    realParts.push(content.slice(cursor, startIdx))
+
+    const thinkBodyStart = startIdx + thinkStart.length
+    const endIdx = content.indexOf(thinkEnd, thinkBodyStart)
+    if (endIdx === -1) {
+      thinkParts.push(content.slice(thinkBodyStart))
+      cursor = content.length
+      break
+    }
+
+    thinkParts.push(content.slice(thinkBodyStart, endIdx))
+    cursor = endIdx + thinkEnd.length
   }
 
-  const endIdx = content.indexOf(thinkEnd, startIdx)
-  if (endIdx === -1) {
-    // 思考中...
-    const think = content.substring(startIdx + thinkStart.length)
-    return { think, realContent: '' }
-  }
-
-  const think = content.substring(startIdx + thinkStart.length, endIdx)
-  const realContent = content.substring(endIdx + thinkEnd.length)
-  return { think, realContent }
+  const think = thinkParts.join('\n').trim()
+  return { think: think.length > 0 ? think : null, realContent: realParts.join('') }
 }
 
 function toSpeechText(markdown: string): string {
