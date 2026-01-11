@@ -1,5 +1,5 @@
 {
-  "name": "zhihui-rag",
+  "name": "ai_rag",
   "version": "1.0.2",
   "description": "RAG - AI 智能知识库助手，支持文档问答、知识检索、文档生成",
   "main": "./out/main/index.js",
@@ -24,6 +24,8 @@
     "build:win:fast": "npm run build:fast && electron-builder --win",
     "build:win:optimized": "NODE_OPTIONS=\"--max-old-space-size=4096\" npm run build:fast && electron-builder --win --config.compression=maximum",
     "build:win:dir": "npm run build:fast && electron-builder --win --dir",
+    "build:win:dev": "electron-vite build && electron-builder --win --dir --config.asar=false --config.compression=store",
+    "build:win:turbo": "electron-vite build && electron-builder --win --config.compression=store",
     "build:win:debug": "cross-env DEBUG=electron-builder npm run build:win:fast",
     "build:analyze": "cross-env ANALYZE=true electron-vite build",
     "build:with-logs": "node scripts/build-with-logs.js",

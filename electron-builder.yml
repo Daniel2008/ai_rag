@@ -9,7 +9,7 @@ buildDependenciesFromSource: false
 nodeGypRebuild: false
 
 asar: true
-compression: normal # 普通压缩，显著提升打包速度
+compression: store # store=不压缩(最快), normal=普通压缩, maximum=最大压缩(发布用)
 
 files:
   - '!**/.vscode/*'
@@ -54,7 +54,7 @@ asarUnpack:
 
 # Windows 配置
 win:
-  executableName: ZhiHui
+  executableName: AiRag
   icon: build/icon.ico
   requestedExecutionLevel: asInvoker
   # 代码签名配置（生产环境需要配置证书）

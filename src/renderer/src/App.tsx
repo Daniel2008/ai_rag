@@ -4,18 +4,19 @@ import { XProvider } from '@ant-design/x'
 import type { BubbleListRef } from '@ant-design/x/es/bubble'
 import {
   ConfigProvider,
-  Drawer,
   Form,
-  FloatButton,
   message as antdMessage,
   theme as antdTheme,
   Skeleton
 } from 'antd'
-import { DatabaseOutlined, MenuOutlined } from '@ant-design/icons'
+
 
 import { getTheme } from './theme'
 import type { AppSettings } from '../../types/chat'
-import { ChatSidebar, WelcomeScreen, ChatArea, ChatInput, CollectionModal } from './components/chat'
+import { WelcomeScreen, ChatArea, ChatInput, CollectionModal } from './components/chat'
+import { ChatSidebar } from './components/chat/ChatSidebar'
+
+import { TopNavBar } from './components/layout/TopNavBar'
 import type { AssistantPhase } from './components/chat'
 import { GlobalProgress } from './components/GlobalProgress'
 import { UpdateNotification } from './components/UpdateNotification'
@@ -25,7 +26,6 @@ import type { DocumentCollection } from './types/files'
 // 性能优化：懒加载设置对话框和知识库面板
 const SettingsDialog = lazy(() => import('./components/SettingsDialog'))
 const AppSidebar = lazy(() => import('./components/AppSidebar'))
-const TitleBar = lazy(() => import('./components/TitleBar'))
 
 function App(): ReactElement {
   const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
@@ -70,18 +70,17 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   const [inputValue, setInputValue] = useState('')
   const [mentionedFiles, setMentionedFiles] = useState<{ token: string; path: string }[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<'chat' | 'knowledge' | 'settings'>('chat')
   const [, setCurrentSettings] = useState<AppSettings | null>(null)
   const [collectionModalOpen, setCollectionModalOpen] = useState(false)
   const [editingCollection, setEditingCollection] = useState<DocumentCollection | null>(null)
   const [collectionForm] = Form.useForm()
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null)
-  const [sidebarCollapsed] = useState(false)
   const [initializing, setInitializing] = useState(true)
-  // 初始状态基于窗口宽度，避免首次渲染后的布局跳动
-  const [showKnowledgeBase, setShowKnowledgeBase] = useState(() => window.innerWidth >= 1280)
-  const [showChatSidebar, setShowChatSidebar] = useState(() => window.innerWidth >= 1100)
-  const [isChatSidebarNarrow, setIsChatSidebarNarrow] = useState(() => window.innerWidth < 1100)
+
+  const handleTabChange = useCallback((key: 'chat' | 'knowledge' | 'settings') => {
+    setActiveTab(key)
+  }, [])
 
   // 全局进度管理
   const { progress } = useProgress()
@@ -89,7 +88,6 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
   // Refs
   const bubbleListRef = useRef<BubbleListRef | null>(null)
   const userChangedScopeRef = useRef(false)
-  const chatSidebarNarrowRef = useRef(window.innerWidth < 1100)
 
   // 对话管理 Hook
   const {
@@ -233,29 +231,14 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
 
   // 窄屏自动隐藏知识库，宽屏恢复显示
   useEffect(() => {
-    const handleResize = (): void => {
-      const isNarrow = window.innerWidth < 1280
-      setShowKnowledgeBase(!isNarrow)
-      const nextChatNarrow = window.innerWidth < 1100
-      setIsChatSidebarNarrow(nextChatNarrow)
-      if (chatSidebarNarrowRef.current !== nextChatNarrow) {
-        chatSidebarNarrowRef.current = nextChatNarrow
-        setShowChatSidebar(!nextChatNarrow)
-      }
-    }
-    handleResize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
+    // 移除未使用的 handleResize 逻辑，或者如果需要响应式处理其他状态请保留
   }, [])
 
   const handleActiveConversationChangeAndClose = useCallback(
     (key: string) => {
       handleActiveConversationChange(key)
-      if (isChatSidebarNarrow) {
-        setShowChatSidebar(false)
-      }
     },
-    [handleActiveConversationChange, isChatSidebarNarrow]
+    [handleActiveConversationChange]
   )
 
   // 滚动到底部 (仅当不是加载更多时)
@@ -511,49 +494,21 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
       className="flex flex-col h-screen overflow-hidden"
       style={{ background: token.colorBgLayout }}
     >
-      {/* 自定义标题栏 */}
-      <Suspense fallback={<div className="h-10" style={{ background: token.colorBgElevated }} />}>
-        <TitleBar title="RAG" />
-      </Suspense>
+      {/* 顶部导航栏 */}
+      <TopNavBar activeTab={activeTab} onTabChange={handleTabChange} />
 
       {/* 全局进度条 */}
       <GlobalProgress progress={progress} />
 
       {/* 主内容区域 */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative bg-gray-50 dark:bg-gray-900">
         {contextHolder}
 
-        {/* 左侧：对话历史 */}
-        {!isChatSidebarNarrow && showChatSidebar && (
-          <ChatSidebar
-            themeMode={themeMode}
-            sidebarCollapsed={sidebarCollapsed}
-            conversationItems={conversationItems}
-            activeConversationKey={activeConversationKey}
-            starredConversationKeys={starredConversationKeys}
-            readyDocuments={readyDocuments}
-            assistantPhase={assistantPhase}
-            processingStatus={progress?.stage}
-            onThemeChange={onThemeChange}
-            onActiveConversationChange={handleActiveConversationChangeAndClose}
-            onCreateNewConversation={createNewConversation}
-            onRenameConversation={renameConversation}
-            onToggleStarConversation={toggleStarConversation}
-            onDeleteConversation={handleDeleteConversation}
-            onOpenSettings={() => setSettingsOpen(true)}
-          />
-        )}
-        {isChatSidebarNarrow && (
-          <Drawer
-            placement="left"
-            open={showChatSidebar}
-            onClose={() => setShowChatSidebar(false)}
-            width={320}
-            destroyOnHidden
-            styles={{ body: { padding: 0 } }}
-          >
+        {/* ---------------- CHAT TAB CONTENT ---------------- */}
+        <div className={`flex w-full h-full ${activeTab === 'chat' ? '' : 'hidden'}`}>
+          {/* Column 2: Chat Sidebar (Middle) */}
+          <div className="border-r border-gray-200 dark:border-gray-800 h-full bg-gray-50/50 dark:bg-gray-900/20">
             <ChatSidebar
-              mode="drawer"
               themeMode={themeMode}
               sidebarCollapsed={false}
               conversationItems={conversationItems}
@@ -568,94 +523,92 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
               onRenameConversation={renameConversation}
               onToggleStarConversation={toggleStarConversation}
               onDeleteConversation={handleDeleteConversation}
-              onOpenSettings={() => {
-                setSettingsOpen(true)
-                setShowChatSidebar(false)
-              }}
+              simpleMode={true}
             />
-          </Drawer>
-        )}
+          </div>
 
-        {/* 中间：聊天区域 */}
-        <section className="flex min-w-0 flex-1 flex-col">
-          <main className="flex flex-1 flex-col overflow-hidden">
-            {shouldShowWelcome ? (
-              <WelcomeScreen
-                themeMode={themeMode}
-                readyDocuments={readyDocuments}
-                onPromptClick={handlePromptClick}
-              />
-            ) : (
-              <ChatArea
-                themeMode={themeMode}
-                currentMessages={displayMessages}
-                bubbleListRef={bubbleListRef}
-                isTyping={isTyping}
-                copiedMessageKey={copiedMessageKey}
-                onCopyMessage={handleCopyMessage}
-                onRetryMessage={handleRetryMessage}
-                onLoadMore={loadMoreMessages}
-                hasMore={hasMore}
-                conversationKey={activeConversationKey}
-                conversationLabel={
-                  activeConversationKey
-                    ? conversationItems.find((c) => c.key === activeConversationKey)?.label
-                    : undefined
-                }
-                isConversationStarred={
-                  !!activeConversationKey && starredConversationKeys.includes(activeConversationKey)
-                }
-                onRenameConversation={renameConversation}
-                onToggleStarConversation={toggleStarConversation}
-                onPromptClick={handlePromptClick}
-              />
-            )}
-          </main>
+          {/* Column 3: Chat Area (Right) */}
+          <section className="flex min-w-0 flex-1 flex-col relative p-2 bg-gray-50 dark:bg-gray-900">
+            <main className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-gray-950 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 relative z-0">
+              {shouldShowWelcome ? (
+                <WelcomeScreen
+                  themeMode={themeMode}
+                  readyDocuments={readyDocuments}
+                  onPromptClick={handlePromptClick}
+                />
+              ) : (
+                <ChatArea
+                  themeMode={themeMode}
+                  currentMessages={displayMessages}
+                  bubbleListRef={bubbleListRef}
+                  isTyping={isTyping}
+                  copiedMessageKey={copiedMessageKey}
+                  onCopyMessage={handleCopyMessage}
+                  onRetryMessage={handleRetryMessage}
+                  onLoadMore={loadMoreMessages}
+                  hasMore={hasMore}
+                  conversationKey={activeConversationKey}
+                  conversationLabel={
+                    activeConversationKey
+                      ? conversationItems.find((c) => c.key === activeConversationKey)?.label
+                      : undefined
+                  }
+                  isConversationStarred={
+                    !!activeConversationKey && starredConversationKeys.includes(activeConversationKey)
+                  }
+                  onRenameConversation={renameConversation}
+                  onToggleStarConversation={toggleStarConversation}
+                  onPromptClick={handlePromptClick}
+                />
+              )}
 
-          {/* 输入区域 */}
-          <ChatInput
-            themeMode={themeMode}
-            inputValue={inputValue}
-            isTyping={isTyping}
-            readyDocuments={readyDocuments}
-            questionScope={questionScope}
-            activeDocument={activeDocument}
-            collections={collections}
-            resolvedCollectionId={resolvedCollectionId}
-            showQuickQuestions={displayMessages.length <= 1}
-            hasReadyFiles={readyDocuments > 0}
-            readyFiles={readyFiles}
-            mentionedFiles={mentionedFiles}
-            availableTags={availableTags}
-            selectedTags={selectedTags}
-            onSelectedTagsChange={setSelectedTags}
-            onMentionFilesChange={setMentionedFiles}
-            onInputChange={setInputValue}
-            onSubmit={handleSend}
-            onQuestionScopeChange={(scope) => {
-              userChangedScopeRef.current = true
-              setQuestionScope(scope)
-              if (scope === 'collection') {
-                if (!resolvedCollectionId && collections[0]) {
-                  setActiveCollectionId((prev) => prev ?? collections[0].id)
-                }
-              }
-            }}
-            onCollectionChange={setActiveCollectionId}
-            onStopGeneration={stopGeneration}
-            onPromptClick={handlePromptClick}
-          />
-        </section>
+              {/* 输入区域移动到 main 内部底部，以保持圆角卡片风格 */}
+              <div className="border-t border-gray-100 dark:border-gray-800/50">
+                <ChatInput
+                  themeMode={themeMode}
+                  inputValue={inputValue}
+                  isTyping={isTyping}
+                  readyDocuments={readyDocuments}
+                  questionScope={questionScope}
+                  activeDocument={activeDocument}
+                  collections={collections}
+                  resolvedCollectionId={resolvedCollectionId}
+                  showQuickQuestions={displayMessages.length <= 1}
+                  hasReadyFiles={readyDocuments > 0}
+                  readyFiles={readyFiles}
+                  mentionedFiles={mentionedFiles}
+                  availableTags={availableTags}
+                  selectedTags={selectedTags}
+                  onSelectedTagsChange={setSelectedTags}
+                  onMentionFilesChange={setMentionedFiles}
+                  onInputChange={setInputValue}
+                  onSubmit={handleSend}
+                  onQuestionScopeChange={(scope) => {
+                    userChangedScopeRef.current = true
+                    setQuestionScope(scope)
+                    if (scope === 'collection') {
+                      if (!resolvedCollectionId && collections[0]) {
+                        setActiveCollectionId((prev) => prev ?? collections[0].id)
+                      }
+                    }
+                  }}
+                  onCollectionChange={setActiveCollectionId}
+                  onStopGeneration={stopGeneration}
+                  onPromptClick={handlePromptClick}
+                />
+              </div>
+            </main>
+          </section>
+        </div>
 
-        {/* 右侧：知识库面板（懒加载） */}
-        {showKnowledgeBase && (
+        {/* ---------------- KNOWLEDGE TAB CONTENT ---------------- */}
+        <div className={`w-full h-full ${activeTab === 'knowledge' ? '' : 'hidden'}`}>
           <Suspense
             fallback={
               <div
-                className="w-80 h-full border-l px-4 py-6"
+                className="w-full h-full px-4 py-6"
                 style={{
-                  background: token.colorBgContainer,
-                  borderColor: token.colorBorderSecondary
+                  background: token.colorBgContainer
                 }}
               >
                 <Skeleton active paragraph={{ rows: 8 }} title={false} />
@@ -663,6 +616,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
             }
           >
             <AppSidebar
+              fullWidth
               collections={collections}
               activeCollectionId={activeCollectionId}
               activeDocument={activeDocument}
@@ -703,7 +657,31 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
               }}
             />
           </Suspense>
-        )}
+        </div>
+
+        {/* ---------------- SETTINGS TAB CONTENT ---------------- */}
+        <div className={`w-full h-full ${activeTab === 'settings' ? '' : 'hidden'}`}>
+          <Suspense
+            fallback={
+              <div
+                className="w-full h-full px-6 py-6"
+                style={{ background: token.colorBgContainer }}
+              >
+                <Skeleton active paragraph={{ rows: 10 }} title />
+              </div>
+            }
+          >
+            <SettingsDialog
+              isOpen={true}
+              fullScreen
+              onClose={() => setActiveTab('chat')}
+              onSaved={(saved) => {
+                setCurrentSettings(saved)
+                setActiveTab('chat')
+              }}
+            />
+          </Suspense>
+        </div>
 
         {/* 文档集编辑弹窗 */}
         <CollectionModal
@@ -715,44 +693,7 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
           onSubmit={() => void handleCollectionSubmit()}
         />
 
-        {/* 设置弹窗（懒加载） */}
-        {settingsOpen && (
-          <Suspense fallback={null}>
-            <SettingsDialog
-              isOpen={settingsOpen}
-              onClose={() => setSettingsOpen(false)}
-              onSaved={(saved) => {
-                setCurrentSettings(saved)
-                setSettingsOpen(false)
-              }}
-            />
-          </Suspense>
-        )}
 
-        {/* 浮动按钮 - 回到顶部 */}
-        <FloatButton.BackTop
-          visibilityHeight={400}
-          style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 1050 }}
-        />
-        {/* 浮动控制组：对话列表 & 知识库显隐 */}
-        <FloatButton.Group
-          shape="circle"
-          style={{ position: 'fixed', right: 24, bottom: 96, zIndex: 1050 }}
-          trigger="click"
-          icon={<MenuOutlined />}
-          tooltip="显示/隐藏侧栏"
-        >
-          <FloatButton
-            icon={<MenuOutlined />}
-            tooltip={showChatSidebar ? '隐藏对话列表' : '显示对话列表'}
-            onClick={() => setShowChatSidebar((v) => !v)}
-          />
-          <FloatButton
-            icon={<DatabaseOutlined />}
-            tooltip={showKnowledgeBase ? '隐藏知识库' : '显示知识库'}
-            onClick={() => setShowKnowledgeBase((v) => !v)}
-          />
-        </FloatButton.Group>
 
         {/* 更新通知组件 - 显示在右上角 */}
         <UpdateNotification />

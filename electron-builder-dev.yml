@@ -1,0 +1,39 @@
+appId: com.zhihui.rag
+productName: RAG助手-Dev
+directories:
+  buildResources: build
+  output: dist
+
+# 开发模式 - 最快构建速度
+buildDependenciesFromSource: false
+nodeGypRebuild: false
+npmRebuild: false
+
+# 禁用 asar 打包 - 显著提升速度
+asar: false
+
+# 不压缩 - 最快速度
+compression: store
+
+# 最小化文件过滤
+files:
+  - '!**/.vscode/*'
+  - '!**/.git/*'
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md}'
+  - '!**/node_modules/*/{test,__tests__,tests,example,examples}'
+  - '!**/node_modules/.bin'
+  - '!src/*'
+  - '!*.ts'
+  - '!*.md'
+
+# 开发模式下不解压原生模块到外部（因为没有 asar）
+asarUnpack: []
+
+# Windows 配置 - 仅 portable 格式（最快）
+win:
+  executableName: AiRag-Dev
+  icon: build/icon.ico
+  target:
+    - target: dir
+      arch:
+        - x64

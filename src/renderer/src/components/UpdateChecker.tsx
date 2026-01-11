@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactElement } from 'react'
-import { Button, Progress, Space, Typography, Alert, Tag, Tooltip } from 'antd'
+import { Button, Progress, Space, Typography, Alert, Tag, Tooltip, message } from 'antd'
 import {
   DownloadOutlined,
   CheckCircleOutlined,
@@ -65,9 +65,15 @@ export function UpdateChecker(): ReactElement {
     if (typeof window.api.onUpdateStatusChanged === 'function') {
       const unsubscribe = window.api.onUpdateStatusChanged((status) => {
         setState(() => status)
-        // 如果发现新版本，自动展开详情面板
+        // 如果发现新版本，使用状态消息提示
         if (status.availableVersion && !status.isDownloaded && !status.isDownloading) {
-          setShowDetails(true)
+          message.info(`发现新版本 ${status.availableVersion}，请前往设置页面下载更新`)
+        }
+        if (status.isDownloaded) {
+          message.success('更新已下载完成，可以安装并重启应用')
+        }
+        if (status.error) {
+          message.error(`更新检查失败: ${status.error}`)
         }
       })
       if (unsubscribe) listeners.push(unsubscribe)

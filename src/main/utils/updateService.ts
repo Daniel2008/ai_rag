@@ -48,20 +48,29 @@ function updateState(updates: Partial<UpdateStatus>): void {
  * 初始化自动更新器配置
  */
 export function initializeAutoUpdater(): void {
-  // 配置更新器
-  autoUpdater.autoDownload = false // 手动控制下载
-  autoUpdater.autoInstallOnAppQuit = true // 退出时自动安装
-  autoUpdater.allowPrerelease = false // 只允许正式版
-  autoUpdater.allowDowngrade = false // 不允许降级
-
   // 开发环境下禁用更新检查
   if (process.env.NODE_ENV === 'development') {
     logInfo('开发环境，跳过自动更新初始化')
     return
   }
 
-  setupUpdateEvents()
-  logInfo('自动更新服务已初始化')
+  try {
+    // 将所有配置移动到 try-catch 中
+    // 因为即使是属性赋值也可能触发配置文件读取
+    autoUpdater.autoDownload = false // 手动控制下载
+    autoUpdater.autoInstallOnAppQuit = true // 退出时自动安装
+    autoUpdater.allowPrerelease = false // 只允许正式版
+    autoUpdater.allowDowngrade = false // 不允许降级
+
+    setupUpdateEvents()
+    logInfo('自动更新服务已初始化')
+  } catch (error) {
+    if (String(error).includes('app-update.yml')) {
+      logInfo('未找到 app-update.yml，跳过自动更新初始化 (开发构建模式)')
+      return
+    }
+    logError('自动更新初始化失败', 'update', { error })
+  }
 }
 
 /**
@@ -140,14 +149,8 @@ function setupUpdateEvents(): void {
  */
 export async function checkForUpdates(manual: boolean = false): Promise<void> {
   if (process.env.NODE_ENV === 'development') {
-    if (manual) {
-      dialog.showMessageBox({
-        type: 'info',
-        title: '开发环境',
-        message: '开发环境下无法检查更新',
-        detail: '请在生产环境下测试更新功能'
-      })
-    }
+    logInfo('开发环境，跳过更新检查')
+    // 开发环境不弹窗，只记录日志
     return
   }
 
@@ -157,9 +160,11 @@ export async function checkForUpdates(manual: boolean = false): Promise<void> {
   } catch (error) {
     const errorInfo = normalizeError(error)
     logError('检查更新失败', 'update', { error: errorInfo.message, details: errorInfo.details })
-    if (manual) {
-      dialog.showErrorBox('检查更新失败', errorInfo.message || '未知错误')
-    }
+    // 不再弹出对话框，通过状态更新通知渲染进程
+    updateState({
+      isChecking: false,
+      error: errorInfo.message || '检查更新失败'
+    })
   }
 }
 
@@ -168,11 +173,7 @@ export async function checkForUpdates(manual: boolean = false): Promise<void> {
  */
 export async function downloadUpdate(): Promise<void> {
   if (process.env.NODE_ENV === 'development') {
-    dialog.showMessageBox({
-      type: 'info',
-      title: '开发环境',
-      message: '开发环境下无法下载更新'
-    })
+    logInfo('开发环境，跳过更新下载')
     return
   }
 
@@ -190,11 +191,7 @@ export async function downloadUpdate(): Promise<void> {
  */
 export function installUpdateAndQuit(): void {
   if (process.env.NODE_ENV === 'development') {
-    dialog.showMessageBox({
-      type: 'info',
-      title: '开发环境',
-      message: '开发环境下无法安装更新'
-    })
+    logInfo('开发环境，跳过更新安装')
     return
   }
 
@@ -213,24 +210,7 @@ function notifyUpdateAvailable(info: UpdateInfo): void {
       releaseDate: info.releaseDate
     })
   }
-
-  // 如果是手动检查，显示对话框
-  if (isManualCheck) {
-    dialog
-      .showMessageBox({
-        type: 'info',
-        title: '发现新版本',
-        message: `发现新版本: ${info.version}`,
-        detail: '是否现在下载更新？',
-        buttons: ['下载更新', '稍后再说'],
-        defaultId: 0
-      })
-      .then((result) => {
-        if (result.response === 0) {
-          downloadUpdate()
-        }
-      })
-  }
+  // 不再显示弹窗，通过渲染进程状态消息显示
 }
 
 /**
@@ -242,13 +222,7 @@ function notifyUpdateNotAvailable(info: UpdateInfo): void {
       currentVersion: info.version
     })
   }
-
-  dialog.showMessageBox({
-    type: 'info',
-    title: '检查更新',
-    message: '当前已是最新版本',
-    detail: `当前版本: ${info.version}`
-  })
+  // 不再显示弹窗，通过渲染进程状态消息显示
 }
 
 /**
@@ -269,21 +243,7 @@ function notifyUpdateDownloaded(info: UpdateInfo): void {
       version: info.version
     })
   }
-
-  dialog
-    .showMessageBox({
-      type: 'info',
-      title: '更新已下载',
-      message: '更新已下载完成',
-      detail: '是否立即安装并重启应用？',
-      buttons: ['立即安装', '稍后安装'],
-      defaultId: 0
-    })
-    .then((result) => {
-      if (result.response === 0) {
-        installUpdateAndQuit()
-      }
-    })
+  // 不再显示弹窗，通过渲染进程状态消息显示
 }
 
 /**

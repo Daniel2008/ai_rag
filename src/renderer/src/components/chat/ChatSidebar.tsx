@@ -2,26 +2,23 @@ import type { CSSProperties, ReactElement } from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import { Conversations, type ConversationsProps } from '@ant-design/x'
 import {
-  Badge,
   Button,
   Flex,
   Input,
   Modal,
-  Space,
   Tooltip,
   Typography,
   theme as antdTheme
 } from 'antd'
 import {
-  SettingOutlined,
   DeleteOutlined,
   MoonFilled,
   SunFilled,
   PlusOutlined,
-  DatabaseOutlined,
   StarOutlined,
   EditOutlined
 } from '@ant-design/icons'
+
 import type { ConversationItem } from '../../types/chat'
 
 export type AssistantPhase = 'idle' | 'thinking' | 'answering' | 'error' | 'processing'
@@ -42,7 +39,7 @@ interface ChatSidebarProps {
   onRenameConversation: (key: string, label: string) => Promise<void>
   onToggleStarConversation: (key: string) => void
   onDeleteConversation: (key: string) => void
-  onOpenSettings: () => void
+  simpleMode?: boolean
 }
 
 export function ChatSidebar({
@@ -61,7 +58,7 @@ export function ChatSidebar({
   onRenameConversation,
   onToggleStarConversation,
   onDeleteConversation,
-  onOpenSettings
+  simpleMode = false
 }: ChatSidebarProps): ReactElement {
   const { token } = antdTheme.useToken()
 
@@ -177,74 +174,143 @@ export function ChatSidebar({
     >
       {/* Logo 和新建对话 */}
       <div
-        className="px-4 pt-5 pb-4"
-        style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}
+        className={`px-4 pt-5 pb-4 ${simpleMode ? '' : 'border-b'}`}
+        style={{
+          borderBottom: simpleMode ? 'none' : `1px solid ${token.colorBorderSecondary}`
+        }}
       >
-        <Flex align="center" gap={12} className="mb-4" style={{ margin: 20, marginLeft: 40 }}>
-          <div className="avatar-glow" style={{ borderRadius: 12 }}>
-            <div
-              className={`cartoon-assistant cartoon-assistant--${assistantPhase === 'processing' ? 'thinking' : assistantPhase}`}
-              style={
-                {
-                  '--assistant-primary': token.colorPrimary
-                } as CSSProperties
-              }
-            >
-              <div className="cartoon-assistant__arm cartoon-assistant__arm--left" />
-              <div className="cartoon-assistant__arm cartoon-assistant__arm--right" />
-              <div className="cartoon-assistant__body">
-                <div className="cartoon-assistant__chest" />
-              </div>
-              <div className="cartoon-assistant__head">
-                <div className="cartoon-assistant__face">
-                  <div className="cartoon-assistant__eye cartoon-assistant__eye--left" />
-                  <div className="cartoon-assistant__eye cartoon-assistant__eye--right" />
-                  <div className="cartoon-assistant__mouth" />
-                  <div className="cartoon-assistant__cheek cartoon-assistant__cheek--left" />
-                  <div className="cartoon-assistant__cheek cartoon-assistant__cheek--right" />
+        {!simpleMode && (
+          <Flex align="center" gap={12} className="mb-4" style={{ margin: 20, marginLeft: 40 }}>
+            {/* ... avatar code ... */}
+            <div className="avatar-glow" style={{ borderRadius: 12 }}>
+              <div
+                className={`cartoon-assistant cartoon-assistant--${assistantPhase === 'processing' ? 'thinking' : assistantPhase}`}
+                style={
+                  {
+                    '--assistant-primary': token.colorPrimary
+                  } as CSSProperties
+                }
+              >
+                <div className="cartoon-assistant__arm cartoon-assistant__arm--left" />
+                <div className="cartoon-assistant__arm cartoon-assistant__arm--right" />
+                <div className="cartoon-assistant__body">
+                  <div className="cartoon-assistant__chest" />
+                </div>
+                <div className="cartoon-assistant__head">
+                  <div className="cartoon-assistant__face">
+                    <div className="cartoon-assistant__eye cartoon-assistant__eye--left" />
+                    <div className="cartoon-assistant__eye cartoon-assistant__eye--right" />
+                    <div className="cartoon-assistant__mouth" />
+                    <div className="cartoon-assistant__cheek cartoon-assistant__cheek--left" />
+                    <div className="cartoon-assistant__cheek cartoon-assistant__cheek--right" />
+                  </div>
+                </div>
+                <div className="cartoon-assistant__dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
                 </div>
               </div>
-              <div className="cartoon-assistant__dots" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </div>
             </div>
-          </div>
-          <div>
-            <Typography.Text type="secondary" className="text-xs">
-              {assistantSubtitle}
-            </Typography.Text>
-          </div>
-        </Flex>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          className="mt-5 btn-hover-lift"
-          block
-          size="large"
-          onClick={onCreateNewConversation}
-          style={{
-            background: `linear-gradient(135deg, ${token.colorPrimary} 0%, #7c3aed 100%)`,
-            border: 'none',
-            height: 44,
-            borderRadius: 12
-          }}
-        >
-          开始新对话
-        </Button>
+            <div>
+              <Typography.Text type="secondary" className="text-xs">
+                {assistantSubtitle}
+              </Typography.Text>
+            </div>
+          </Flex>
+        )}
+
+        {simpleMode ? (
+          <>
+            {/* 虚拟形象 - simpleMode */}
+            <div className="flex flex-col items-center mb-4 py-3">
+              <div className="avatar-glow" style={{ borderRadius: 12 }}>
+                <div
+                  className={`cartoon-assistant cartoon-assistant--${assistantPhase === 'processing' ? 'thinking' : assistantPhase}`}
+                  style={
+                    {
+                      '--assistant-primary': token.colorPrimary,
+                      transform: 'scale(0.8)'
+                    } as CSSProperties
+                  }
+                >
+                  <div className="cartoon-assistant__arm cartoon-assistant__arm--left" />
+                  <div className="cartoon-assistant__arm cartoon-assistant__arm--right" />
+                  <div className="cartoon-assistant__body">
+                    <div className="cartoon-assistant__chest" />
+                  </div>
+                  <div className="cartoon-assistant__head">
+                    <div className="cartoon-assistant__face">
+                      <div className="cartoon-assistant__eye cartoon-assistant__eye--left" />
+                      <div className="cartoon-assistant__eye cartoon-assistant__eye--right" />
+                      <div className="cartoon-assistant__mouth" />
+                      <div className="cartoon-assistant__cheek cartoon-assistant__cheek--left" />
+                      <div className="cartoon-assistant__cheek cartoon-assistant__cheek--right" />
+                    </div>
+                  </div>
+                  <div className="cartoon-assistant__dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              </div>
+              <Typography.Text type="secondary" className="text-xs mt-2">
+                {assistantSubtitle}
+              </Typography.Text>
+            </div>
+
+            <div className="flex items-center justify-between mb-2">
+              <Typography.Text className="font-semibold text-sm text-gray-500 pl-1">
+                对话列表
+              </Typography.Text>
+              <Tooltip title="新对话">
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  size="small"
+                  onClick={onCreateNewConversation}
+                  className="shadow-sm"
+                  style={{
+                    background: token.colorPrimary,
+                    borderRadius: 6
+                  }}
+                />
+              </Tooltip>
+            </div>
+          </>
+        ) : (
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            className="mt-5 btn-hover-lift"
+            block
+            size="large"
+            onClick={onCreateNewConversation}
+            style={{
+              background: `linear-gradient(135deg, ${token.colorPrimary} 0%, #7c3aed 100%)`,
+              border: 'none',
+              height: 44,
+              borderRadius: 12
+            }}
+          >
+            开始新对话
+          </Button>
+        )}
       </div>
 
       {/* 对话列表 */}
       <div className="flex-1 overflow-y-auto conversation-list">
-        <div className="px-3 py-2">
-          <Typography.Text
-            type="secondary"
-            className="text-xs font-medium uppercase tracking-wider"
-          >
-            对话历史
-          </Typography.Text>
-        </div>
+        {!simpleMode && (
+          <div className="px-3 py-2">
+            <Typography.Text
+              type="secondary"
+              className="text-xs font-medium uppercase tracking-wider"
+            >
+              对话历史
+            </Typography.Text>
+          </div>
+        )}
         <Conversations
           items={conversationItems}
           activeKey={activeConversationKey}
@@ -254,16 +320,14 @@ export function ChatSidebar({
         />
       </div>
 
-      {/* 底部操作 */}
-      <div className="p-3" style={{ borderTop: `1px solid ${token.colorBorderSecondary}` }}>
-        <Flex justify="space-between" align="center">
-          <Space>
-            <Tooltip title="模型设置">
-              <Button type="text" icon={<SettingOutlined />} onClick={onOpenSettings} />
-            </Tooltip>
+      {/* 底部操作 - 仅保留主题切换 */}
+      {!simpleMode && (
+        <div className="p-3" style={{ borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+          <Flex justify="center" align="center">
             <Tooltip title={themeMode === 'dark' ? '浅色模式' : '深色模式'}>
               <Button
                 type="text"
+                size="small"
                 icon={
                   themeMode === 'dark' ? (
                     <SunFilled style={{ color: '#fbbf24' }} />
@@ -272,20 +336,14 @@ export function ChatSidebar({
                   )
                 }
                 onClick={() => onThemeChange(themeMode === 'dark' ? 'light' : 'dark')}
-              />
+              >
+                {themeMode === 'dark' ? '浅色模式' : '深色模式'}
+              </Button>
             </Tooltip>
-          </Space>
-          <Badge
-            count={readyDocuments}
-            size="small"
-            style={{ backgroundColor: token.colorSuccess }}
-          >
-            <Tooltip title="知识库文档数">
-              <Button type="text" icon={<DatabaseOutlined />} />
-            </Tooltip>
-          </Badge>
-        </Flex>
-      </div>
+          </Flex>
+        </div>
+      )}
+
       <Modal
         title="重命名对话"
         open={renameOpen}

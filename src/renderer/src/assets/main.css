@@ -334,6 +334,7 @@ body.dark {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -345,6 +346,7 @@ body.dark {
     opacity: 0;
     transform: translateX(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -352,11 +354,13 @@ body.dark {
 }
 
 @keyframes pulse-gradient {
+
   0%,
   100% {
     transform: scale(1) rotate(0deg);
     opacity: 0.5;
   }
+
   50% {
     transform: scale(1.1) rotate(180deg);
     opacity: 0.8;
@@ -364,12 +368,14 @@ body.dark {
 }
 
 @keyframes typing-dot {
+
   0%,
   60%,
   100% {
     opacity: 0.3;
     transform: scale(1);
   }
+
   30% {
     opacity: 1;
     transform: scale(1.2);
@@ -377,72 +383,87 @@ body.dark {
 }
 
 @keyframes assistant-float {
+
   0%,
   100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-2px);
   }
 }
 
 @keyframes assistant-head-float {
+
   0%,
   100% {
     transform: translateX(-50%) translateY(0);
   }
+
   50% {
     transform: translateX(-50%) translateY(-2px);
   }
 }
 
 @keyframes assistant-blink {
+
   0%,
   92%,
   100% {
     transform: scaleY(1);
   }
+
   94% {
     transform: scaleY(0.15);
   }
 }
 
 @keyframes assistant-talk {
+
   0%,
   100% {
     transform: translateX(-50%) scaleY(0.6);
   }
+
   50% {
     transform: translateX(-50%) scaleY(1);
   }
 }
 
 @keyframes assistant-shake {
+
   0%,
   100% {
     transform: rotate(0deg);
   }
+
   20% {
     transform: rotate(-5deg);
   }
+
   40% {
     transform: rotate(5deg);
   }
+
   60% {
     transform: rotate(-4deg);
   }
+
   80% {
     transform: rotate(4deg);
   }
 }
 
 @keyframes assistant-dot {
+
   0%,
   60%,
   100% {
     opacity: 0.3;
     transform: translateY(0);
   }
+
   30% {
     opacity: 1;
     transform: translateY(-3px);
@@ -450,20 +471,24 @@ body.dark {
 }
 
 @keyframes assistant-arm-think {
+
   0%,
   100% {
     transform: rotate(var(--arm-rotate)) translateY(0);
   }
+
   50% {
     transform: rotate(calc(var(--arm-rotate) + 10deg)) translateY(-1px);
   }
 }
 
 @keyframes assistant-arm-wave {
+
   0%,
   100% {
     transform: rotate(var(--arm-rotate)) translateY(0);
   }
+
   50% {
     transform: rotate(calc(var(--arm-rotate) + 22deg)) translateY(-2px);
   }
@@ -485,6 +510,7 @@ body.dark {
     &:nth-child(2) {
       animation-delay: 0.2s;
     }
+
     &:nth-child(3) {
       animation-delay: 0.4s;
     }
@@ -578,198 +604,189 @@ body.dark {
   }
 }
 
+/* ================================
+   AI Robot Avatar - New Design
+   ================================ */
+
 .cartoon-assistant {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
+  width: 72px;
+  height: 72px;
   position: relative;
-  display: grid;
-  place-items: center;
-  overflow: visible;
-  background: linear-gradient(135deg, var(--assistant-primary) 0%, #7c3aed 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
-  transform-origin: 50% 60%;
-  animation: assistant-float 3.6s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+  animation: robot-float 3s ease-in-out infinite;
 }
 
-.dark .cartoon-assistant {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-}
-
-.cartoon-assistant__head {
-  position: absolute;
-  left: 50%;
-  top: 3px;
-  width: 46px;
-  height: 46px;
-  transform: translateX(-50%);
-  border-radius: 999px;
-  z-index: 2;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.76) 100%);
-  box-shadow:
-    0 10px 18px rgba(0, 0, 0, 0.18),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.6);
-}
-
-.dark .cartoon-assistant__head {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88) 0%, rgba(15, 23, 42, 0.7) 100%);
-  box-shadow:
-    0 14px 22px rgba(0, 0, 0, 0.5),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-}
-
-.cartoon-assistant__face {
-  position: absolute;
-  inset: 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
-}
-
-.dark .cartoon-assistant__face {
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
-}
-
+/* Robot Body Container */
 .cartoon-assistant__body {
   position: absolute;
+  bottom: 0;
   left: 50%;
-  bottom: 6px;
-  width: 42px;
-  height: 20px;
   transform: translateX(-50%);
-  border-radius: 16px 16px 18px 18px;
-  z-index: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.7) 100%);
+  width: 44px;
+  height: 28px;
+  background: linear-gradient(180deg, #818cf8 0%, #6366f1 100%);
+  border-radius: 12px 12px 16px 16px;
   box-shadow:
-    0 8px 16px rgba(0, 0, 0, 0.16),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+    0 8px 20px rgba(99, 102, 241, 0.4),
+    inset 0 2px 0 rgba(255, 255, 255, 0.3);
 }
 
 .dark .cartoon-assistant__body {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.85) 0%, rgba(15, 23, 42, 0.62) 100%);
+  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
   box-shadow:
-    0 10px 18px rgba(0, 0, 0, 0.45),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+    0 8px 24px rgba(99, 102, 241, 0.5),
+    inset 0 2px 0 rgba(255, 255, 255, 0.2);
 }
 
+/* Chest Light */
 .cartoon-assistant__chest {
   position: absolute;
   left: 50%;
-  top: 4px;
-  width: 20px;
-  height: 9px;
+  top: 8px;
   transform: translateX(-50%);
-  border-radius: 10px;
-  background: rgba(79, 70, 229, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.35);
-}
-
-.dark .cartoon-assistant__chest {
-  background: rgba(129, 140, 248, 0.18);
-  box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.3);
-}
-
-.cartoon-assistant__arm {
-  position: absolute;
-  top: 36px;
-  width: 22px;
-  height: 9px;
-  border-radius: 999px;
-  z-index: 1;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.7) 100%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #c4b5fd 0%, #a78bfa 50%, #8b5cf6 100%);
   box-shadow:
-    0 8px 14px rgba(0, 0, 0, 0.16),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.55);
-  transform: rotate(var(--arm-rotate)) translateY(0);
+    0 0 12px rgba(167, 139, 250, 0.8),
+    0 0 24px rgba(139, 92, 246, 0.4);
+  animation: chest-glow 2s ease-in-out infinite;
 }
 
-.dark .cartoon-assistant__arm {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.85) 0%, rgba(15, 23, 42, 0.62) 100%);
-  box-shadow:
-    0 10px 18px rgba(0, 0, 0, 0.45),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-}
-
-.cartoon-assistant__arm::after {
-  content: '';
+/* Robot Head */
+.cartoon-assistant__head {
   position: absolute;
-  top: 50%;
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: inherit;
-  box-shadow: inherit;
-  transform: translateY(-50%);
+  left: 50%;
+  top: -2px;
+  transform: translateX(-50%);
+  width: 56px;
+  height: 56px;
+  background: linear-gradient(135deg, #eef2ff 0%, #ddd6fe 50%, #c4b5fd 100%);
+  border-radius: 50%;
+  box-shadow:
+    0 8px 24px rgba(99, 102, 241, 0.35),
+    0 4px 12px rgba(139, 92, 246, 0.2),
+    inset 0 -6px 12px rgba(99, 102, 241, 0.15),
+    inset 0 3px 0 rgba(255, 255, 255, 0.9);
+  z-index: 2;
 }
 
-.cartoon-assistant__arm--left {
-  left: 2px;
-  transform-origin: 2px 4px;
-  --arm-rotate: 24deg;
+.dark .cartoon-assistant__head {
+  background: linear-gradient(135deg, #4338ca 0%, #3730a3 50%, #312e81 100%);
+  box-shadow:
+    0 8px 28px rgba(99, 102, 241, 0.5),
+    0 4px 16px rgba(139, 92, 246, 0.3),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.3),
+    inset 0 3px 0 rgba(255, 255, 255, 0.2);
 }
 
-.cartoon-assistant__arm--left::after {
-  left: -5px;
+/* Face Container */
+.cartoon-assistant__face {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fefefe 0%, #f5f3ff 40%, #ede9fe 100%);
+  box-shadow:
+    inset 0 4px 8px rgba(255, 255, 255, 1),
+    inset 0 -2px 6px rgba(139, 92, 246, 0.1);
 }
 
-.cartoon-assistant__arm--right {
-  right: 2px;
-  transform-origin: 20px 4px;
-  --arm-rotate: -24deg;
+.dark .cartoon-assistant__face {
+  background: linear-gradient(180deg, #4c1d95 0%, #3730a3 40%, #312e81 100%);
+  box-shadow:
+    inset 0 4px 8px rgba(255, 255, 255, 0.15),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.2);
 }
 
-.cartoon-assistant__arm--right::after {
-  right: -5px;
-}
-
+/* Eyes - 更大更可爱 */
 .cartoon-assistant__eye {
-  width: 5px;
-  height: 7px;
-  border-radius: 999px;
   position: absolute;
-  top: 9px;
-  background: rgba(15, 23, 42, 0.92);
-  transform-origin: 50% 50%;
-  animation: assistant-blink 4.2s infinite;
+  top: 16px;
+  width: 11px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #1e1b4b 0%, #4338ca 100%);
+  box-shadow:
+    inset 0 3px 6px rgba(255, 255, 255, 0.4),
+    0 0 12px rgba(99, 102, 241, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: robot-blink 4s infinite;
 }
 
 .dark .cartoon-assistant__eye {
-  background: rgba(248, 250, 252, 0.92);
+  background: linear-gradient(180deg, #e0e7ff 0%, #c7d2fe 100%);
+  box-shadow:
+    inset 0 3px 6px rgba(255, 255, 255, 0.6),
+    0 0 16px rgba(224, 231, 255, 0.6),
+    0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Eye highlight - 更大更亮 */
+.cartoon-assistant__eye::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
+}
+
+/* 第二个高光 */
+.cartoon-assistant__eye::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 6px;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .cartoon-assistant__eye--left {
-  left: 7px;
+  left: 9px;
 }
 
 .cartoon-assistant__eye--right {
-  right: 7px;
-  animation-delay: 0.18s;
+  right: 9px;
+  animation-delay: 0.15s;
 }
 
+/* Mouth - 微笑弧线 */
 .cartoon-assistant__mouth {
   position: absolute;
   left: 50%;
-  top: 18px;
-  width: 12px;
-  height: 6px;
-  border-radius: 0 0 10px 10px;
-  transform: translateX(-50%) scaleY(0.6);
-  background: rgba(15, 23, 42, 0.65);
+  bottom: 11px;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 8px;
+  background: transparent;
+  border: 3px solid #6366f1;
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  transition: all 0.2s ease;
 }
 
 .dark .cartoon-assistant__mouth {
-  background: rgba(248, 250, 252, 0.7);
+  border-color: #c7d2fe;
 }
 
+/* Cheeks */
 .cartoon-assistant__cheek {
   position: absolute;
-  top: 16px;
-  width: 6px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(244, 114, 182, 0.35);
-  opacity: 0.9;
+  top: 22px;
+  width: 8px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(244, 114, 182, 0.5);
+  filter: blur(1px);
 }
 
 .cartoon-assistant__cheek--left {
@@ -780,23 +797,63 @@ body.dark {
   right: 4px;
 }
 
+/* Arms */
+.cartoon-assistant__arm {
+  position: absolute;
+  bottom: 8px;
+  width: 14px;
+  height: 20px;
+  background: linear-gradient(180deg, #818cf8 0%, #6366f1 100%);
+  border-radius: 8px;
+  transform-origin: top center;
+  transition: transform 0.3s ease;
+}
+
+.dark .cartoon-assistant__arm {
+  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
+}
+
+.cartoon-assistant__arm--left {
+  left: 6px;
+  transform: rotate(15deg);
+}
+
+.cartoon-assistant__arm--right {
+  right: 6px;
+  transform: rotate(-15deg);
+}
+
+/* Hand circles */
+.cartoon-assistant__arm::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  border-radius: 50%;
+}
+
+/* Thinking Dots */
 .cartoon-assistant__dots {
   position: absolute;
-  bottom: -10px;
+  bottom: -16px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   gap: 4px;
   opacity: 0;
-  pointer-events: none;
+  transition: opacity 0.3s ease;
 }
 
 .cartoon-assistant__dots span {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  animation: assistant-dot 1.1s ease-in-out infinite;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  animation: dot-bounce 1.2s ease-in-out infinite;
 }
 
 .cartoon-assistant__dots span:nth-child(2) {
@@ -807,70 +864,279 @@ body.dark {
   animation-delay: 0.4s;
 }
 
-.cartoon-assistant--thinking .cartoon-assistant__dots,
+/* ================================
+   State Animations
+   ================================ */
+
+/* Idle State */
+.cartoon-assistant--idle {
+  animation: robot-float 3s ease-in-out infinite;
+}
+
+.cartoon-assistant--idle .cartoon-assistant__mouth {
+  height: 6px;
+  border-radius: 0 0 10px 10px;
+}
+
+/* Thinking State */
+.cartoon-assistant--thinking {
+  animation: robot-think 2s ease-in-out infinite;
+}
+
+.cartoon-assistant--thinking .cartoon-assistant__head {
+  animation: head-tilt 2s ease-in-out infinite;
+}
+
+.cartoon-assistant--thinking .cartoon-assistant__eye {
+  animation: eye-look 2s ease-in-out infinite;
+}
+
+.cartoon-assistant--thinking .cartoon-assistant__dots {
+  opacity: 1;
+}
+
+.cartoon-assistant--thinking .cartoon-assistant__arm--right {
+  animation: arm-think 1.5s ease-in-out infinite;
+}
+
+/* Answering State */
+.cartoon-assistant--answering {
+  animation: robot-bounce 0.6s ease-in-out infinite;
+}
+
+.cartoon-assistant--answering .cartoon-assistant__mouth {
+  animation: mouth-talk 0.3s ease-in-out infinite;
+}
+
+.cartoon-assistant--answering .cartoon-assistant__arm--right {
+  animation: arm-wave 0.5s ease-in-out infinite;
+}
+
+.cartoon-assistant--answering .cartoon-assistant__arm--left {
+  animation: arm-wave 0.6s ease-in-out infinite;
+  animation-delay: 0.1s;
+}
+
 .cartoon-assistant--answering .cartoon-assistant__dots {
   opacity: 1;
 }
 
-.cartoon-assistant--thinking .cartoon-assistant__head {
-  animation: assistant-head-float 1.8s ease-in-out infinite;
+.cartoon-assistant--answering .cartoon-assistant__chest {
+  animation: chest-glow-fast 0.5s ease-in-out infinite;
 }
 
-.cartoon-assistant--thinking .cartoon-assistant__arm {
-  animation: assistant-arm-think 1.2s ease-in-out infinite;
-}
-
-.cartoon-assistant--thinking .cartoon-assistant__eye--left {
-  left: 6px;
-}
-
-.cartoon-assistant--thinking .cartoon-assistant__eye--right {
-  right: 6px;
-}
-
-.cartoon-assistant--answering .cartoon-assistant__arm--right {
-  animation: assistant-arm-wave 0.62s ease-in-out infinite;
-}
-
-.cartoon-assistant--answering .cartoon-assistant__arm--left {
-  animation: assistant-arm-wave 0.82s ease-in-out infinite;
-  animation-delay: 0.08s;
-}
-
-.cartoon-assistant--answering .cartoon-assistant__mouth {
-  animation: assistant-talk 0.24s ease-in-out infinite;
-}
-
-.cartoon-assistant--answering {
-  animation-duration: 2.4s;
-}
-
+/* Error State */
 .cartoon-assistant--error {
-  animation: assistant-shake 0.6s ease-in-out infinite;
+  animation: robot-shake 0.5s ease-in-out infinite;
 }
 
 .cartoon-assistant--error .cartoon-assistant__face {
-  background: rgba(255, 241, 242, 0.95);
+  background: linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%);
 }
 
 .dark .cartoon-assistant--error .cartoon-assistant__face {
-  background: rgba(127, 29, 29, 0.35);
+  background: linear-gradient(180deg, #450a0a 0%, #7f1d1d 100%);
+}
+
+.cartoon-assistant--error .cartoon-assistant__eye {
+  height: 3px;
+  top: 18px;
+  border-radius: 2px;
 }
 
 .cartoon-assistant--error .cartoon-assistant__mouth {
-  width: 14px;
-  height: 2px;
-  border-radius: 999px;
-  top: 18px;
-  transform: translateX(-50%);
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  bottom: 12px;
 }
 
 .cartoon-assistant--error .cartoon-assistant__arm--left {
-  transform: rotate(8deg) translateY(2px);
+  transform: rotate(-30deg) translateY(-4px);
 }
 
 .cartoon-assistant--error .cartoon-assistant__arm--right {
-  transform: rotate(-8deg) translateY(2px);
+  transform: rotate(30deg) translateY(-4px);
+}
+
+/* ================================
+   Keyframe Animations
+   ================================ */
+
+@keyframes robot-float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes robot-think {
+
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(-2px) rotate(2deg);
+  }
+}
+
+@keyframes robot-bounce {
+
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-4px) scale(1.02);
+  }
+}
+
+@keyframes robot-shake {
+
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  20% {
+    transform: rotate(-3deg);
+  }
+
+  40% {
+    transform: rotate(3deg);
+  }
+
+  60% {
+    transform: rotate(-2deg);
+  }
+
+  80% {
+    transform: rotate(2deg);
+  }
+}
+
+@keyframes head-tilt {
+
+  0%,
+  100% {
+    transform: translateX(-50%) rotate(0deg);
+  }
+
+  50% {
+    transform: translateX(-50%) rotate(8deg);
+  }
+}
+
+@keyframes eye-look {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(2px);
+  }
+
+  75% {
+    transform: translateX(-2px);
+  }
+}
+
+@keyframes robot-blink {
+
+  0%,
+  90%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes mouth-talk {
+
+  0%,
+  100% {
+    height: 6px;
+  }
+
+  50% {
+    height: 10px;
+  }
+}
+
+@keyframes arm-wave {
+
+  0%,
+  100% {
+    transform: rotate(-15deg);
+  }
+
+  50% {
+    transform: rotate(-45deg) translateY(-2px);
+  }
+}
+
+@keyframes arm-think {
+
+  0%,
+  100% {
+    transform: rotate(-15deg);
+  }
+
+  50% {
+    transform: rotate(-25deg) translateY(-2px);
+  }
+}
+
+@keyframes dot-bounce {
+
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes chest-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 12px rgba(167, 139, 250, 0.6), 0 0 24px rgba(139, 92, 246, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 16px rgba(167, 139, 250, 0.9), 0 0 32px rgba(139, 92, 246, 0.5);
+  }
+}
+
+@keyframes chest-glow-fast {
+
+  0%,
+  100% {
+    box-shadow: 0 0 12px rgba(167, 139, 250, 0.8), 0 0 24px rgba(139, 92, 246, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 20px rgba(167, 139, 250, 1), 0 0 40px rgba(139, 92, 246, 0.7);
+  }
 }
 
 /* Card Hover Effect */
@@ -970,6 +1236,7 @@ body.dark {
   }
 
   table {
+
     th,
     td {
       border-color: #334155;
@@ -1136,6 +1403,7 @@ body.dark {
   0% {
     left: -100%;
   }
+
   100% {
     left: 100%;
   }
@@ -1152,10 +1420,12 @@ body.dark {
 }
 
 @keyframes pulse-badge {
+
   0%,
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.6;
   }

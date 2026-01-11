@@ -9,31 +9,35 @@ import {
   Typography,
   message,
   Select,
-  Divider,
   AutoComplete,
   Modal,
   Slider,
   InputNumber,
   Row,
   Col,
-  Tabs,
-  Switch
+  Switch,
+  Menu,
+  theme as antdTheme
 } from 'antd'
 import {
   ApiOutlined,
   RobotOutlined,
   KeyOutlined,
   SettingOutlined,
-  ToolOutlined,
   CloudDownloadOutlined,
   GlobalOutlined,
-  RocketOutlined
+  RocketOutlined,
+  DatabaseOutlined,
+  SearchOutlined,
+  ArrowLeftOutlined
 } from '@ant-design/icons'
+import type { MenuProps } from 'antd'
 import type { AppSettings, ModelProvider, EmbeddingProvider } from '../types/chat'
 import UpdateChecker from './UpdateChecker'
 
 interface SettingsDialogProps {
   isOpen: boolean
+  fullScreen?: boolean
   onClose: () => void
   onSaved?: (settings: AppSettings) => void
 }
@@ -56,8 +60,6 @@ const MODEL_PRESETS: Record<ModelProvider, string[]> = {
   moonshot: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']
 }
 
-// 本地嵌入模型（内置，自动下载）
-// 多语言模型推荐用于中英文混合文档
 const LOCAL_EMBEDDING_MODELS = [
   { value: 'multilingual-e5-small', label: '🌍 E5 多语言 Small (推荐，100+语言)' },
   { value: 'multilingual-e5-base', label: '🌍 E5 多语言 Base (更准确，较大)' },
@@ -69,7 +71,6 @@ const LOCAL_EMBEDDING_MODELS = [
   { value: 'all-MiniLM-L6', label: '🇺🇸 MiniLM-L6 (英文轻量)' }
 ]
 
-// Ollama 嵌入模型
 const OLLAMA_EMBEDDING_MODELS = [
   'nomic-embed-text',
   'mxbai-embed-large',
@@ -78,21 +79,31 @@ const OLLAMA_EMBEDDING_MODELS = [
   'snowflake-arctic-embed'
 ]
 
-export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps): ReactElement {
+type SettingsSection = 'model' | 'embedding' | 'rag' | 'enhance' | 'web' | 'update'
+
+const MENU_ITEMS: MenuProps['items'] = [
+  { key: 'model', icon: <RobotOutlined />, label: '模型配置' },
+  { key: 'embedding', icon: <DatabaseOutlined />, label: '向量模型' },
+  { key: 'rag', icon: <SearchOutlined />, label: '检索参数' },
+  { key: 'enhance', icon: <RocketOutlined />, label: '增强功能' },
+  { key: 'web', icon: <GlobalOutlined />, label: '联网搜索' },
+  { key: 'update', icon: <CloudDownloadOutlined />, label: '更新检查' }
+]
+
+export function SettingsDialog({ isOpen, fullScreen = false, onClose, onSaved }: SettingsDialogProps): ReactElement {
+  const { token } = antdTheme.useToken()
   const [form] = Form.useForm<AppSettings>()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [currentProvider, setCurrentProvider] = useState<ModelProvider>('ollama')
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>('local')
-  // 保存初始设置，用于在保存时合并那些未渲染在界面上的配置项（例如未选中的供应商配置）
   const [initialSettings, setInitialSettings] = useState<AppSettings>()
+  const [activeSection, setActiveSection] = useState<SettingsSection>('model')
 
   const loadSettings = useCallback(async (): Promise<void> => {
     setLoading(true)
     try {
       const current = await window.api.getSettings()
-
-      // 兜底：确保 RAG 参数始终有默认值（避免旧版本/异常数据导致表单为空）
       const currentWithDefaults: AppSettings = {
         ...current,
         rag: {
@@ -105,7 +116,6 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
           tavilyApiKey: current.rag?.tavilyApiKey ?? ''
         }
       }
-
       setInitialSettings(currentWithDefaults)
       form.setFieldsValue(currentWithDefaults)
       setCurrentProvider(currentWithDefaults.provider || 'ollama')
@@ -128,17 +138,13 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     try {
       const values = await form.validateFields()
       setSaving(true)
-
-      // 合并初始配置与当前表单值，防止未渲染的供应商配置丢失
       const finalSettings = { ...initialSettings, ...values }
-
       const result = await window.api.saveSettings(finalSettings)
 
       if (result.embeddingChanged) {
         if (result.reindexingStarted) {
           message.info('嵌入模型已切换，正在后台重建知识库索引...')
         } else {
-          // 嵌入模型变更，显示警告提示
           Modal.warning({
             title: '嵌入模型已切换',
             content: (
@@ -175,12 +181,13 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     form.setFieldValue('provider', value)
   }
 
+  // 渲染供应商配置
   const renderProviderConfig = (provider: ModelProvider): ReactElement => {
     const isOllama = provider === 'ollama'
     const modelOptions = MODEL_PRESETS[provider].map((m) => ({ value: m, label: m }))
 
     return (
-      <div key={provider} className="settings-form-section">
+      <div key={provider} className="space-y-4">
         {!isOllama && (
           <Form.Item
             label={
@@ -235,6 +242,395 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
     )
   }
 
+  // 渲染各个设置区块内容
+  const renderSectionContent = (): ReactElement => {
+    switch (activeSection) {
+      case 'model':
+        return (
+          <div className="space-y-6">
+            <div>
+              <Typography.Title level={5} style={{ marginBottom: 16 }}>
+                <RobotOutlined className="mr-2" />
+                模型配置
+              </Typography.Title>
+              <Typography.Text type="secondary" className="block mb-6">
+                选择并配置您的 AI 模型供应商
+              </Typography.Text>
+            </div>
+
+            <Form.Item label="当前模型供应商" name="provider" rules={[{ required: true }]}>
+              <Select
+                options={PROVIDER_OPTIONS.map((p) => ({
+                  value: p.value,
+                  label: (
+                    <span>
+                      <span className="mr-2">{p.icon}</span>
+                      {p.label}
+                    </span>
+                  )
+                }))}
+                onChange={handleProviderChange}
+              />
+            </Form.Item>
+
+            <div
+              className="rounded-xl p-5"
+              style={{
+                background: token.colorPrimaryBg,
+                border: `1px solid ${token.colorPrimaryBorder}`
+              }}
+            >
+              <Typography.Text strong className="mb-4 block">
+                {PROVIDER_OPTIONS.find((p) => p.value === currentProvider)?.icon}{' '}
+                {PROVIDER_OPTIONS.find((p) => p.value === currentProvider)?.label} 配置
+              </Typography.Text>
+              {renderProviderConfig(currentProvider)}
+            </div>
+          </div>
+        )
+
+      case 'embedding':
+        return (
+          <div className="space-y-6">
+            <div>
+              <Typography.Title level={5} style={{ marginBottom: 16 }}>
+                <DatabaseOutlined className="mr-2" />
+                向量模型
+              </Typography.Title>
+              <Typography.Text type="secondary" className="block mb-6">
+                配置文档嵌入向量化模型
+              </Typography.Text>
+            </div>
+
+            <Form.Item label="嵌入模式" name="embeddingProvider" rules={[{ required: true }]}>
+              <Select
+                options={[
+                  { value: 'local', label: '🚀 本地内置 (推荐，首次使用自动下载)' },
+                  { value: 'ollama', label: '🦙 Ollama (需要本地运行 Ollama)' }
+                ]}
+                onChange={(value: EmbeddingProvider) => {
+                  setEmbeddingProvider(value)
+                  form.setFieldValue(
+                    'embeddingModel',
+                    value === 'local' ? 'multilingual-e5-small' : 'nomic-embed-text'
+                  )
+                }}
+              />
+            </Form.Item>
+
+            <div
+              className="rounded-xl p-4"
+              style={{ background: token.colorFillQuaternary }}
+            >
+              <Typography.Text type="secondary" className="text-sm">
+                {embeddingProvider === 'local'
+                  ? '💡 本地模式：首次使用时自动下载模型（约 50-150MB），无需额外配置'
+                  : '💡 Ollama 模式：需要先在本地安装并运行 Ollama，然后拉取对应的嵌入模型'}
+              </Typography.Text>
+            </div>
+
+            <Form.Item
+              label="向量模型"
+              name="embeddingModel"
+              rules={[{ required: true, message: '请选择向量模型' }]}
+            >
+              {embeddingProvider === 'local' ? (
+                <Select options={LOCAL_EMBEDDING_MODELS} placeholder="选择本地嵌入模型" />
+              ) : (
+                <AutoComplete
+                  allowClear
+                  placeholder="选择或输入向量模型"
+                  options={OLLAMA_EMBEDDING_MODELS.map((m) => ({ value: m, label: m }))}
+                  filterOption={(inputValue, option) =>
+                    option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
+                  }
+                />
+              )}
+            </Form.Item>
+          </div>
+        )
+
+      case 'rag':
+        return (
+          <div className="space-y-6">
+            <div>
+              <Typography.Title level={5} style={{ marginBottom: 16 }}>
+                <SearchOutlined className="mr-2" />
+                检索参数
+              </Typography.Title>
+              <Typography.Text type="secondary" className="block mb-6">
+                调整 RAG 检索的核心参数
+              </Typography.Text>
+            </div>
+
+            <div
+              className="rounded-xl p-5 space-y-6"
+              style={{ background: token.colorFillQuaternary }}
+            >
+              <div>
+                <Form.Item label="单次检索数量 (K)" className="mb-2">
+                  <Row gutter={16}>
+                    <Col span={16}>
+                      <Form.Item name={['rag', 'searchLimit']} noStyle>
+                        <Slider min={1} max={20} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name={['rag', 'searchLimit']} noStyle>
+                        <InputNumber min={1} max={20} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Form.Item>
+                <Typography.Text type="secondary" className="text-xs">
+                  每次检索最相关的文档块数量，默认 6
+                </Typography.Text>
+              </div>
+
+              <div>
+                <Form.Item label="最大扩展数量 (Max K)" className="mb-2">
+                  <Row gutter={16}>
+                    <Col span={16}>
+                      <Form.Item name={['rag', 'maxSearchLimit']} noStyle>
+                        <Slider min={10} max={100} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name={['rag', 'maxSearchLimit']} noStyle>
+                        <InputNumber min={10} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Form.Item>
+                <Typography.Text type="secondary" className="text-xs">
+                  复杂问题场景下自动扩展检索的最大上限
+                </Typography.Text>
+              </div>
+
+              <div>
+                <Form.Item label="最低相关度 (Threshold)" className="mb-2">
+                  <Row gutter={16}>
+                    <Col span={16}>
+                      <Form.Item name={['rag', 'minRelevance']} noStyle>
+                        <Slider min={0} max={1} step={0.05} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name={['rag', 'minRelevance']} noStyle>
+                        <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Form.Item>
+                <Typography.Text type="secondary" className="text-xs">
+                  过滤低质量结果的阈值，值越高越精准但可能遗漏
+                </Typography.Text>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'enhance':
+        return (
+          <div className="space-y-6">
+            <div>
+              <Typography.Title level={5} style={{ marginBottom: 16 }}>
+                <RocketOutlined className="mr-2" />
+                增强功能
+              </Typography.Title>
+              <Typography.Text type="secondary" className="block mb-6">
+                开启高级检索增强能力
+              </Typography.Text>
+            </div>
+
+            <div className="space-y-4">
+              <div
+                className="rounded-xl p-5 flex items-center justify-between"
+                style={{ background: token.colorFillQuaternary }}
+              >
+                <div>
+                  <Typography.Text strong className="block mb-1">
+                    深度重排序 (Rerank)
+                  </Typography.Text>
+                  <Typography.Text type="secondary" className="text-sm">
+                    使用 Cross-Encoder 对检索结果二次打分，显著提升准确率
+                  </Typography.Text>
+                </div>
+                <Form.Item name={['rag', 'useRerank']} valuePropName="checked" noStyle>
+                  <Switch />
+                </Form.Item>
+              </div>
+
+              <div
+                className="rounded-xl p-5 flex items-center justify-between"
+                style={{ background: token.colorFillQuaternary }}
+              >
+                <div>
+                  <Typography.Text strong className="block mb-1">
+                    多查询重写 (Multi-Query)
+                  </Typography.Text>
+                  <Typography.Text type="secondary" className="text-sm">
+                    自动将问题拆解为多个子查询，提升复杂问题的召回覆盖度
+                  </Typography.Text>
+                </div>
+                <Form.Item name={['rag', 'useMultiQuery']} valuePropName="checked" noStyle>
+                  <Switch />
+                </Form.Item>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'web':
+        return (
+          <div className="space-y-6">
+            <div>
+              <Typography.Title level={5} style={{ marginBottom: 16 }}>
+                <GlobalOutlined className="mr-2" />
+                联网搜索
+              </Typography.Title>
+              <Typography.Text type="secondary" className="block mb-6">
+                当本地知识库无法回答时，自动搜索互联网
+              </Typography.Text>
+            </div>
+
+            <div
+              className="rounded-xl p-5"
+              style={{ background: token.colorFillQuaternary }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <Typography.Text strong className="block mb-1">
+                    启用联网搜索
+                  </Typography.Text>
+                  <Typography.Text type="secondary" className="text-sm">
+                    使用 Tavily API 进行网络搜索
+                  </Typography.Text>
+                </div>
+                <Form.Item name={['rag', 'useWebSearch']} valuePropName="checked" noStyle>
+                  <Switch />
+                </Form.Item>
+              </div>
+
+              <Form.Item
+                noStyle
+                shouldUpdate={(prevValues, currentValues) =>
+                  prevValues.rag?.useWebSearch !== currentValues.rag?.useWebSearch
+                }
+              >
+                {({ getFieldValue }) =>
+                  getFieldValue(['rag', 'useWebSearch']) && (
+                    <Form.Item
+                      label="Tavily API Key"
+                      name={['rag', 'tavilyApiKey']}
+                      className="mb-0 mt-4"
+                      rules={[{ required: true, message: '请输入 Tavily API Key' }]}
+                    >
+                      <Input.Password placeholder="tvly-..." allowClear />
+                    </Form.Item>
+                  )
+                }
+              </Form.Item>
+            </div>
+          </div>
+        )
+
+      case 'update':
+        return (
+          <div className="space-y-6">
+            <div>
+              <Typography.Title level={5} style={{ marginBottom: 16 }}>
+                <CloudDownloadOutlined className="mr-2" />
+                更新检查
+              </Typography.Title>
+              <Typography.Text type="secondary" className="block mb-6">
+                检查并安装最新版本
+              </Typography.Text>
+            </div>
+
+            <UpdateChecker />
+          </div>
+        )
+    }
+  }
+
+  // 全屏模式 - 新的双栏布局
+  if (fullScreen) {
+    return (
+      <div className="flex h-full w-full" style={{ background: token.colorBgContainer }}>
+        {/* 左侧导航 */}
+        <aside
+          className="flex flex-col h-full w-60 flex-shrink-0"
+          style={{
+            background: token.colorBgLayout,
+            borderRight: `1px solid ${token.colorBorderSecondary}`
+          }}
+        >
+          {/* 头部 */}
+          <div className="px-5 pt-6 pb-4">
+            <div className="flex items-center gap-3 mb-6">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{
+                  background: `linear-gradient(135deg, ${token.colorPrimary} 0%, #7c3aed 100%)`,
+                  boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
+                }}
+              >
+                <SettingOutlined style={{ fontSize: 18, color: '#fff' }} />
+              </div>
+              <Typography.Title level={5} style={{ margin: 0 }}>
+                系统设置
+              </Typography.Title>
+            </div>
+          </div>
+
+          {/* 菜单 */}
+          <Menu
+            mode="inline"
+            selectedKeys={[activeSection]}
+            items={MENU_ITEMS}
+            onClick={({ key }) => setActiveSection(key as SettingsSection)}
+            style={{ border: 'none', background: 'transparent' }}
+            className="settings-menu"
+          />
+
+          {/* 底部返回按钮 */}
+          <div className="mt-auto px-4 py-4">
+            <Button
+              icon={<ArrowLeftOutlined />}
+              onClick={onClose}
+              block
+              style={{ borderRadius: 10 }}
+            >
+              返回
+            </Button>
+          </div>
+        </aside>
+
+        {/* 右侧内容 */}
+        <main className="flex-1 flex flex-col h-full overflow-hidden">
+          <Form form={form} layout="vertical" requiredMark={false} disabled={loading || saving}>
+            {/* 内容区域 */}
+            <div className="flex-1 overflow-y-auto p-8" style={{ maxWidth: 720 }}>
+              {renderSectionContent()}
+            </div>
+          </Form>
+
+          {/* 底部保存按钮 */}
+          <div
+            className="px-8 py-4 flex justify-end"
+            style={{ borderTop: `1px solid ${token.colorBorderSecondary}` }}
+          >
+            <Button type="primary" loading={saving} onClick={() => void handleSave()}>
+              保存设置
+            </Button>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // Drawer 模式 - 保持原有 Tabs 布局
   return (
     <Drawer
       title="系统设置"
@@ -250,270 +646,20 @@ export function SettingsDialog({ isOpen, onClose, onSaved }: SettingsDialogProps
       }}
     >
       <Form form={form} layout="vertical" requiredMark={false} disabled={loading || saving}>
-        <Tabs
-          defaultActiveKey="basic"
-          items={[
-            {
-              key: 'basic',
-              label: (
-                <span>
-                  <SettingOutlined />
-                  基础模型
-                </span>
-              ),
-              children: (
-                <>
-                  {/* 当前供应商选择 */}
-                  <Form.Item label="当前模型供应商" name="provider" rules={[{ required: true }]}>
-                    <Select
-                      options={PROVIDER_OPTIONS.map((p) => ({
-                        value: p.value,
-                        label: (
-                          <span>
-                            <span className="mr-2">{p.icon}</span>
-                            {p.label}
-                          </span>
-                        )
-                      }))}
-                      onChange={handleProviderChange}
-                    />
-                  </Form.Item>
-
-                  {/* 当前供应商配置 */}
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                    <Typography.Text strong className="mb-3 block">
-                      {PROVIDER_OPTIONS.find((p) => p.value === currentProvider)?.icon}{' '}
-                      {PROVIDER_OPTIONS.find((p) => p.value === currentProvider)?.label} 配置
-                    </Typography.Text>
-                    {renderProviderConfig(currentProvider)}
-                  </div>
-
-                  <Divider />
-
-                  {/* 向量模型设置 */}
-                  <Typography.Text strong className="mb-3 block">
-                    📊 向量模型设置
-                  </Typography.Text>
-
-                  <Form.Item label="嵌入模式" name="embeddingProvider" rules={[{ required: true }]}>
-                    <Select
-                      options={[
-                        { value: 'local', label: '🚀 本地内置 (推荐，首次使用自动下载)' },
-                        { value: 'ollama', label: '🦙 Ollama (需要本地运行 Ollama)' }
-                      ]}
-                      onChange={(value: EmbeddingProvider) => {
-                        setEmbeddingProvider(value)
-                        // 切换时重置为推荐模型：本地优先 multilingual-e5-small，Ollama 默认 nomic-embed-text
-                        form.setFieldValue(
-                          'embeddingModel',
-                          value === 'local' ? 'multilingual-e5-small' : 'nomic-embed-text'
-                        )
-                      }}
-                    />
-                  </Form.Item>
-
-                  <Typography.Paragraph type="secondary" className="text-xs mb-3">
-                    {embeddingProvider === 'local'
-                      ? '本地模式：首次使用时自动下载模型（约 50-150MB），无需额外配置'
-                      : 'Ollama 模式：需要先在本地安装并运行 Ollama，然后拉取对应的嵌入模型'}
-                  </Typography.Paragraph>
-
-                  <Form.Item
-                    label="向量模型"
-                    name="embeddingModel"
-                    rules={[{ required: true, message: '请选择向量模型' }]}
-                  >
-                    {embeddingProvider === 'local' ? (
-                      <Select options={LOCAL_EMBEDDING_MODELS} placeholder="选择本地嵌入模型" />
-                    ) : (
-                      <AutoComplete
-                        allowClear
-                        placeholder="选择或输入向量模型"
-                        options={OLLAMA_EMBEDDING_MODELS.map((m) => ({ value: m, label: m }))}
-                        filterOption={(inputValue, option) =>
-                          option?.value.toLowerCase().includes(inputValue.toLowerCase()) ?? false
-                        }
-                      />
-                    )}
-                  </Form.Item>
-                </>
-              )
-            },
-            {
-              key: 'advanced',
-              label: (
-                <span>
-                  <ToolOutlined />
-                  高级设置
-                </span>
-              ),
-              children: (
-                <>
-                  {/* RAG 检索参数设置 */}
-                  <Typography.Text strong className="mb-3 block">
-                    🔎 RAG 检索参数
-                  </Typography.Text>
-
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
-                    <Form.Item label="单次检索数量 (K)">
-                      <Row gutter={16}>
-                        <Col span={18}>
-                          <Form.Item name={['rag', 'searchLimit']} noStyle>
-                            <Slider min={1} max={20} />
-                          </Form.Item>
-                        </Col>
-                        <Col span={6}>
-                          <Form.Item name={['rag', 'searchLimit']} noStyle>
-                            <InputNumber min={1} max={20} style={{ width: '100%' }} />
-                          </Form.Item>
-                        </Col>
-                      </Row>
-                    </Form.Item>
-                    <Typography.Text type="secondary" className="settings-help text-xs mb-4 block">
-                      每次检索最相关的文档块数量，默认 6。增加可获取更多信息，但可能引入噪声。
-                    </Typography.Text>
-
-                    <Form.Item label="最大扩展数量 (Max K)">
-                      <Row gutter={16}>
-                        <Col span={18}>
-                          <Form.Item name={['rag', 'maxSearchLimit']} noStyle>
-                            <Slider min={10} max={100} />
-                          </Form.Item>
-                        </Col>
-                        <Col span={6}>
-                          <Form.Item name={['rag', 'maxSearchLimit']} noStyle>
-                            <InputNumber min={10} max={100} style={{ width: '100%' }} />
-                          </Form.Item>
-                        </Col>
-                      </Row>
-                    </Form.Item>
-                    <Typography.Text type="secondary" className="settings-help text-xs mb-4 block">
-                      在复杂问题或多跳推理场景下，自动扩展检索的最大上限。
-                    </Typography.Text>
-
-                    <Form.Item label="最低相关度 (Threshold)">
-                      <Row gutter={16}>
-                        <Col span={18}>
-                          <Form.Item name={['rag', 'minRelevance']} noStyle>
-                            <Slider min={0} max={1} step={0.05} />
-                          </Form.Item>
-                        </Col>
-                        <Col span={6}>
-                          <Form.Item name={['rag', 'minRelevance']} noStyle>
-                            <InputNumber min={0} max={1} step={0.05} style={{ width: '100%' }} />
-                          </Form.Item>
-                        </Col>
-                      </Row>
-                    </Form.Item>
-                    <Typography.Text type="secondary" className="settings-help text-xs mb-0 block">
-                      过滤低质量结果的阈值。值越高结果越精准但可能遗漏，值越低召回越多但可能有噪声。
-                    </Typography.Text>
-                  </div>
-
-                  <Divider />
-
-                  {/* 检索增强设置 */}
-                  <Typography.Text strong className="mb-3 block">
-                    <RocketOutlined className="mr-1" /> 检索能力增强
-                  </Typography.Text>
-
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Typography.Text strong className="block">
-                          深度重排序 (Rerank)
-                        </Typography.Text>
-                        <Typography.Text type="secondary" className="text-xs">
-                          使用 Cross-Encoder 对初步检索结果进行二次打分，显著提升准确率。
-                        </Typography.Text>
-                      </div>
-                      <Form.Item name={['rag', 'useRerank']} valuePropName="checked" noStyle>
-                        <Switch />
-                      </Form.Item>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Typography.Text strong className="block">
-                          多查询重写 (Multi-Query)
-                        </Typography.Text>
-                        <Typography.Text type="secondary" className="text-xs">
-                          自动将用户问题拆解为多个子查询，提升对复杂问题的召回覆盖度。
-                        </Typography.Text>
-                      </div>
-                      <Form.Item name={['rag', 'useMultiQuery']} valuePropName="checked" noStyle>
-                        <Switch />
-                      </Form.Item>
-                    </div>
-                  </div>
-
-                  <Divider />
-
-                  {/* 联网搜索设置 */}
-                  <Typography.Text strong className="mb-3 block">
-                    <GlobalOutlined className="mr-1" /> 联网搜索功能
-                  </Typography.Text>
-
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <Typography.Text strong className="block">
-                          启用联网搜索
-                        </Typography.Text>
-                        <Typography.Text type="secondary" className="text-xs">
-                          当本地知识库无法回答时，自动搜索互联网获取最新信息。
-                        </Typography.Text>
-                      </div>
-                      <Form.Item name={['rag', 'useWebSearch']} valuePropName="checked" noStyle>
-                        <Switch />
-                      </Form.Item>
-                    </div>
-
-                    <Form.Item
-                      noStyle
-                      shouldUpdate={(prevValues, currentValues) =>
-                        prevValues.rag?.useWebSearch !== currentValues.rag?.useWebSearch
-                      }
-                    >
-                      {({ getFieldValue }) =>
-                        getFieldValue(['rag', 'useWebSearch']) && (
-                          <Form.Item
-                            label="Tavily API Key"
-                            name={['rag', 'tavilyApiKey']}
-                            className="mb-0"
-                            rules={[{ required: true, message: '请输入 Tavily API Key' }]}
-                          >
-                            <Input.Password placeholder="tvly-..." allowClear />
-                          </Form.Item>
-                        )
-                      }
-                    </Form.Item>
-                  </div>
-                </>
-              )
-            },
-            {
-              key: 'update',
-              label: (
-                <span>
-                  <CloudDownloadOutlined />
-                  更新检查
-                </span>
-              ),
-              children: (
-                <>
-                  <UpdateChecker />
-                </>
-              )
-            }
-          ]}
+        <Menu
+          mode="horizontal"
+          selectedKeys={[activeSection]}
+          items={MENU_ITEMS}
+          onClick={({ key }) => setActiveSection(key as SettingsSection)}
+          style={{ marginBottom: 16 }}
         />
+        {renderSectionContent()}
       </Form>
 
       <div className="settings-drawer-footer w-full border-t border-gray-200 bg-white px-6 py-4 text-right dark:border-gray-700 dark:bg-gray-900">
         <Space>
           <Button onClick={onClose} disabled={saving}>
-            取消
+            返回
           </Button>
           <Button type="primary" loading={saving} onClick={() => void handleSave()}>
             保存
