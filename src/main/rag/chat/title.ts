@@ -5,7 +5,7 @@ import { getSettings } from '../../settings'
 import { createChatModel } from '../../utils/createChatModel'
 import { ensureProviderAvailable } from '../../utils/providerAvailability'
 
-export async function generateConversationTitle(question: string, answer: string): Promise<string> {
+export async function generateConversationTitle(question: string, answer: string = ''): Promise<string> {
   const settings = getSettings()
   await ensureProviderAvailable(settings.provider)
   const model = createChatModel(settings.provider)
@@ -14,7 +14,7 @@ export async function generateConversationTitle(question: string, answer: string
 Only return the title, nothing else. Do not use quotes.
 
 Question: {question}
-Answer: {answer}
+{answer_section}
 
 Title:`
 
@@ -24,7 +24,7 @@ Title:`
   try {
     const title = await chain.invoke({
       question: question.slice(0, 200),
-      answer: answer.slice(0, 200)
+      answer_section: answer ? `Answer: ${answer.slice(0, 200)}` : ''
     })
     return title.trim()
   } catch (error) {

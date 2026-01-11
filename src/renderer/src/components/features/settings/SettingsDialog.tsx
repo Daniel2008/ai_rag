@@ -32,8 +32,8 @@ import {
   ArrowLeftOutlined
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
-import type { AppSettings, ModelProvider, EmbeddingProvider } from '../types/chat'
-import UpdateChecker from './UpdateChecker'
+import type { AppSettings, ModelProvider, EmbeddingProvider } from '../../../types/chat'
+import UpdateChecker from '../update/UpdateChecker'
 
 interface SettingsDialogProps {
   isOpen: boolean
@@ -141,8 +141,8 @@ export function SettingsDialog({ isOpen, fullScreen = false, onClose, onSaved }:
       const finalSettings = { ...initialSettings, ...values }
       const result = await window.api.saveSettings(finalSettings)
 
-      if (result.embeddingChanged) {
-        if (result.reindexingStarted) {
+      if (result?.embeddingChanged) {
+        if (result?.reindexingStarted) {
           message.info('嵌入模型已切换，正在后台重建知识库索引...')
         } else {
           Modal.warning({

@@ -3,7 +3,7 @@ import { Prompts } from '@ant-design/x'
 import { Space, Typography, theme as antdTheme } from 'antd'
 import { CheckOutlined } from '@ant-design/icons'
 import { WELCOME_PROMPTS } from '../../constants/chat'
-import { SiriAvatar } from '../SiriAvatar'
+import { SiriAvatar } from '../common/SiriAvatar'
 
 interface WelcomeScreenProps {
   themeMode: 'light' | 'dark'

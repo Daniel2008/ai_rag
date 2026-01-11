@@ -158,7 +158,22 @@ export function getSettings(): AppSettings {
   }
 }
 
-export function saveSettings(settings: Partial<AppSettings>): void {
+export function saveSettings(settings: Partial<AppSettings>): {
+  success: boolean
+  embeddingChanged: boolean
+  reindexingStarted: boolean
+} {
+  const currentSettings = getSettings()
+  let embeddingChanged = false
+
+  // Check if embedding settings changed
+  if (
+    (settings.embeddingProvider && settings.embeddingProvider !== currentSettings.embeddingProvider) ||
+    (settings.embeddingModel && settings.embeddingModel !== currentSettings.embeddingModel)
+  ) {
+    embeddingChanged = true
+  }
+
   for (const [key, value] of Object.entries(settings)) {
     if (value !== undefined) {
       if (key === 'rag' && typeof value === 'object' && value) {
@@ -183,6 +198,12 @@ export function saveSettings(settings: Partial<AppSettings>): void {
         store.set(key as keyof AppSettings, value)
       }
     }
+  }
+
+  return {
+    success: true,
+    embeddingChanged,
+    reindexingStarted: false // Currently we don't auto-start reindexing here, frontend handles the prompt
   }
 }
 

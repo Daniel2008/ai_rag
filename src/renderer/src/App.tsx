@@ -18,14 +18,14 @@ import { ChatSidebar } from './components/chat/ChatSidebar'
 
 import { TopNavBar } from './components/layout/TopNavBar'
 import type { AssistantPhase } from './components/chat'
-import { GlobalProgress } from './components/GlobalProgress'
-import { UpdateNotification } from './components/UpdateNotification'
+import { GlobalProgress } from './components/common/GlobalProgress'
+import { UpdateNotification } from './components/features/update/UpdateNotification'
 import { useConversations, useChatWithXChat, useKnowledgeBase, useProgress } from './hooks'
 import type { DocumentCollection } from './types/files'
 
 // 性能优化：懒加载设置对话框和知识库面板
-const SettingsDialog = lazy(() => import('./components/SettingsDialog'))
-const AppSidebar = lazy(() => import('./components/AppSidebar'))
+const SettingsDialog = lazy(() => import('./components/features/settings/SettingsDialog'))
+const AppSidebar = lazy(() => import('./components/layout/AppSidebar'))
 
 function App(): ReactElement {
   const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
@@ -229,10 +229,6 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
     setQuestionScope
   ])
 
-  // 窄屏自动隐藏知识库，宽屏恢复显示
-  useEffect(() => {
-    // 移除未使用的 handleResize 逻辑，或者如果需要响应式处理其他状态请保留
-  }, [])
 
   const handleActiveConversationChangeAndClose = useCallback(
     (key: string) => {

@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import { useCallback, useMemo, useState } from 'react'
-import { SiriAvatar } from '../SiriAvatar'
+import { SiriAvatar } from '../common/SiriAvatar'
 import { Conversations, type ConversationsProps } from '@ant-design/x'
 import {
   Button,
