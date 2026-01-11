@@ -1,8 +1,9 @@
-import type { CSSProperties, ReactElement } from 'react'
+import type { ReactElement } from 'react'
 import { Prompts } from '@ant-design/x'
 import { Space, Typography, theme as antdTheme } from 'antd'
 import { CheckOutlined } from '@ant-design/icons'
 import { WELCOME_PROMPTS } from '../../constants/chat'
+import { SiriAvatar } from '../SiriAvatar'
 
 interface WelcomeScreenProps {
   themeMode: 'light' | 'dark'
@@ -20,37 +21,10 @@ export function WelcomeScreen({
   return (
     <div className="welcome-container flex flex-1 flex-col items-center justify-center p-8 relative">
       <div className="relative z-10 max-w-2xl w-full">
-        {/* 欢迎区域 - 使用卡通助手形象 */}
+        {/* 欢迎区域 - 使用类Siri光球形象 */}
         <div className="text-center mb-10">
           <div className="inline-block mb-6">
-            <div className="avatar-glow" style={{ borderRadius: 20 }}>
-              <div
-                className="cartoon-assistant cartoon-assistant--idle"
-                style={
-                  {
-                    '--assistant-primary': token.colorPrimary,
-                    width: 96,
-                    height: 96,
-                    borderRadius: 20
-                  } as CSSProperties
-                }
-              >
-                <div className="cartoon-assistant__arm cartoon-assistant__arm--left" />
-                <div className="cartoon-assistant__arm cartoon-assistant__arm--right" />
-                <div className="cartoon-assistant__body">
-                  <div className="cartoon-assistant__chest" />
-                </div>
-                <div className="cartoon-assistant__head">
-                  <div className="cartoon-assistant__face">
-                    <div className="cartoon-assistant__eye cartoon-assistant__eye--left" />
-                    <div className="cartoon-assistant__eye cartoon-assistant__eye--right" />
-                    <div className="cartoon-assistant__mouth" />
-                    <div className="cartoon-assistant__cheek cartoon-assistant__cheek--left" />
-                    <div className="cartoon-assistant__cheek cartoon-assistant__cheek--right" />
-                  </div>
-                </div>
-              </div>
-            </div>
+            <SiriAvatar phase="idle" size="large" />
           </div>
           <Typography.Title level={2} style={{ marginBottom: 8 }}>
             <span className="gradient-text">你好，我是 RAG 智能助手</span>

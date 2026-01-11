@@ -35,8 +35,9 @@ console.warn = (...args) => {
 process.env.HF_ENDPOINT = 'https://hf-mirror.com'
 
 import { loadAndSplitFile } from './loader'
-import { ProgressStatus, TaskType } from './progressTypes'
-import { ProgressManager, type ProgressMessage } from './progressManager'
+import { ProgressStatus, TaskType, ProgressMessage } from './progressTypes' // Fix import
+import { DownloadProgressManager } from './progress/downloadProgressManager'
+import { IndexProgressManager } from './progress/indexProgressManager' // Use IndexProgressManager for embedding loop
 import { downloadModelFiles } from './modelDownloader'
 
 // 重新导出类型以保持兼容性
@@ -80,8 +81,8 @@ async function ensureTransformers() {
     }
   }
 
-  // Disable parallel downloads
-  ;(env as unknown as { parallelDownloads?: number }).parallelDownloads = 1
+    // Disable parallel downloads
+    ; (env as unknown as { parallelDownloads?: number }).parallelDownloads = 1
 
   // Set number of threads to 1 to avoid deadlocks in some environments
   // env.backends.onnx.numThreads = 1; // This might not be exposed directly on env.backends.onnx
@@ -157,31 +158,25 @@ parentPort.on('message', async (task) => {
       const downloadTaskType =
         type === 'initReranker' ? TaskType.RERANKER_DOWNLOAD : TaskType.MODEL_DOWNLOAD
 
-      const progressManager = new ProgressManager(id, downloadTaskType, parentPort)
+      const progressManager = new DownloadProgressManager(id, downloadTaskType, parentPort)
 
       let progressCheckInterval: NodeJS.Timeout | undefined
       try {
         const startTime = Date.now()
         progressCheckInterval = setInterval(() => {
           const elapsedTime = Date.now() - startTime
-          const lastProgress = progressManager.getLastReportedProgress()
+          const currentProgress = progressManager.calculateProgress() // Changed from getLastReportedProgress
 
           console.log(
-            `Progress check: ${elapsedTime}ms since start, last progress: ${lastProgress}`
+            `Progress check: ${elapsedTime}ms since start, current progress: ${currentProgress}`
           )
           // 只有当进度小于100%时才检查和发送更新
-          if (lastProgress < 100 && elapsedTime > 30000) {
-            parentPort?.postMessage({
-              id,
-              type: 'progress',
-              payload: {
-                taskType: TaskType.MODEL_DOWNLOAD,
-                status: ProgressStatus.DOWNLOADING,
-                message: `Still downloading model via Hub (${Math.round(elapsedTime / 1000)}s)`,
-                progress: Math.min(99, lastProgress + 1), // 最多显示99%，避免提前显示完成
-                mirror: HF_MIRROR,
-                debugInfo: { lastProgress, elapsedTime }
-              }
+          if (currentProgress < 100 && elapsedTime > 30000) {
+            // Manually using sendUpdate to keep heartbeat
+            progressManager.sendUpdate(ProgressStatus.DOWNLOADING, `Still downloading model via Hub (${Math.round(elapsedTime / 1000)}s)`, {
+              progress: Math.min(99, currentProgress + 1),
+              mirror: HF_MIRROR,
+              // debugInfo: { lastProgress, elapsedTime } // removed unknown properties for safety
             })
           }
         }, 10000)
@@ -271,7 +266,6 @@ parentPort.on('message', async (task) => {
             // For older versions or specific setups, dtype: 'q8' maps to 'model_quantized.onnx'.
             // But if the file is in a subdirectory (onnx/model_quantized.onnx), transformers.js might not find it automatically
             // if it expects it at root.
-            // BUT, we are downloading to a flattened structure OR preserving structure?
             // Our modelDownloader preserves structure (onnx/model_quantized.onnx).
             // Transformers.js usually handles subdirectories if config.json points to it?
             // No, config.json doesn't usually point to onnx file location.
@@ -467,6 +461,9 @@ parentPort.on('message', async (task) => {
       const total = chunks.length
       const startTime = Date.now()
 
+      // Use IndexProgressManager for smooth throttling
+      const progressManager = new IndexProgressManager(id, TaskType.EMBEDDING_GENERATION, parentPort)
+
       for (let i = 0; i < total; i++) {
         const chunkStart = Date.now()
         try {
@@ -485,22 +482,8 @@ parentPort.on('message', async (task) => {
           throw e
         }
 
-        // Report progress
-        if (i % 10 === 0 || i === total - 1) {
-          const progress = Math.round(((i + 1) / total) * 100)
-          parentPort?.postMessage({
-            id,
-            type: 'progress',
-            payload: {
-              taskType: TaskType.EMBEDDING_GENERATION,
-              status: ProgressStatus.PROCESSING,
-              message: `Generating embeddings: ${i + 1}/${total}`,
-              progress,
-              currentIndex: i,
-              totalCount: total
-            }
-          })
-        }
+        // Report progress via manager (automatically throttled)
+        progressManager.update(i + 1, total, `Generating embeddings: ${i + 1}/${total}`)
       }
 
       console.log(`[WORKER] Embedding completed in ${Date.now() - startTime}ms`)
@@ -602,3 +585,4 @@ parentPort.on('message', async (task) => {
     })
   }
 })
+

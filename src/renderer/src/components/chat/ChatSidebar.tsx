@@ -1,5 +1,6 @@
-import type { CSSProperties, ReactElement } from 'react'
+import type { ReactElement } from 'react'
 import { useCallback, useMemo, useState } from 'react'
+import { SiriAvatar } from '../SiriAvatar'
 import { Conversations, type ConversationsProps } from '@ant-design/x'
 import {
   Button,
@@ -181,37 +182,10 @@ export function ChatSidebar({
       >
         {!simpleMode && (
           <Flex align="center" gap={12} className="mb-4" style={{ margin: 20, marginLeft: 40 }}>
-            {/* ... avatar code ... */}
-            <div className="avatar-glow" style={{ borderRadius: 12 }}>
-              <div
-                className={`cartoon-assistant cartoon-assistant--${assistantPhase === 'processing' ? 'thinking' : assistantPhase}`}
-                style={
-                  {
-                    '--assistant-primary': token.colorPrimary
-                  } as CSSProperties
-                }
-              >
-                <div className="cartoon-assistant__arm cartoon-assistant__arm--left" />
-                <div className="cartoon-assistant__arm cartoon-assistant__arm--right" />
-                <div className="cartoon-assistant__body">
-                  <div className="cartoon-assistant__chest" />
-                </div>
-                <div className="cartoon-assistant__head">
-                  <div className="cartoon-assistant__face">
-                    <div className="cartoon-assistant__eye cartoon-assistant__eye--left" />
-                    <div className="cartoon-assistant__eye cartoon-assistant__eye--right" />
-                    <div className="cartoon-assistant__mouth" />
-                    <div className="cartoon-assistant__cheek cartoon-assistant__cheek--left" />
-                    <div className="cartoon-assistant__cheek cartoon-assistant__cheek--right" />
-                  </div>
-                </div>
-                <div className="cartoon-assistant__dots" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            </div>
+            <SiriAvatar
+              phase={assistantPhase === 'processing' ? 'processing' : assistantPhase}
+              size="medium"
+            />
             <div>
               <Typography.Text type="secondary" className="text-xs">
                 {assistantSubtitle}
@@ -224,37 +198,10 @@ export function ChatSidebar({
           <>
             {/* 虚拟形象 - simpleMode */}
             <div className="flex flex-col items-center mb-4 py-3">
-              <div className="avatar-glow" style={{ borderRadius: 12 }}>
-                <div
-                  className={`cartoon-assistant cartoon-assistant--${assistantPhase === 'processing' ? 'thinking' : assistantPhase}`}
-                  style={
-                    {
-                      '--assistant-primary': token.colorPrimary,
-                      transform: 'scale(0.8)'
-                    } as CSSProperties
-                  }
-                >
-                  <div className="cartoon-assistant__arm cartoon-assistant__arm--left" />
-                  <div className="cartoon-assistant__arm cartoon-assistant__arm--right" />
-                  <div className="cartoon-assistant__body">
-                    <div className="cartoon-assistant__chest" />
-                  </div>
-                  <div className="cartoon-assistant__head">
-                    <div className="cartoon-assistant__face">
-                      <div className="cartoon-assistant__eye cartoon-assistant__eye--left" />
-                      <div className="cartoon-assistant__eye cartoon-assistant__eye--right" />
-                      <div className="cartoon-assistant__mouth" />
-                      <div className="cartoon-assistant__cheek cartoon-assistant__cheek--left" />
-                      <div className="cartoon-assistant__cheek cartoon-assistant__cheek--right" />
-                    </div>
-                  </div>
-                  <div className="cartoon-assistant__dots" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                </div>
-              </div>
+              <SiriAvatar
+                phase={assistantPhase === 'processing' ? 'processing' : assistantPhase}
+                size="small"
+              />
               <Typography.Text type="secondary" className="text-xs mt-2">
                 {assistantSubtitle}
               </Typography.Text>

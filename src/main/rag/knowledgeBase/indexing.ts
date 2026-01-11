@@ -12,6 +12,7 @@ import { normalizePath } from '../pathUtils'
 import { Document } from '@langchain/core/documents'
 import { IndexedFileRecord, KnowledgeBaseSnapshot } from '../../../types/files'
 import { ProgressMessage, ProgressStatus, TaskType } from '../progressTypes'
+import { IndexProgressManager } from '../progress/indexProgressManager'
 import { getIndexedFileRecords, saveIndexedFileRecords } from './store'
 import { upsertIndexedFileRecord, getSnapshot, pruneCollectionsForMissingFiles } from './core'
 import { SmartPromptGenerator } from '../smartFeatures'
@@ -130,16 +131,17 @@ async function smartIncrementalUpdate(
 ): Promise<IndexedFileRecord[]> {
   const { loadFromUrl } = await import('../urlLoader')
 
-  if (onProgress) {
-    onProgress({
-      status: ProgressStatus.PROCESSING,
-      progress: 0,
-      message: '正在检查文件变更...',
-      taskType: TaskType.MODEL_DOWNLOAD
-    })
-  }
+  const progressManager = new IndexProgressManager(
+    'smart-update',
+    TaskType.DOCUMENT_PARSE,
+    null,
+    onProgress
+  )
+
+  progressManager.sendUpdate(ProgressStatus.PROCESSING, '正在检查文件变更...')
 
   await ensureEmbeddingsInitialized((progress) => {
+    // Forward initialization progress
     if (onProgress) onProgress(progress)
   })
 
@@ -159,26 +161,21 @@ async function smartIncrementalUpdate(
         skippedCount++
         processedCount++
 
-        if (onProgress && processedCount % 5 === 0) {
-          onProgress({
-            status: ProgressStatus.PROCESSING,
-            progress: Math.round((processedCount / total) * 100),
-            message: `检查进度: ${processedCount}/${total} (跳过 ${skippedCount})`,
-            taskType: TaskType.DOCUMENT_PARSE
-          })
-        }
+        // 使用 manager 更新进度，manager 内部会自动节流
+        progressManager.update(
+          processedCount,
+          total,
+          `检查进度: ${processedCount}/${total} (跳过 ${skippedCount})`
+        )
         continue
       }
 
       // 需要更新
-      if (onProgress) {
-        onProgress({
-          status: ProgressStatus.PROCESSING,
-          progress: Math.round((processedCount / total) * 100),
-          message: `正在更新: ${record.path} (${updateCheck.reason})`,
-          taskType: TaskType.DOCUMENT_PARSE
-        })
-      }
+      progressManager.sendUpdate(
+        ProgressStatus.PROCESSING,
+        `正在更新: ${record.path} (${updateCheck.reason})`,
+        { processedCount, totalCount: total }
+      )
 
       let docs: Document[] = []
       let newRecord = { ...record }
@@ -247,14 +244,11 @@ async function smartIncrementalUpdate(
     }
 
     processedCount++
-    if (onProgress) {
-      onProgress({
-        status: ProgressStatus.PROCESSING,
-        progress: Math.round((processedCount / total) * 100),
-        message: `更新完成: ${processedCount}/${total} (更新 ${updatedCount}, 跳过 ${skippedCount})`,
-        taskType: TaskType.DOCUMENT_PARSE
-      })
-    }
+    progressManager.update(
+      processedCount,
+      total,
+      `更新完成: ${processedCount}/${total} (更新 ${updatedCount}, 跳过 ${skippedCount})`
+    )
   }
 
   // 批量处理完成后的缓存清理
@@ -272,14 +266,14 @@ async function optimizedRebuildVectorStore(
 ): Promise<IndexedFileRecord[]> {
   const { loadFromUrl } = await import('../urlLoader')
 
-  if (onProgress) {
-    onProgress({
-      status: ProgressStatus.PROCESSING,
-      progress: 0,
-      message: '正在初始化重建...',
-      taskType: TaskType.MODEL_DOWNLOAD
-    })
-  }
+  const progressManager = new IndexProgressManager(
+    'rebuild-index',
+    TaskType.DOCUMENT_PARSE,
+    null,
+    onProgress
+  )
+
+  progressManager.sendUpdate(ProgressStatus.PROCESSING, '正在初始化重建...')
 
   await ensureEmbeddingsInitialized((progress) => {
     if (onProgress) onProgress(progress)
@@ -301,14 +295,11 @@ async function optimizedRebuildVectorStore(
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const batch = records.slice(i, i + BATCH_SIZE)
 
-    if (onProgress) {
-      onProgress({
-        status: ProgressStatus.PROCESSING,
-        progress: Math.round((processedCount / total) * 100),
-        message: `正在解析文档批次 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(total / BATCH_SIZE)} (成功: ${successfulFiles}, 失败: ${failedFiles})`,
-        taskType: TaskType.DOCUMENT_PARSE
-      })
-    }
+    progressManager.update(
+      processedCount,
+      total,
+      `正在解析文档批次 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(total / BATCH_SIZE)} (成功: ${successfulFiles}, 失败: ${failedFiles})`
+    )
 
     // 并行处理批次中的所有文件
     const batchResults = await Promise.allSettled(
@@ -413,37 +404,53 @@ async function optimizedRebuildVectorStore(
   if (allDocs.length > 0) {
     // 分批添加到存储，每批50个文档
     const DOC_BATCH_SIZE = 50
+    // 使用嵌套范围进度
+    // 前面解析占30%，后面索引占70% -> 其实这里是全量重建，解析已经结束了
+    // 假设解析占了主要时间？或者我们重新开启一个进度阶段 for indexing
+
+    // 我们在此新建一个 manager 或复用，把进度映射到 0-100 (for indexing stage)
+    // 或者我们认为解析是阶段1，索引是阶段2
+    // 简单起见，我们在索引阶段更新进度 (0-100, but describe as 'Indexing Vectors')
+    // 为了平滑体验，可以用 setRange? 
+    // 但前端通常只看 0-100. 如果我们 reset 0，用户会看到进度条重置。
+    // 这里我们简单地继续报告状态
+
+    const indexProgressManager = new IndexProgressManager(
+      'rebuild-index-vectors',
+      TaskType.EMBEDDING_GENERATION,
+      null,
+      onProgress
+    )
+
     for (let i = 0; i < allDocs.length; i += DOC_BATCH_SIZE) {
       const docBatch = allDocs.slice(i, i + DOC_BATCH_SIZE)
-      const progressStart = 30 + (i / allDocs.length) * 70
-      const appendMode = i !== 0
+      // const appendMode = i !== 0 // Unused
 
       await addDocumentsToStore(
         docBatch,
         (progress) => {
-          if (onProgress && progress.progress !== undefined) {
-            const overallProgress = Math.round(
-              progressStart + (progress.progress / 100) * (70 / (allDocs.length / DOC_BATCH_SIZE))
-            )
-            onProgress({
-              status: ProgressStatus.PROCESSING,
-              progress: overallProgress,
-              message: `正在索引向量: ${Math.min(i + docBatch.length, allDocs.length)}/${allDocs.length}`,
-              taskType: TaskType.EMBEDDING_GENERATION
-            })
+          // 这里 addDocumentsToStore 会返回 worker 的进度 (0-100)
+          // 我们如果想平滑显示，可以使用 indexProgressManager
+          // 但 addDocumentsToStore callback 也是 throttled?
+          if (progress.progress !== undefined) {
+            // 映射批次进度到总体进度
+            // 这是一个复杂的嵌套：总体 -> 批次 -> worker内部
+            // 简单处理：只报告批次完成
           }
         },
-        progressStart,
-        appendMode
+        // progressStart, // removed custom start
+        // appendMode
+      )
+
+      // 手动更新进度
+      indexProgressManager.update(
+        Math.min(i + docBatch.length, allDocs.length),
+        allDocs.length,
+        `正在索引向量: ${Math.min(i + docBatch.length, allDocs.length)}/${allDocs.length}`
       )
     }
-  } else if (onProgress) {
-    onProgress({
-      status: ProgressStatus.COMPLETED,
-      progress: 100,
-      message: '重建完成',
-      taskType: TaskType.INDEX_REBUILD
-    })
+  } else {
+    progressManager.sendUpdate(ProgressStatus.COMPLETED, '重建完成')
   }
 
   // 清理缓存
@@ -457,6 +464,16 @@ async function optimizedRebuildVectorStore(
   }
 
   clearFileHashCache()
+
+  // Final completion
+  if (onProgress) {
+    onProgress({
+      status: ProgressStatus.COMPLETED,
+      progress: 100,
+      message: '知识库刷新完成',
+      taskType: TaskType.INDEX_REBUILD
+    })
+  }
 
   return results
 }
@@ -473,6 +490,14 @@ async function fastIncrementalUpdate(
   await ensureEmbeddingsInitialized((progress) => {
     if (onProgress) onProgress(progress)
   })
+
+  // 快速模式也使用 manager
+  const progressManager = new IndexProgressManager(
+    'fast-update',
+    TaskType.DOCUMENT_PARSE,
+    null,
+    onProgress
+  )
 
   const refreshed: IndexedFileRecord[] = []
   let processedCount = 0
@@ -564,14 +589,11 @@ async function fastIncrementalUpdate(
     }
 
     processedCount++
-    if (onProgress && processedCount % 3 === 0) {
-      onProgress({
-        status: ProgressStatus.PROCESSING,
-        progress: Math.round((processedCount / total) * 100),
-        message: `快速增量: ${processedCount}/${total} (更新 ${updatedCount})`,
-        taskType: TaskType.DOCUMENT_PARSE
-      })
-    }
+    progressManager.update(
+      processedCount,
+      total,
+      `快速增量: ${processedCount}/${total} (更新 ${updatedCount})`
+    )
   }
 
   return refreshed
@@ -589,12 +611,9 @@ export async function refreshKnowledgeBase(
 
   if (records.length === 0) {
     if (onProgress) {
-      onProgress({
-        status: ProgressStatus.COMPLETED,
-        progress: 100,
-        message: '知识库为空，无需处理',
-        taskType: TaskType.INDEX_REBUILD
-      })
+      // Empty case
+      new IndexProgressManager('empty', TaskType.INDEX_REBUILD, null, onProgress)
+        .sendUpdate(ProgressStatus.COMPLETED, '知识库为空，无需处理')
     }
     return getSnapshot()
   }
@@ -619,12 +638,9 @@ export async function refreshKnowledgeBase(
   clearFileHashCache()
 
   if (onProgress) {
-    onProgress({
-      status: ProgressStatus.COMPLETED,
-      progress: 100,
-      message: '知识库刷新完成',
-      taskType: TaskType.INDEX_REBUILD
-    })
+    // Final complete
+    new IndexProgressManager('finish', TaskType.INDEX_REBUILD, null, onProgress)
+      .sendUpdate(ProgressStatus.COMPLETED, '知识库刷新完成')
   }
 
   return getSnapshot()

@@ -497,8 +497,6 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
       {/* 顶部导航栏 */}
       <TopNavBar activeTab={activeTab} onTabChange={handleTabChange} />
 
-      {/* 全局进度条 */}
-      <GlobalProgress progress={progress} />
 
       {/* 主内容区域 */}
       <div className="flex flex-1 overflow-hidden relative bg-gray-50 dark:bg-gray-900">
@@ -698,6 +696,9 @@ function AppContent({ themeMode, onThemeChange }: AppContentProps): ReactElement
         {/* 更新通知组件 - 显示在右上角 */}
         <UpdateNotification />
       </div>
+
+      {/* 全局进度条 - 底部显示 */}
+      <GlobalProgress progress={progress} />
     </div>
   )
 }

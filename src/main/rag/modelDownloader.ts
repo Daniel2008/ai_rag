@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { listFiles } from '@huggingface/hub'
-import { ProgressManager } from './progressManager'
+import { DownloadProgressManager } from './progress/downloadProgressManager'
 import { ProgressStatus } from './progressTypes'
 import { createRetryingFetch } from './utils/network'
 
@@ -19,7 +19,7 @@ function formatBytes(bytes: number): string {
 export interface ModelDownloadOptions {
   fullModelName: string
   targetDir: string
-  progressManager: ProgressManager
+  progressManager: DownloadProgressManager
 }
 
 export const downloadModelFiles = async (options: ModelDownloadOptions) => {
@@ -225,11 +225,12 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
             if (currentProgress - lastReportedProgress >= 1 || loaded % (1024 * 1024) === 0) {
               const loadedStr = formatBytes(loaded)
               const totalStr = formatBytes(state.total)
-              progressManager.sendUpdate(
+              progressManager.reportFileProgress(
+                filePath,
                 ProgressStatus.DOWNLOADING,
                 `Downloading files (${currentProgress.toFixed(0)}%) - ${loadedStr} / ${totalStr}`,
-                filePath,
-                loaded / (state.total || 1)
+                loaded,
+                state.total
               )
               lastReportedProgress = currentProgress
             }
@@ -264,11 +265,12 @@ export const downloadModelFiles = async (options: ModelDownloadOptions) => {
 
       // Update progress
       const currentProgress = progressManager.calculateProgress()
-      progressManager.sendUpdate(
+      progressManager.reportFileProgress(
+        filePath,
         ProgressStatus.DOWNLOADING,
         `Downloading files (${currentProgress.toFixed(0)}%)`,
-        filePath,
-        1
+        loaded,
+        state?.total || loaded
       )
     } catch (e) {
       if (required.has(filePath)) {

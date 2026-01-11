@@ -3,7 +3,7 @@ import { LocalEmbeddings } from '../localEmbeddings'
 import { ProgressStatus, TaskType } from '../progressTypes'
 import { logInfo, logError, logWarn, logDebug } from '../../utils/logger'
 import { memoryMonitor } from '../../utils/memoryMonitor'
-import { createProcessingProgress, createCompletedMessage } from '../../utils/progressHelper'
+import { IndexProgressManager } from '../progress/indexProgressManager'
 import { getEmbeddings } from './embeddings'
 import {
   ensureTableWithDocuments,
@@ -34,35 +34,43 @@ export async function addDocumentsToStore(
 
   memoryMonitor.checkMemoryThreshold()
 
-  const progressRange = 100 - startProgress
-  const progressMsg = createProcessingProgress(
+  const progressManager = new IndexProgressManager(
+    'store-add-docs',
     TaskType.INDEX_REBUILD,
-    startProgress,
-    '正在索引文档...'
+    null,
+    onProgress as any // casting as types might differ slightly in strict mode
   )
-  onProgress?.(progressMsg)
+
+  const progressRange = 100 - startProgress
+
+  progressManager.sendUpdate(ProgressStatus.PROCESSING, '正在索引文档...', { progress: startProgress })
 
   const embeddings = getEmbeddings()
   if (embeddings instanceof LocalEmbeddings) {
     embeddings.setTempProgressCallback((progress) => {
       if (progress.status === ProgressStatus.DOWNLOADING) {
-        onProgress?.({
-          ...progress,
-          taskType: progress.taskType || TaskType.MODEL_DOWNLOAD
-        })
+        // Forward download progress (throttled by manager)
+        progressManager.sendUpdate(
+          progress.status,
+          progress.message,
+          { ...progress, taskType: progress.taskType || TaskType.MODEL_DOWNLOAD }
+        )
       } else if (progress.status === ProgressStatus.PROCESSING && progress.progress !== undefined) {
         const adjustedProgress = Math.round(
           startProgress + (progress.progress / 100) * progressRange
         )
-        onProgress?.(
-          createProcessingProgress(
-            TaskType.EMBEDDING_GENERATION,
-            adjustedProgress,
-            `正在生成向量 ${adjustedProgress}%`
-          )
+
+        progressManager.sendUpdate(
+          ProgressStatus.PROCESSING,
+          `正在生成向量 ${adjustedProgress}%`,
+          {
+            taskType: TaskType.EMBEDDING_GENERATION,
+            progress: adjustedProgress
+          }
         )
       } else {
-        onProgress?.(progress)
+        // Other status
+        progressManager.sendUpdate(progress.status, progress.message, { ...progress })
       }
     })
   }
@@ -70,7 +78,9 @@ export async function addDocumentsToStore(
   try {
     const store = await ensureTableWithDocuments(docs, appendMode)
     setVectorStore(store)
-    onProgress?.(createCompletedMessage(TaskType.INDEX_REBUILD, '索引完成'))
+
+    progressManager.sendUpdate(ProgressStatus.COMPLETED, '索引完成')
+
     logInfo(`Added ${docs.length} documents to LanceDB`, 'VectorStore')
     invalidateDocCountCache()
     clearBM25Cache()
@@ -91,7 +101,9 @@ export async function addDocumentsToStore(
     // ensureTableWithDocuments(docs, false) 会使用 overwrite 模式重建表
     const store = await ensureTableWithDocuments(docs, false)
     setVectorStore(store)
-    onProgress?.(createCompletedMessage(TaskType.INDEX_REBUILD, '索引完成（已重建）'))
+
+    progressManager.sendUpdate(ProgressStatus.COMPLETED, '索引完成（已重建）')
+
     logInfo(`Recreated LanceDB table and added ${docs.length} documents`, 'VectorStore')
     invalidateDocCountCache()
   } finally {

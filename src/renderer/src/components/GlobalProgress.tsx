@@ -189,7 +189,7 @@ export function GlobalProgress({ progress }: GlobalProgressProps): ReactElement 
           : isCompleted
             ? `linear-gradient(90deg, rgba(82, 196, 26, 0.08) 0%, rgba(82, 196, 26, 0.02) 100%)`
             : `linear-gradient(90deg, ${token.colorPrimaryBg} 0%, rgba(124, 58, 237, 0.02) 100%)`,
-        borderBottom: `1px solid ${isError ? 'rgba(255, 77, 79, 0.2)' : isCompleted ? 'rgba(82, 196, 26, 0.2)' : token.colorBorderSecondary}`
+        borderTop: `1px solid ${isError ? 'rgba(255, 77, 79, 0.2)' : isCompleted ? 'rgba(82, 196, 26, 0.2)' : token.colorBorderSecondary}`
       },
       icon: {
         color: isError ? token.colorError : isCompleted ? '#52c41a' : token.colorPrimary,
